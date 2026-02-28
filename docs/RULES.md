@@ -1,0 +1,5 @@
+- make build test must be run always and must always succeed (make test)
+- ensure there are unit tests for all code written (make test-unit)
+- ensure there are integration tests for all code writte (make test-integration)
+- ensure there are playright tests for all endpoints (make test-playwright)
+- use argon2id for encrpytion in sqlite
