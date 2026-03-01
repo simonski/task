@@ -12,6 +12,10 @@ The system has three interfaces:
 2. A CLI for fast, explicit terminal workflows.
 3. An embedded web application for browsing, editing, and status management.
 
+The repository also contains a static `VERSION` file. `make build` increments the patch version before compiling the binary and copies that value into the embedded build asset used by `task version`.
+
+Client-side files are stored under `$TASK_HOME`, which defaults to `~/.config/task`.
+
 ## Product Principles
 
 1. The server is the single system of record.
@@ -22,21 +26,21 @@ The system has three interfaces:
 
 ## Primary Users And Workflows
 
-The primary user is a small software team managing projects, epics, tasks, bugs, and notes.
+The primary user is a small software team managing projects, epics, tasks, bugs.
 
 The first release must support these workflows end to end:
 
 1. Initialize a local SQLite-backed workspace.
-1. use argon2id for encrpytion in sqlite
-2. Start the server and embedded web app from the same binary.
-3. Create and manage users.
-4. Authenticate from the CLI and the web app.
-5. Create and select projects.
-6. Add work items such as tasks, bugs, notes, questions, and epics.
-7. List, filter, search, and inspect items.
-8. Organize work beneath an active epic.
-9. Review item history and comments.
-10. Manage work visually in the web app, including status-based board views.
+2. Store passwords as Argon2id hashes in SQLite.
+3. Start the server and embedded web app from the same binary.
+4. Create and manage users.
+5. Authenticate from the CLI and the web app.
+6. Create and select projects.
+7. Add work items such as tasks, bugs, and epics.
+8. List, filter, search, and inspect items.
+9. Optionally organize work beneath a parent task or epic.
+10. Review item history and comments.
+11. Manage work visually in the web app, including status-based board views.
 
 ## Domain Model
 
@@ -63,7 +67,6 @@ Notes:
 ### Project
 
 - `project_id`
-- `slug`
 - `title`
 - `description`
 - `created_at`
@@ -96,14 +99,25 @@ Supported `type` values in the first release:
 - `epic`
 - `task`
 - `bug`
-- `note`
-- `question`
 
 Model notes:
 
 - `parent_id` is nullable and supports hierarchical work
-- tasks created while an active epic is selected can default to that epic as parent
-- notes and questions are lightweight task records rather than a separate subsystem
+- tasks are orphaned when `parent_id` is null
+- task creation accepts either a positional title or `-title`
+- `acceptance_criteria` is captured directly on the task record
+
+CLI creation defaults:
+
+- `task add`, `task create`, and `task new` are the same command
+- `task list` and `task ls` are the same command
+- if `-type` / `-t` is omitted, the type defaults to `task`
+- if `-priority` / `-p` is omitted, the priority defaults to `1`
+- if `-assignee` / `-a` is omitted, the assignee is blank
+- if `-description` / `-d` is omitted, the description is blank
+- if `-ac` is omitted, the acceptance criteria is blank
+- if `-parent` is omitted, the task is created without a parent
+- if `-project` is omitted, the active project is used
 
 ### History
 
@@ -126,29 +140,34 @@ Typical history events:
 - parent changed
 - comment added
 
-### Comment
-
-Comments provide discussion on work items.
-
-- `id`
-- `item_id`
-- `user_id`
-- `comment`
-- `created_at`
-
 ## Functional Scope
 
 ### Workspace Initialization
 
 The product must support local initialization of a SQLite database from the CLI.
 
-The first run should allow the operator to create an initial administrator account.
+The bootstrap command is `task initdb`.
+
+`task initdb` must:
+
+1. create the schema in a new SQLite database
+2. create an `admin` account
+3. create a default project
 
 Representative flow:
 
 ```bash
-task init -f filename.db -username admin -password password
+task initdb -f task.db --force -password secret
 ```
+
+Bootstrap defaults:
+
+- admin username is always `admin`
+- if `-f` is omitted, the SQLite database is created at `$TASK_HOME/task.db`
+- admin password comes from `-password` when supplied
+- if `-password` is omitted, the CLI generates a random password and prints it to stdout
+- if `--force` is supplied, any existing SQLite database file is overwritten
+- the default project is created automatically during initialization
 
 ### Server
 
@@ -163,7 +182,11 @@ Responsibilities:
 - support multi-user access
 - provide near-real-time refresh for connected clients
 
-The default local server should listen on `http://localhost:8000`.
+The default local server should listen on `http://localhost:8080`.
+
+If `task server` is run without `-f`, it must open the SQLite database at `$TASK_HOME/task.db`.
+
+If `task server` is run with `-v`, it must print verbose request and response details to stdout.
 
 ### Authentication And User Management
 
@@ -171,26 +194,68 @@ The first release must support:
 
 1. administrator bootstrap during initialization
 2. user creation by administrators
-3. enable and disable user accounts
-4. login and logout from CLI and web
-5. user identity inspection from the CLI
+3. user listing by administrators
+4. user deletion by administrators
+5. enable and disable user accounts
+6. login and logout from CLI and web
+7. user/session status inspection from the CLI
 
 Representative commands:
 
 ```bash
-task user create -username alice -password secret
-task user enable -username alice
-task user disable -username alice
-task user list
+task onboard
+task version
+task user create --username alice --password secret
+task user ls
+task user delete --username alice
+task user enable --username alice
+task user disable --username alice
 
 task register
 task login
-task whoami
 task status
 task logout
 ```
 
-The CLI may also read credentials from environment variables such as `TASK_USERNAME` and `TASK_PASSWORD`.
+`task onboard` must append the embedded `cmd/task/AGENTS.md` template into `${CWD}/AGENTS.md`, creating that file if it does not exist.
+
+`task status` must display both the server version and the client version and warn when they differ.
+
+`task count` must query the server and print aggregate counts for users and work item types. Without a project filter it must also print the project count. With `-project_id <id>` it must scope work item counts to that project.
+
+The CLI must resolve credentials from `-username` and `-password` first, then `TASK_USERNAME` and `TASK_PASSWORD`, and finally default to OS `whoami` and `password`.
+
+The CLI must resolve the server URL from `-url` first, then `TASK_URL`, then saved config, and finally default to `http://localhost:8080`.
+
+The CLI must expose `task version`, which prints the semantic version embedded into the binary at build time.
+
+`task initdb` is separate from the login and registration flows: it only creates `admin`, does not consume `TASK_USERNAME`, and does not read `TASK_PASSWORD`.
+
+Admin-only user-management requests must be rejected by the server when the caller is authenticated but not an admin. Those requests must return HTTP 403 with an error explaining that the user is not an admin.
+
+When `task` is run without arguments, the CLI should print a colored ASCII-art `TASK` banner above the main usage text.
+
+When `task server` starts, it should print the same colored ASCII-art `TASK` banner before the startup message.
+
+Below that banner, `task server` must print the embedded version and the resolved task database path.
+
+The CLI stores non-sensitive client defaults in `$TASK_HOME/config.json` and session credentials in `$TASK_HOME/credentials.json`.
+
+`task login` must:
+
+1. check `$TASK_HOME/credentials.json` first and reuse that session if it is still valid
+2. check the `username` in `$TASK_HOME/config.json`
+3. check `-username` and `-password`, then `TASK_USERNAME` and `TASK_PASSWORD`
+4. prompt for any missing values
+5. when prompting, use the discovered values as editable defaults
+6. print `invalid credentials` on an invalid-login response before prompting for a retry
+7. when prompting for a password in an interactive terminal, echo `*` characters instead of the raw password
+8. on success, write the session token to `$TASK_HOME/credentials.json`
+9. on success, update the `username` and `server_url` keys in `$TASK_HOME/config.json`
+
+`task register` must create the account but must not create or persist a logged-in session.
+
+`task logout` must remove `$TASK_HOME/credentials.json`.
 
 ### Project Management
 
@@ -206,10 +271,13 @@ Representative commands:
 ```bash
 task project create "Customer Portal"
 task project list
+task project ls
 task project use customer-portal
 task project get customer-portal
 task project
 ```
+
+All `task <command> create` commands must return to STDOUT the newly created ID, if they succeed.
 
 The selected project should be remembered locally by the CLI.
 
@@ -217,29 +285,26 @@ The selected project should be remembered locally by the CLI.
 
 Creating work should be low-friction.
 
-Users must be able to create:
-
-- tasks
-- bugs
-- notes
-- questions
-- epics
+Users must be able to create tasks, bugs, and epics.
 
 Representative commands:
 
 ```bash
 task add "Customers can reset their password."
-task note "Need audit history for password changes."
-task question "Should invited but inactive users be able to reset passwords?"
+task create "Customers can reset their password."
+task new "Customers can reset their password."
 task bug "Reset token fails after first use."
 task epic "Authentication"
-task create -type task "Add password reset audit event"
+task create -t task -p 1 -a alice -d "Add audit event" "Add password reset audit event"
 ```
 
 Behavior notes:
 
-- `task add` defaults to a normal task
-- creating an epic can make that epic the active parent context for subsequent child tasks
+- `task add`, `task create`, and `task new` are aliases
+- `task list` and `task ls` are aliases
+- `task list -n <limit>` applies a server-side limit, with `0` meaning no limit
+- task creation defaults are `type=task`, `priority=1`, blank assignee, blank description, blank parent, and current project
+- `-ac` stores acceptance criteria on the task
 - each item records project, creator, timestamps, status, and revision history
 
 ### Review And Search
@@ -251,20 +316,29 @@ Users must be able to:
 3. filter by status
 4. search across titles and descriptions
 5. inspect full item detail
+6. list orphaned items with no parent
 
 Representative commands:
 
 ```bash
 task list
+task ls
 task list --type bug
 task list --status open
 task search "password reset"
 task get 42
+task orphans
 ```
+
+The CLI should support `-json` on client-facing commands and pretty-print the response JSON.
+
+`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `ProjectID`, `Title`, `Assignee`, `Order`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Closed`, and `Acceptance Criteria`.
+
+`task list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
 ### Workflow And Status Management
 
-The system should support basic review and task progression through status changes.
+The system should support task progression through status changes.
 
 The exact status set may be configured later, but the first release should support a small default set suitable for list and board views, for example:
 
@@ -273,7 +347,26 @@ The exact status set may be configured later, but the first release should suppo
 - `blocked`
 - `done`
 
-The CLI and web app must both make status changes easy.
+The CLI and web app must both support easy status changes.
+
+Assignment workflows must support:
+
+- `task assign <id> <name>` for admins
+- `task unassign <id> <name>` for admins
+- `task dependency add <id> <dependency-id[,dependency-id...]>`
+- `task dependency remove <id> <dependency-id[,dependency-id...]>`
+- `task claim <id>` for the caller
+- `task unclaim <id>` for the caller
+- `task list -u <name>` / `task ls -u <name>` for assignee filtering
+
+Assignment rules:
+
+- the server must reject admin-only assignment calls made by non-admin users
+- `task assign` and `task unassign` must fail if the named target user does not exist
+- `task assign` and `task unassign` must fail if the named target user is disabled
+- `task claim` must fail if the task is already assigned to another user
+- `task unclaim` must fail if the caller is not the current assignee
+- a non-admin user must not be able to override another user assignment through the generic task update API
 
 ### Hierarchy
 
@@ -294,7 +387,8 @@ The first release must include:
 
 1. append-only history events for important changes
 2. comments attached to items
-3. item detail pages in the CLI and web app that surface both
+3. `task history <id>` in the CLI for event output
+4. item detail pages in the web app that surface history and comments
 
 Representative commands:
 
@@ -329,7 +423,7 @@ task search "password reset"
 task history 42
 ```
 
-The CLI should support long and short aliases where they improve usability, but the canonical commands should stay consistent.
+The CLI should support only the aliases that are part of the documented command surface.
 
 ## Web Application
 
@@ -351,7 +445,7 @@ The web UI should make these activities easy:
 - add and edit items
 - view hierarchy
 - manage status on a board
-- inspect history and discussion
+- inspect history and comments
 
 ## Persistence And Architecture
 
@@ -404,6 +498,8 @@ make test-go
 make test-playwright
 ```
 
+`make build` must increment the patch component of the semantic version stored in `VERSION` before running the Go build.
+
 Changes are not complete until the relevant automated checks pass.
 
 ## Success Criteria
@@ -413,6 +509,6 @@ The product is successful if a user can:
 1. initialize a local workspace and start the server
 2. create users and authenticate successfully
 3. create and switch projects quickly
-4. add tasks, bugs, notes, questions, and epics with minimal friction
+4. add tasks, bugs, and epics with minimal friction
 5. inspect work through list, search, detail, history, and comments
 6. manage work visually through the web interface
