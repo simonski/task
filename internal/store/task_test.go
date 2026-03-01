@@ -4,7 +4,7 @@ import "testing"
 
 func TestCreateUpdateAndListTasks(t *testing.T) {
 	db := testDB(t)
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
@@ -57,19 +57,19 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 		Title:       updated.Title,
 		Description: updated.Description,
 		ParentID:    updated.ParentID,
-		Status:      "in_progress",
+		Status:      "inprogress",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask(status) error = %v", err)
 	}
-	if statusUpdated.Status != "in_progress" {
-		t.Fatalf("UpdateTask().Status = %q, want in_progress", statusUpdated.Status)
+	if statusUpdated.Status != "inprogress" {
+		t.Fatalf("UpdateTask().Status = %q, want inprogress", statusUpdated.Status)
 	}
 
 	filtered, err := ListTasks(db, TaskListParams{
 		ProjectID: project.ID,
 		Type:      "task",
-		Status:    "in_progress",
+		Status:    "inprogress",
 		Search:    "password",
 	})
 	if err != nil {
@@ -99,9 +99,120 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	}
 }
 
+func TestRequestTask(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+
+	notReady, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Blocked setup",
+		Status:    "notready",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(notready) error = %v", err)
+	}
+	openTask, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Open task",
+		Status:    "open",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(open) error = %v", err)
+	}
+
+	assigned, status, err := RequestTask(db, TaskRequestParams{
+		ProjectID: project.ID,
+		Username:  "alice",
+		UserID:    2,
+	})
+	if err != nil {
+		t.Fatalf("RequestTask(any) error = %v", err)
+	}
+	if status != "ASSIGNED" || assigned.ID != openTask.ID {
+		t.Fatalf("RequestTask(any) = %#v, %q", assigned, status)
+	}
+
+	assignedAgain, status, err := RequestTask(db, TaskRequestParams{
+		ProjectID: project.ID,
+		Username:  "alice",
+		UserID:    2,
+	})
+	if err != nil {
+		t.Fatalf("RequestTask(existing open) error = %v", err)
+	}
+	if status != "ASSIGNED" || assignedAgain.ID != openTask.ID {
+		t.Fatalf("RequestTask(existing open) = %#v, %q", assignedAgain, status)
+	}
+
+	inProgress, err := UpdateTask(db, openTask.ID, TaskUpdateParams{
+		Title:         assigned.Title,
+		Description:   assigned.Description,
+		ParentID:      assigned.ParentID,
+		Assignee:      "alice",
+		Status:        "inprogress",
+		UpdatedBy:     2,
+		ActorUsername: "alice",
+		ActorRole:     "user",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask(inprogress) error = %v", err)
+	}
+
+	requested, status, err := RequestTask(db, TaskRequestParams{
+		ProjectID: project.ID,
+		TaskID:    &notReady.ID,
+		Username:  "alice",
+		UserID:    2,
+	})
+	if err != nil {
+		t.Fatalf("RequestTask(existing inprogress) error = %v", err)
+	}
+	if status != "ASSIGNED" || requested.ID != inProgress.ID {
+		t.Fatalf("RequestTask(existing inprogress) = %#v, %q", requested, status)
+	}
+
+	if _, err := CreateUser(db, "bob", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(bob) error = %v", err)
+	}
+	rejected, status, err := RequestTask(db, TaskRequestParams{
+		ProjectID: project.ID,
+		TaskID:    &notReady.ID,
+		Username:  "bob",
+		UserID:    3,
+	})
+	if err != nil {
+		t.Fatalf("RequestTask(rejected) error = %v", err)
+	}
+	if status != "REJECTED" || rejected.ID != 0 {
+		t.Fatalf("RequestTask(rejected) = %#v, %q", rejected, status)
+	}
+
+	noWork, status, err := RequestTask(db, TaskRequestParams{
+		ProjectID: project.ID,
+		Username:  "bob",
+		UserID:    3,
+	})
+	if err != nil {
+		t.Fatalf("RequestTask(no-work) error = %v", err)
+	}
+	if status != "NO-WORK" || noWork.ID != 0 {
+		t.Fatalf("RequestTask(no-work) = %#v, %q", noWork, status)
+	}
+}
+
 func TestUpdateTaskAssignmentRulesForNonAdmin(t *testing.T) {
 	db := testDB(t)
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
@@ -162,7 +273,7 @@ func TestUpdateTaskAssignmentRulesForNonAdmin(t *testing.T) {
 
 func TestUpdateTaskAssignRequiresExistingEnabledUser(t *testing.T) {
 	db := testDB(t)
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}

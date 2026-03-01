@@ -4,7 +4,7 @@ import "testing"
 
 func TestDependencies(t *testing.T) {
 	db := testDB(t)
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}

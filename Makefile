@@ -7,7 +7,7 @@ default: help
 help:
 	@printf "Available targets:\n\n"
 	@printf "  make build           Build the task binary into ./bin.\n"
-	@printf "                      Also increments the patch version in ./VERSION.\n"
+	@printf "                       Also increments the patch version in ./VERSION.\n"
 	@printf "  make tools           Build helper binaries in the repo root.\n"
 	@printf "  make test            Run all tests.\n"
 	@printf "  make test-go         Run Go tests.\n"
@@ -18,10 +18,16 @@ help:
 build:
 	@$(MAKE) bump-version
 	@mkdir -p bin
-	go build -o task ./cmd/task
+	go build -o ./bin/task ./cmd/task
 
 tools:
-	go build -o ./parser ./tools/parser.go
+	@mkdir -p bin
+	@set -e; \
+	for tool in $$(find tools -mindepth 2 -maxdepth 2 -type f -name '*.go' ! -name '*_test.go' | sort); do \
+		name=$$(basename $$(dirname $$tool)); \
+		printf "Building %s -> bin/%s\n" "$$tool" "$$name"; \
+		go build -o "bin/$$name" "$$tool"; \
+	done
 
 bump-version:
 	@if [ ! -f "$(VERSION_FILE)" ]; then \

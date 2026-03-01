@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,8 +35,15 @@ type StatusResponse struct {
 type CountSummary = store.CountSummary
 
 type ProjectCreateRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	AcceptanceCriteria string `json:"acceptance_criteria"`
+}
+
+type ProjectUpdateRequest struct {
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	AcceptanceCriteria string `json:"acceptance_criteria"`
 }
 
 type TaskCreateRequest struct {
@@ -65,6 +73,16 @@ type DependencyRequest struct {
 	ProjectID int64 `json:"project_id"`
 	TaskID    int64 `json:"task_id"`
 	DependsOn int64 `json:"depends_on"`
+}
+
+type TaskRequest struct {
+	ProjectID int64  `json:"project_id,omitempty"`
+	TaskID    *int64 `json:"task_id,omitempty"`
+}
+
+type TaskRequestResponse struct {
+	Status string      `json:"status"`
+	Task   *store.Task `json:"task,omitempty"`
 }
 
 func New(cfg config.Config) *Client {
@@ -140,11 +158,12 @@ func (c *Client) DeleteUser(username string) error {
 	return c.doJSON(http.MethodDelete, "/api/users/"+username, nil, nil)
 }
 
-func (c *Client) CreateProject(title, description string) (store.Project, error) {
+func (c *Client) CreateProject(title, description, acceptanceCriteria string) (store.Project, error) {
 	var project store.Project
 	err := c.doJSON(http.MethodPost, "/api/projects", ProjectCreateRequest{
-		Title:       title,
-		Description: description,
+		Title:              title,
+		Description:        description,
+		AcceptanceCriteria: acceptanceCriteria,
 	}, &project)
 	return project, err
 }
@@ -155,9 +174,25 @@ func (c *Client) ListProjects() ([]store.Project, error) {
 	return projects, err
 }
 
-func (c *Client) GetProject(slugOrID string) (store.Project, error) {
+func (c *Client) GetProject(id string) (store.Project, error) {
 	var project store.Project
-	err := c.doJSON(http.MethodGet, "/api/projects/"+slugOrID, nil, &project)
+	err := c.doJSON(http.MethodGet, "/api/projects/"+id, nil, &project)
+	return project, err
+}
+
+func (c *Client) UpdateProject(id int64, req ProjectUpdateRequest) (store.Project, error) {
+	var project store.Project
+	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/projects/%d", id), req, &project)
+	return project, err
+}
+
+func (c *Client) SetProjectEnabled(id int64, enabled bool) (store.Project, error) {
+	action := "disable"
+	if enabled {
+		action = "enable"
+	}
+	var project store.Project
+	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/projects/%d/%s", id, action), nil, &project)
 	return project, err
 }
 
@@ -241,6 +276,50 @@ func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
 	var dependencies []store.Dependency
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/dependencies", id), nil, &dependencies)
 	return dependencies, err
+}
+
+func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
+	var reader *bytes.Reader
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return TaskRequestResponse{}, err
+	}
+	reader = bytes.NewReader(payload)
+
+	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/tasks/request", reader)
+	if err != nil {
+		return TaskRequestResponse{}, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return TaskRequestResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var apiErr struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err == nil && apiErr.Error != "" {
+			return TaskRequestResponse{}, errors.New(apiErr.Error)
+		}
+		return TaskRequestResponse{}, fmt.Errorf("request failed with status %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return TaskRequestResponse{}, err
+	}
+	var response TaskRequestResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return TaskRequestResponse{}, err
+	}
+	return response, nil
 }
 
 func (c *Client) doJSON(method, path string, body any, out any) error {

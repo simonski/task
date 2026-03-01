@@ -5,11 +5,11 @@ import "testing"
 func TestCountEverything(t *testing.T) {
 	db := testDB(t)
 
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
-	otherProject, err := CreateProject(db, "Internal Tools", "", 1)
+	otherProject, err := CreateProject(db, "Internal Tools", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() other error = %v", err)
 	}
@@ -27,25 +27,25 @@ func TestCountEverything(t *testing.T) {
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Task B",
-		Status:    "done",
+		Status:    "complete",
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(task done) error = %v", err)
+		t.Fatalf("CreateTask(task complete) error = %v", err)
 	}
 	if _, err := CreateTask(db, TaskCreateParams{
 		ProjectID: project.ID,
 		Type:      "epic",
 		Title:     "Epic A",
-		Status:    "done",
+		Status:    "complete",
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(epic done) error = %v", err)
+		t.Fatalf("CreateTask(epic complete) error = %v", err)
 	}
 	if _, err := CreateTask(db, TaskCreateParams{
 		ProjectID: otherProject.ID,
 		Type:      "bug",
 		Title:     "Bug A",
-		Status:    "in_progress",
+		Status:    "inprogress",
 		CreatedBy: 1,
 	}); err != nil {
 		t.Fatalf("CreateTask(bug in progress) error = %v", err)
@@ -78,7 +78,7 @@ func TestCountEverything(t *testing.T) {
 	if projectOnly.Types[0].Type != "task" || projectOnly.Types[0].Total != 2 {
 		t.Fatalf("CountEverything(project).Types[0] = %#v", projectOnly.Types[0])
 	}
-	if projectOnly.Types[0].Statuses["done"] != 1 || projectOnly.Types[0].Statuses["open"] != 1 {
+	if projectOnly.Types[0].Statuses["complete"] != 1 || projectOnly.Types[0].Statuses["open"] != 1 {
 		t.Fatalf("CountEverything(project).Types[0].Statuses = %#v", projectOnly.Types[0].Statuses)
 	}
 }

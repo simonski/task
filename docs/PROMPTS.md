@@ -172,3 +172,53 @@ note, the comma-separated ability for the tasks.
 
 Ensure the CLI usage is up to date.
 Update the code, DESIGN and USER_GUIDE for the above.  
+
+
+
+remove slug from projects everywhere, cli, model, database.   
+
+to add acceptance criteria
+task project N update -ac "the acceptance criteria"
+
+to update title or description
+task project N update -title "the new title"
+task project N update -description "the new description"
+
+to add acceptance criteria
+task project N update -ac "the acceptance criteria"
+
+also make it an option when creating projects
+
+## project status
+task project N enable
+task project N disable
+
+
+
+
+## New instruction req
+
+`task req -f file1,file2,file3 -o requirements.md` should read all files mentioned in -f and write to the -o filename the results of the prompt to an agent.  The agent should be prompted via a process invocation that receives the entire prompt.  
+
+The agent should default to codex however can be overridden using `-agent` in which case e.g. a call to copilot coudl occurr using `copilot -p PROMPT`
+
+PROMPT:
+-------
+
+Write an example breakdown of implementation requirements as OUTPUT_FILE in the format:
+
+EPIC: title
+ID: E1, E2, E3 etc
+DESCRIPTION: description
+AC: list of acceptance criteria
+PRIORITY: 1-N (1 highest, do this first)
+DEPENDS-ON: E2, E4
+
+<indent for stories "in" the epic (the story ID should increment and be EPIC-STORY)>
+    STORY: title
+    ID: E1-S1, E1-2, E1-S3 etc.
+    DESCRIPTION: description
+    AC: list of acceptance criteria
+    PRIORITY: 1-N (1 highest, do this first)
+    DEPENDS-ON: E1-S2
+----

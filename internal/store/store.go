@@ -78,7 +78,7 @@ func Init(path, adminUsername, adminPassword string) error {
 		return err
 	}
 
-	if _, err := CreateProject(db, "Default Project", "Bootstrap project created during initdb.", 1); err != nil {
+	if _, err := CreateProject(db, "Default Project", "Bootstrap project created during initdb.", "", 1); err != nil {
 		return err
 	}
 	return nil
@@ -107,9 +107,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS projects (
 	project_id INTEGER PRIMARY KEY AUTOINCREMENT,
-	slug TEXT NOT NULL UNIQUE,
 	title TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
+	acceptance_criteria TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'active',
 	created_by INTEGER,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

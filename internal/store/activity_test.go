@@ -4,7 +4,7 @@ import "testing"
 
 func TestHistoryAndComments(t *testing.T) {
 	db := testDB(t)
-	project, err := CreateProject(db, "Customer Portal", "", 1)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
@@ -30,7 +30,7 @@ func TestHistoryAndComments(t *testing.T) {
 		Title:       task.Title,
 		Description: "Updated description",
 		ParentID:    task.ParentID,
-		Status:      "in_progress",
+		Status:      "inprogress",
 		UpdatedBy:   1,
 	})
 	if err != nil {

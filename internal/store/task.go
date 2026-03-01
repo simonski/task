@@ -60,13 +60,18 @@ type TaskListParams struct {
 }
 
 var validStatuses = map[string]bool{
-	"open":        true,
-	"in_progress": true,
-	"blocked":     true,
-	"done":        true,
-	"proposed":    true,
-	"accepted":    true,
-	"rejected":    true,
+	"notready":   true,
+	"open":       true,
+	"inprogress": true,
+	"complete":   true,
+	"fail":       true,
+}
+
+type TaskRequestParams struct {
+	ProjectID int64
+	TaskID    *int64
+	Username  string
+	UserID    int64
 }
 
 func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
@@ -324,6 +329,14 @@ func normalizeStatus(status string) string {
 	if status == "" {
 		return "open"
 	}
+	switch status {
+	case "ready":
+		return "open"
+	case "in_progress":
+		return "inprogress"
+	case "done":
+		return "complete"
+	}
 	return status
 }
 
@@ -389,4 +402,119 @@ func validateTaskAssignmentChange(currentAssignee, nextAssignee, actorUsername, 
 		return nil
 	}
 	return ErrAdminRequired
+}
+
+func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
+	username := strings.TrimSpace(params.Username)
+	if username == "" {
+		return Task{}, "", errors.New("username is required")
+	}
+
+	if task, ok, err := findAssignedTaskForUser(db, params.ProjectID, username, "inprogress"); err != nil {
+		return Task{}, "", err
+	} else if ok {
+		return task, "ASSIGNED", nil
+	}
+	if task, ok, err := findAssignedTaskForUser(db, params.ProjectID, username, "open"); err != nil {
+		return Task{}, "", err
+	} else if ok {
+		return task, "ASSIGNED", nil
+	}
+
+	if params.TaskID != nil {
+		task, err := GetTask(db, *params.TaskID)
+		if err != nil {
+			return Task{}, "", err
+		}
+		if params.ProjectID != 0 && task.ProjectID != params.ProjectID {
+			return Task{}, "REJECTED", nil
+		}
+		if strings.TrimSpace(task.Assignee) == username {
+			return task, "ASSIGNED", nil
+		}
+		if strings.TrimSpace(task.Assignee) != "" {
+			return Task{}, "REJECTED", nil
+		}
+		if task.Status != "open" {
+			return Task{}, "REJECTED", nil
+		}
+		assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
+			Title:         task.Title,
+			Description:   task.Description,
+			ParentID:      task.ParentID,
+			Assignee:      username,
+			Status:        task.Status,
+			UpdatedBy:     params.UserID,
+			ActorUsername: username,
+			ActorRole:     "user",
+		})
+		if err != nil {
+			return Task{}, "", err
+		}
+		return assigned, "ASSIGNED", nil
+	}
+
+	task, ok, err := findUnassignedOpenTask(db, params.ProjectID)
+	if err != nil {
+		return Task{}, "", err
+	}
+	if !ok {
+		return Task{}, "NO-WORK", nil
+	}
+	assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
+		Title:         task.Title,
+		Description:   task.Description,
+		ParentID:      task.ParentID,
+		Assignee:      username,
+		Status:        task.Status,
+		UpdatedBy:     params.UserID,
+		ActorUsername: username,
+		ActorRole:     "user",
+	})
+	if err != nil {
+		return Task{}, "", err
+	}
+	return assigned, "ASSIGNED", nil
+}
+
+func findAssignedTaskForUser(db *sql.DB, projectID int64, username, status string) (Task, bool, error) {
+	query := `
+		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		FROM tasks
+		WHERE assignee = ? AND status = ?
+	`
+	args := []any{username, status}
+	if projectID != 0 {
+		query += ` AND project_id = ?`
+		args = append(args, projectID)
+	}
+	query += ` ORDER BY created_at, task_id LIMIT 1`
+	task, err := scanTask(db.QueryRow(query, args...))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Task{}, false, nil
+		}
+		return Task{}, false, err
+	}
+	return task, true, nil
+}
+
+func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
+	if projectID == 0 {
+		return Task{}, false, errors.New("project is required")
+	}
+	task, err := scanTask(db.QueryRow(`
+		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		FROM tasks
+		WHERE project_id = ? AND status = 'open' AND TRIM(COALESCE(assignee, '')) = ''
+		ORDER BY created_at, task_id
+		LIMIT 1
+	`, projectID))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Task{}, false, nil
+		}
+		return Task{}, false, err
+	}
+	return task, true, nil
 }

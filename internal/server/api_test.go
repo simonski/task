@@ -149,13 +149,27 @@ func TestProjectAPI(t *testing.T) {
 	}
 	var projects []store.Project
 	decodeResponse(t, listResp, &projects)
-	if len(projects) != 2 || projects[1].Slug != "customer-portal" {
+	if len(projects) != 2 || projects[1].Title != "Customer Portal" {
 		t.Fatalf("projects = %#v", projects)
 	}
 
-	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/customer-portal", nil, auth.Token)
+	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(projects[1].ID, 10), nil, auth.Token)
 	if getResp.Code != http.StatusOK {
 		t.Fatalf("get project status = %d, want %d", getResp.Code, http.StatusOK)
+	}
+
+	updateResp := doJSONRequest(t, handler, http.MethodPut, "/api/projects/"+strconv.FormatInt(projects[1].ID, 10), map[string]string{
+		"title":               "Customer Portal 2",
+		"description":         "Updated",
+		"acceptance_criteria": "AC",
+	}, auth.Token)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update project status = %d, want %d body=%s", updateResp.Code, http.StatusOK, updateResp.Body.String())
+	}
+
+	disableResp := doJSONRequest(t, handler, http.MethodPost, "/api/projects/"+strconv.FormatInt(projects[1].ID, 10)+"/disable", nil, auth.Token)
+	if disableResp.Code != http.StatusOK {
+		t.Fatalf("disable project status = %d, want %d body=%s", disableResp.Code, http.StatusOK, disableResp.Body.String())
 	}
 }
 
@@ -225,7 +239,7 @@ func TestTaskAPI(t *testing.T) {
 		"title":       "Add password reset flow",
 		"description": "Email reset support",
 		"parent_id":   epic.ID,
-		"status":      "in_progress",
+		"status":      "inprogress",
 	}, auth.Token)
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("update task status = %d body=%s", updateResp.Code, updateResp.Body.String())
@@ -237,11 +251,11 @@ func TestTaskAPI(t *testing.T) {
 	}
 	var updated store.Task
 	decodeResponse(t, getResp, &updated)
-	if updated.Status != "in_progress" {
-		t.Fatalf("updated status = %q, want in_progress", updated.Status)
+	if updated.Status != "inprogress" {
+		t.Fatalf("updated status = %q, want inprogress", updated.Status)
 	}
 
-	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?type=task&status=in_progress&q=password", nil, auth.Token)
+	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?type=task&status=inprogress&q=password", nil, auth.Token)
 	if filteredResp.Code != http.StatusOK {
 		t.Fatalf("filtered list status = %d body=%s", filteredResp.Code, filteredResp.Body.String())
 	}
@@ -456,6 +470,142 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 	decodeResponse(t, disabledAssignResp, &disabledAssignPayload)
 	if disabledAssignPayload["error"] != "user is disabled" {
 		t.Fatalf("disabled assign payload = %#v", disabledAssignPayload)
+	}
+}
+
+func TestTaskRequestAPI(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	adminLogin := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	var adminAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, adminLogin, &adminAuth)
+
+	userResp := doJSONRequest(t, handler, http.MethodPost, "/api/users", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, adminAuth.Token)
+	if userResp.Code != http.StatusCreated {
+		t.Fatalf("create alice status = %d body=%s", userResp.Code, userResp.Body.String())
+	}
+	aliceLogin := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, "")
+	var aliceAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, aliceLogin, &aliceAuth)
+
+	projectResp := doJSONRequest(t, handler, http.MethodPost, "/api/projects", map[string]string{
+		"title": "Customer Portal",
+	}, adminAuth.Token)
+	var project store.Project
+	decodeResponse(t, projectResp, &project)
+
+	notReadyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": project.ID,
+		"type":       "task",
+		"title":      "Not ready task",
+		"status":     "notready",
+	}, adminAuth.Token)
+	var notReady store.Task
+	decodeResponse(t, notReadyResp, &notReady)
+
+	openResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": project.ID,
+		"type":       "task",
+		"title":      "Open task",
+		"status":     "open",
+	}, adminAuth.Token)
+	var openTask store.Task
+	decodeResponse(t, openResp, &openTask)
+
+	requestAnyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+		"project_id": project.ID,
+	}, aliceAuth.Token)
+	if requestAnyResp.Code != http.StatusOK {
+		t.Fatalf("request any status = %d body=%s", requestAnyResp.Code, requestAnyResp.Body.String())
+	}
+	var requestAnyPayload struct {
+		Status string     `json:"status"`
+		Task   store.Task `json:"task"`
+	}
+	decodeResponse(t, requestAnyResp, &requestAnyPayload)
+	if requestAnyPayload.Status != "ASSIGNED" || requestAnyPayload.Task.ID != openTask.ID || requestAnyPayload.Task.Assignee != "alice" {
+		t.Fatalf("request any payload = %#v", requestAnyPayload)
+	}
+
+	requestSpecificResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+		"project_id": project.ID,
+		"task_id":    notReady.ID,
+	}, aliceAuth.Token)
+	if requestSpecificResp.Code != http.StatusOK {
+		t.Fatalf("request specific status = %d body=%s", requestSpecificResp.Code, requestSpecificResp.Body.String())
+	}
+	var requestSpecificPayload struct {
+		Status string     `json:"status"`
+		Task   store.Task `json:"task"`
+	}
+	decodeResponse(t, requestSpecificResp, &requestSpecificPayload)
+	if requestSpecificPayload.Status != "ASSIGNED" || requestSpecificPayload.Task.ID != openTask.ID {
+		t.Fatalf("request specific payload = %#v", requestSpecificPayload)
+	}
+
+	adminClaimedResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(openTask.ID, 10), map[string]any{
+		"title":       openTask.Title,
+		"description": openTask.Description,
+		"assignee":    "alice",
+		"status":      "inprogress",
+	}, adminAuth.Token)
+	if adminClaimedResp.Code != http.StatusOK {
+		t.Fatalf("set inprogress status = %d body=%s", adminClaimedResp.Code, adminClaimedResp.Body.String())
+	}
+
+	userResp = doJSONRequest(t, handler, http.MethodPost, "/api/users", map[string]string{
+		"username": "bob",
+		"password": "password123",
+	}, adminAuth.Token)
+	if userResp.Code != http.StatusCreated {
+		t.Fatalf("create bob status = %d body=%s", userResp.Code, userResp.Body.String())
+	}
+	bobLogin := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "bob",
+		"password": "password123",
+	}, "")
+	var bobAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, bobLogin, &bobAuth)
+
+	rejectedResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+		"project_id": project.ID,
+		"task_id":    notReady.ID,
+	}, bobAuth.Token)
+	if rejectedResp.Code != http.StatusOK {
+		t.Fatalf("request rejected status = %d body=%s", rejectedResp.Code, rejectedResp.Body.String())
+	}
+	var rejectedPayload map[string]string
+	decodeResponse(t, rejectedResp, &rejectedPayload)
+	if rejectedPayload["status"] != "REJECTED" {
+		t.Fatalf("request rejected payload = %#v", rejectedPayload)
+	}
+
+	noWorkResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+		"project_id": project.ID,
+	}, bobAuth.Token)
+	if noWorkResp.Code != http.StatusOK {
+		t.Fatalf("request no-work status = %d body=%s", noWorkResp.Code, noWorkResp.Body.String())
+	}
+	var noWorkPayload map[string]string
+	decodeResponse(t, noWorkResp, &noWorkPayload)
+	if noWorkPayload["status"] != "NO-WORK" {
+		t.Fatalf("request no-work payload = %#v", noWorkPayload)
 	}
 }
 

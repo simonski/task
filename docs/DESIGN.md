@@ -269,13 +269,20 @@ Users must be able to:
 Representative commands:
 
 ```bash
-task project create "Customer Portal"
+task project create -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
 task project list
 task project ls
-task project use customer-portal
-task project get customer-portal
+task project use 2
+task project get 2
 task project
+task project 2 update -title "Customer Portal"
+task project 2 update -description "Portal backlog"
+task project 2 update -ac "Launch criteria"
+task project 2 enable
+task project 2 disable
 ```
+
+`task project list` should show at least the project id, title, and status, and indicate which project is current in the local CLI context.
 
 All `task <command> create` commands must return to STDOUT the newly created ID, if they succeed.
 
@@ -332,7 +339,7 @@ task orphans
 
 The CLI should support `-json` on client-facing commands and pretty-print the response JSON.
 
-`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `ProjectID`, `Title`, `Assignee`, `Order`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Closed`, and `Acceptance Criteria`.
+`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `ProjectID`, `Title`, `Assignee`, `Order`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, and `Acceptance Criteria`.
 
 `task list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
@@ -340,12 +347,13 @@ The CLI should support `-json` on client-facing commands and pretty-print the re
 
 The system should support task progression through status changes.
 
-The exact status set may be configured later, but the first release should support a small default set suitable for list and board views, for example:
+The first release supports this default status set:
 
+- `notready`
 - `open`
-- `in_progress`
-- `blocked`
-- `done`
+- `inprogress`
+- `complete`
+- `fail`
 
 The CLI and web app must both support easy status changes.
 
@@ -355,15 +363,28 @@ Assignment workflows must support:
 - `task unassign <id> <name>` for admins
 - `task dependency add <id> <dependency-id[,dependency-id...]>`
 - `task dependency remove <id> <dependency-id[,dependency-id...]>`
+- `task request [<id>]` for the caller
 - `task claim <id>` for the caller
 - `task unclaim <id>` for the caller
 - `task list -u <name>` / `task ls -u <name>` for assignee filtering
+- `task open <id>`
+- `task ready <id>` as an alias for `task open <id>`
+- `task inprogress <id>`
+- `task complete <id>`
+- `task fail <id>`
+- `task update <id> -status <status>`
 
 Assignment rules:
 
 - the server must reject admin-only assignment calls made by non-admin users
 - `task assign` and `task unassign` must fail if the named target user does not exist
 - `task assign` and `task unassign` must fail if the named target user is disabled
+- `task request <id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
+- `task request` must return `{"status":"NO-WORK"}` when no assignable work exists
+- successful request responses must return `{"status":"ASSIGNED","task":...}`
+- if the caller already has an assigned `inprogress` task, that task is returned
+- otherwise, if the caller has assigned `open` work, the oldest assigned `open` task is returned
+- otherwise, `task request` assigns the oldest unassigned `open` task in the active project
 - `task claim` must fail if the task is already assigned to another user
 - `task unclaim` must fail if the caller is not the current assignee
 - a non-admin user must not be able to override another user assignment through the generic task update API
@@ -412,7 +433,7 @@ Representative command set:
 
 ```bash
 task project create "Customer Portal"
-task project use customer-portal
+task project use 2
 
 task epic "Authentication"
 task add "Customers can reset their password."
@@ -512,3 +533,40 @@ The product is successful if a user can:
 4. add tasks, bugs, and epics with minimal friction
 5. inspect work through list, search, detail, history, and comments
 6. manage work visually through the web interface
+
+
+## Task Status
+
+The status of a task is either
+    notready
+    open
+    inprogress
+    complete
+    fail
+
+This is set using 
+    `task open N`
+    `task ready N`
+    `task inprogress N`
+    `task complete N`
+    `task fail N`
+or
+    `task update N -status <status>`
+
+## Requesting Tasks
+
+A user can makes a request to work on a specific task
+
+    `task request N`
+
+It is either assigned the task it requested, or it is rejected. If assigned, the task is updated to have this user name and the response is `{"status":"ASSIGNED","task":...}`. If not, the response is `{"status":"REJECTED"}`.
+
+Or a user may request ANY task
+
+    task request
+
+It is either assigned a task, or no work is available. If assigned, the task is updated to have this user name and the response is `{"status":"ASSIGNED","task":...}`. If not, the response is `{"status":"NO-WORK"}`.
+
+If the user has already been assigned a task, the task that is inprogress is returned. If the user has been assigned a task that is ready, then the oldest task that is assigned is then returned.
+
+    

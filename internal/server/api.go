@@ -252,7 +252,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			project, err := store.CreateProject(db, req.Title, req.Description, user.ID)
+			project, err := store.CreateProject(db, req.Title, req.Description, req.AcceptanceCriteria, user.ID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -304,20 +304,83 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 
-		if r.Method != http.MethodGet || len(parts) != 1 {
+		if len(parts) == 2 && r.Method == http.MethodPost {
+			if _, err := requireAdmin(db, r); err != nil {
+				writeAuthError(w, err)
+				return
+			}
+			var id int64
+			if _, err := fmt.Sscan(parts[0], &id); err != nil {
+				writeError(w, http.StatusNotFound, "project not found")
+				return
+			}
+			var enabled bool
+			switch parts[1] {
+			case "enable":
+				enabled = true
+			case "disable":
+				enabled = false
+			default:
+				writeError(w, http.StatusNotFound, "not found")
+				return
+			}
+			project, err := store.SetProjectStatus(db, id, enabled)
+			if err != nil {
+				if errors.Is(err, store.ErrProjectNotFound) {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, project)
+			return
+		}
+
+		if len(parts) != 1 {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		project, err := store.GetProject(db, parts[0])
-		if err != nil {
-			if errors.Is(err, store.ErrProjectNotFound) {
-				writeError(w, http.StatusNotFound, err.Error())
+		switch r.Method {
+		case http.MethodGet:
+			project, err := store.GetProject(db, parts[0])
+			if err != nil {
+				if errors.Is(err, store.ErrProjectNotFound) {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+			writeJSON(w, http.StatusOK, project)
+		case http.MethodPut:
+			if _, err := requireAdmin(db, r); err != nil {
+				writeAuthError(w, err)
+				return
+			}
+			var id int64
+			if _, err := fmt.Sscan(parts[0], &id); err != nil {
+				writeError(w, http.StatusNotFound, "project not found")
+				return
+			}
+			var req projectRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				writeError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
+			project, err := store.UpdateProject(db, id, req.Title, req.Description, req.AcceptanceCriteria)
+			if err != nil {
+				if errors.Is(err, store.ErrProjectNotFound) {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, project)
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
-		writeJSON(w, http.StatusOK, project)
 	})
 
 	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
@@ -352,6 +415,42 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, task)
+	})
+
+	mux.HandleFunc("/api/tasks/request", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+		user, err := requireUser(db, r)
+		if err != nil {
+			writeAuthError(w, err)
+			return
+		}
+		var req taskAssignRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		task, status, err := store.RequestTask(db, store.TaskRequestParams{
+			ProjectID: req.ProjectID,
+			TaskID:    req.TaskID,
+			Username:  user.Username,
+			UserID:    user.ID,
+		})
+		if err != nil {
+			if errors.Is(err, store.ErrTaskNotFound) {
+				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		payload := map[string]any{"status": status}
+		if status == "ASSIGNED" {
+			payload["task"] = task
+		}
+		writeJSON(w, http.StatusOK, payload)
 	})
 
 	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
@@ -522,8 +621,9 @@ type credentialsRequest struct {
 }
 
 type projectRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	AcceptanceCriteria string `json:"acceptance_criteria"`
 }
 
 type taskRequest struct {
@@ -546,6 +646,11 @@ type dependencyRequest struct {
 	ProjectID int64 `json:"project_id"`
 	TaskID    int64 `json:"task_id"`
 	DependsOn int64 `json:"depends_on"`
+}
+
+type taskAssignRequest struct {
+	ProjectID int64  `json:"project_id"`
+	TaskID    *int64 `json:"task_id"`
 }
 
 type authResponse struct {

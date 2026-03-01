@@ -4,6 +4,7 @@
 
 ```bash
 make build
+make tools
 ```
 
 > Note: if you run `make reset` and you use `VSCode` I advise you to restart VSCode as the tasks daemon is a bit flaky.

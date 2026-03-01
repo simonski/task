@@ -36,7 +36,7 @@ func TestSaveLoadAndResolveServerURL(t *testing.T) {
 		t.Fatalf("Load().Token = %q, want empty because credentials are stored separately", got.Token)
 	}
 
-	got.CurrentProject = "customer-portal"
+	got.CurrentProject = "2"
 	if err := Save(got); err != nil {
 		t.Fatalf("Save(updated) error = %v", err)
 	}
@@ -44,8 +44,8 @@ func TestSaveLoadAndResolveServerURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(reloaded) error = %v", err)
 	}
-	if reloaded.CurrentProject != "customer-portal" {
-		t.Fatalf("Load().CurrentProject = %q, want customer-portal", reloaded.CurrentProject)
+	if reloaded.CurrentProject != "2" {
+		t.Fatalf("Load().CurrentProject = %q, want 2", reloaded.CurrentProject)
 	}
 
 	t.Setenv("TASK_URL", "http://env.test:7000")

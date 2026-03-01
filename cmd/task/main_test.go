@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -51,20 +52,28 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 		"  add",
 		"  claim",
 		"  comment",
+		"  complete",
 		"  count",
 		"  dependency",
+		"  fail",
 		"  get",
 		"  help",
+		"  inprogress",
 		"  list",
 		"  login",
 		"  logout",
 		"  onboard",
+		"  open",
 		"  orphans",
 		"  project",
+		"  ready",
+		"  req",
 		"  register",
+		"  request",
 		"  search",
 		"  status",
 		"  unclaim",
+		"  update",
 		"  version",
 	}
 	last := -1
@@ -190,6 +199,124 @@ func TestRenderUserHelpIncludesAdmin403Message(t *testing.T) {
 		if !strings.Contains(help, want) {
 			t.Fatalf("user help missing %q:\n%s", want, help)
 		}
+	}
+}
+
+func TestHasCommandHelpSupportsAliases(t *testing.T) {
+	for _, command := range []string{"dependency", "show", "create", "new", "ls", "orphans"} {
+		if !hasCommandHelp(command) {
+			t.Fatalf("hasCommandHelp(%q) = false, want true", command)
+		}
+	}
+}
+
+func TestHasCommandHelpRejectsInvalidCommand(t *testing.T) {
+	for _, command := range []string{"orhphans", "invalid"} {
+		if hasCommandHelp(command) {
+			t.Fatalf("hasCommandHelp(%q) = true, want false", command)
+		}
+	}
+}
+
+func TestRunHelpRejectsInvalidCommand(t *testing.T) {
+	if err := runHelp([]string{"orhphans"}); err == nil || err.Error() != `no such command "orhphans"` {
+		t.Fatalf("runHelp(invalid) error = %v", err)
+	}
+}
+
+func TestSplitCSV(t *testing.T) {
+	got := splitCSV("a,b, c ,,d")
+	want := []string{"a", "b", "c", "d"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("splitCSV() = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildReqPromptIncludesFilesAndOutputName(t *testing.T) {
+	tempDir := t.TempDir()
+	file1 := filepath.Join(tempDir, "one.txt")
+	file2 := filepath.Join(tempDir, "two.txt")
+	if err := os.WriteFile(file1, []byte("alpha"), 0o644); err != nil {
+		t.Fatalf("WriteFile(file1) error = %v", err)
+	}
+	if err := os.WriteFile(file2, []byte("beta\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(file2) error = %v", err)
+	}
+
+	prompt, err := buildReqPrompt([]string{file1, file2}, "requirements.md")
+	if err != nil {
+		t.Fatalf("buildReqPrompt() error = %v", err)
+	}
+	for _, want := range []string{"requirements.md", "FILE: " + file1, "alpha", "FILE: " + file2, "beta"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("buildReqPrompt() missing %q:\n%s", want, prompt)
+		}
+	}
+}
+
+func TestRunReqUsesCodexByDefaultAndWritesOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	input := filepath.Join(tempDir, "input.txt")
+	output := filepath.Join(tempDir, "requirements.md")
+	if err := os.WriteFile(input, []byte("source"), 0o644); err != nil {
+		t.Fatalf("WriteFile(input) error = %v", err)
+	}
+
+	original := runAgentCommand
+	defer func() { runAgentCommand = original }()
+
+	var gotAgent, gotPrompt string
+	runAgentCommand = func(agent, prompt string) (string, error) {
+		gotAgent = agent
+		gotPrompt = prompt
+		return "generated requirements", nil
+	}
+
+	stdout := captureStdout(t, func() {
+		if err := runReq([]string{"-f", input, "-o", output}); err != nil {
+			t.Fatalf("runReq() error = %v", err)
+		}
+	})
+	if gotAgent != "codex" {
+		t.Fatalf("runReq() agent = %q, want codex", gotAgent)
+	}
+	if !strings.Contains(gotPrompt, "source") || !strings.Contains(gotPrompt, "requirements.md") {
+		t.Fatalf("runReq() prompt = %q", gotPrompt)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("ReadFile(output) error = %v", err)
+	}
+	if string(data) != "generated requirements" {
+		t.Fatalf("output file = %q", string(data))
+	}
+	if !strings.Contains(stdout, "generated requirements") {
+		t.Fatalf("stdout = %q, want generated requirements", stdout)
+	}
+}
+
+func TestRunReqUsesConfiguredAgent(t *testing.T) {
+	tempDir := t.TempDir()
+	input := filepath.Join(tempDir, "input.txt")
+	output := filepath.Join(tempDir, "requirements.md")
+	if err := os.WriteFile(input, []byte("source"), 0o644); err != nil {
+		t.Fatalf("WriteFile(input) error = %v", err)
+	}
+
+	original := runAgentCommand
+	defer func() { runAgentCommand = original }()
+
+	var gotAgent string
+	runAgentCommand = func(agent, prompt string) (string, error) {
+		gotAgent = agent
+		return "ok", nil
+	}
+
+	if err := runReq([]string{"-f", input, "-o", output, "-agent", "copilot"}); err != nil {
+		t.Fatalf("runReq(agent override) error = %v", err)
+	}
+	if gotAgent != "copilot" {
+		t.Fatalf("runReq(agent override) agent = %q, want copilot", gotAgent)
 	}
 }
 
@@ -489,7 +616,6 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 		"Priority     : 1",
 		"Created      : 2026-03-01 12:00:00",
 		"LastModified : 2026-03-02 09:30:00",
-		"Closed       : ",
 		"Acceptance Criteria : - does the thing",
 	} {
 		if !strings.Contains(output, want) {

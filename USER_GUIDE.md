@@ -187,7 +187,7 @@ Most teams use `task` in this order:
 Create a project:
 
 ```bash
-task project create "Customer Portal".
+task project create -description "Portal backlog" -ac "Portal launch criteria" "Customer Portal"
 ```
 
 The project is now the default project.
@@ -199,10 +199,12 @@ task project list
 task project ls
 ```
 
+`task project list` prints the project id, title, and status, and marks the active project as `(current)`.
+
 Select the active project for subsequent commands:
 
 ```bash
-task project use customer-portal
+task project use 2
 ```
 
 Show the current project:
@@ -216,7 +218,23 @@ task project
 Get details on a project:
 
 ```bash
-task project get <project-name or id>
+task project get <id>
+task project 2
+```
+
+Update a project:
+
+```bash
+task project 2 update -title "New project title"
+task project 2 update -description "The new description"
+task project 2 update -ac "The acceptance criteria"
+```
+
+Enable or disable a project:
+
+```bash
+task project 2 enable
+task project 2 disable
 ```
 
 The active project is remembered by the CLI so you do not need to pass a project ID for every command.
@@ -304,8 +322,10 @@ Filter by status:
 
 ```bash
 task list --status open
-task list --status in_progress
-task list --status done
+task list --status notready
+task list --status inprogress
+task list --status complete
+task list --status fail
 ```
 
 Filter by assignee:
@@ -347,6 +367,8 @@ task dependency add 4 1,2,3
 task dependency remove 4 2
 task claim 42
 task unclaim 42
+task request
+task request 42
 ```
 
 `task assign` and `task unassign` are admin-only.
@@ -354,6 +376,21 @@ task unclaim 42
 They also fail if the named user does not exist or is disabled.
 
 `task claim` fails if another user is already assigned. `task unclaim` fails unless you are the current assignee.
+
+`task request` asks the server to assign work to the current user. If the user already has an `inprogress` task, that task is returned. Otherwise, if the user has assigned `open` work, the oldest assigned `open` task is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific task is requested and cannot be assigned, the JSON response status is `REJECTED`.
+
+Status commands:
+
+```bash
+task open 42
+task ready 42
+task inprogress 42
+task complete 42
+task fail 42
+task update 42 -status inprogress
+```
+
+`task ready` is an alias for `task open`.
 
 Most client-facing commands also support `-json` to pretty-print the JSON response.
 
@@ -405,9 +442,15 @@ task user disable --username <name>
 task project create "..."
 task project list
 task project ls
-task project use ...
+task project use <id>
 task project
-task project get ...
+task project get <id>
+task project <id>
+task project <id> update -title "..."
+task project <id> update -description "..."
+task project <id> update -ac "..."
+task project <id> enable
+task project <id> disable
 
 task add "..."
 task bug "..."
@@ -430,6 +473,13 @@ task assign <id> <name>
 task unassign <id> <name>
 task claim <id>
 task unclaim <id>
+task request [<id>]
+task open <id>
+task ready <id>
+task inprogress <id>
+task complete <id>
+task fail <id>
+task update <id> -status <status>
 task count
 task count -project_id <id>
 ```

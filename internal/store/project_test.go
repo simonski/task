@@ -5,12 +5,12 @@ import "testing"
 func TestCreateListAndGetProject(t *testing.T) {
 	db := testDB(t)
 
-	project, err := CreateProject(db, "Customer Portal", "Portal work", 1)
+	project, err := CreateProject(db, "Customer Portal", "Portal work", "Ship the portal safely.", 1)
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
-	if project.Slug != "customer-portal" {
-		t.Fatalf("CreateProject().Slug = %q, want customer-portal", project.Slug)
+	if project.AcceptanceCriteria != "Ship the portal safely." {
+		t.Fatalf("CreateProject().AcceptanceCriteria = %q", project.AcceptanceCriteria)
 	}
 
 	projects, err := ListProjects(db)
@@ -21,16 +21,8 @@ func TestCreateListAndGetProject(t *testing.T) {
 		t.Fatalf("ListProjects() len = %d, want 2", len(projects))
 	}
 
-	if projects[0].Slug != "default-project" {
-		t.Fatalf("ListProjects()[0].Slug = %q, want default-project", projects[0].Slug)
-	}
-
-	bySlug, err := GetProject(db, "customer-portal")
-	if err != nil {
-		t.Fatalf("GetProject(slug) error = %v", err)
-	}
-	if bySlug.ID != project.ID {
-		t.Fatalf("GetProject(slug).ID = %d, want %d", bySlug.ID, project.ID)
+	if projects[0].Title != "Default Project" {
+		t.Fatalf("ListProjects()[0].Title = %q, want Default Project", projects[0].Title)
 	}
 
 	byID, err := GetProject(db, "2")
@@ -39,5 +31,38 @@ func TestCreateListAndGetProject(t *testing.T) {
 	}
 	if byID.ID != project.ID {
 		t.Fatalf("GetProject(id).ID = %d, want %d", byID.ID, project.ID)
+	}
+}
+
+func TestUpdateAndEnableDisableProject(t *testing.T) {
+	db := testDB(t)
+
+	project, err := CreateProject(db, "Customer Portal", "Portal work", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+
+	updated, err := UpdateProject(db, project.ID, "New Title", "New Description", "New AC")
+	if err != nil {
+		t.Fatalf("UpdateProject() error = %v", err)
+	}
+	if updated.Title != "New Title" || updated.Description != "New Description" || updated.AcceptanceCriteria != "New AC" {
+		t.Fatalf("UpdateProject() = %#v", updated)
+	}
+
+	disabled, err := SetProjectStatus(db, project.ID, false)
+	if err != nil {
+		t.Fatalf("SetProjectStatus(disable) error = %v", err)
+	}
+	if disabled.Status != "disabled" {
+		t.Fatalf("SetProjectStatus(disable).Status = %q", disabled.Status)
+	}
+
+	enabled, err := SetProjectStatus(db, project.ID, true)
+	if err != nil {
+		t.Fatalf("SetProjectStatus(enable) error = %v", err)
+	}
+	if enabled.Status != "active" {
+		t.Fatalf("SetProjectStatus(enable).Status = %q", enabled.Status)
 	}
 }

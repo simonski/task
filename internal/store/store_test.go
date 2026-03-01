@@ -54,7 +54,7 @@ func TestInitCreatesDatabaseAndAdminUser(t *testing.T) {
 	}
 
 	var projects int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM projects WHERE slug = 'default-project'`).Scan(&projects); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM projects WHERE title = 'Default Project'`).Scan(&projects); err != nil {
 		t.Fatalf("QueryRow(projects) error = %v", err)
 	}
 	if projects != 1 {

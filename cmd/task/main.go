@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
@@ -33,6 +34,8 @@ var (
 	loginPromptInput  io.Reader = os.Stdin
 	loginPromptOutput io.Writer = os.Stdout
 	outputJSON        bool
+	noColorOutput     bool
+	runAgentCommand   = defaultRunAgentCommand
 )
 
 var bannerLines = []string{
@@ -100,30 +103,80 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Pings the server and shows authentication state, server version, and client version.", "Warns when the server version differs from the client version."},
 		example: "task status",
 	},
+	"help": {
+		usage:   "task help <command>",
+		details: []string{"Shows command-specific help when available.", "Without a command, prints the root usage summary."},
+		example: "task help dependency",
+	},
 	"count": {
 		usage:   "task count [-project_id <id>] [-url <server-url>]",
 		details: []string{"Counts users and work items by type.", "With `-project_id`, counts work items within that project and omits the global project total."},
 		example: "task count -project_id 1",
 	},
+	"req": {
+		usage:   "task req -f <file1,file2,...> -o <output-file> [-agent <agent>]",
+		details: []string{"Reads the listed input files, sends a requirements-breakdown prompt to an agent, and writes the agent output to the requested output file.", "Default agent is `codex`, which is invoked as `codex exec <prompt>`. Other agents are invoked as `<agent> -p <prompt>`."},
+		example: "task req -f README.md,docs/DESIGN.md -o requirements.md",
+	},
 	"project": {
-		usage:   "task project <create|list|ls|get|use>",
-		details: []string{"Manages projects and the active project context used by subsequent commands.", "`task project ls` is an alias for `task project list`."},
-		example: "task project create \"Customer Portal\"",
+		usage:   "task project <create|list|get|use>|<id> <update|enable|disable>",
+		details: []string{"Manages projects and the active project context used by subsequent commands.", "Projects are addressed by numeric id."},
+		example: "task project 3 update -title \"Customer Portal\"",
 	},
 	"list": {
 		usage:   "task list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>] [-url <server-url>]",
 		details: []string{"Lists tasks in the active project with optional type, status, assignee, and limit filters.", "`-n` is applied server-side. `0` means no limit."},
 		example: "task list --type bug --status open -u alice -n 20",
 	},
+	"orphans": {
+		usage:   "task orphans [-url <server-url>]",
+		details: []string{"Lists tasks in the active project that do not have a parent task or epic."},
+		example: "task orphans",
+	},
 	"get": {
 		usage:   "task get <id> [-url <server-url>]",
-		details: []string{"Shows a single task with comments and history."},
+		details: []string{"Shows a single task with comments and history.", "Output uses subtle color unless `-nocolor` is supplied."},
 		example: "task get 42",
+	},
+	"show": {
+		usage:   "task show <id> [-url <server-url>]",
+		details: []string{"Alias for `task get`."},
+		example: "task show 42",
 	},
 	"search": {
 		usage:   "task search \"query\" [-url <server-url>]",
 		details: []string{"Searches task titles and descriptions within the active project."},
 		example: "task search \"password reset\"",
+	},
+	"update": {
+		usage:   "task update <id> -status <status>",
+		details: []string{"Updates a task.", "Current CLI support is focused on `-status` and accepts `notready`, `open`, `inprogress`, `complete`, and `fail`."},
+		example: "task update 42 -status inprogress",
+	},
+	"open": {
+		usage:   "task open <id>",
+		details: []string{"Sets the task status to `open`."},
+		example: "task open 42",
+	},
+	"ready": {
+		usage:   "task ready <id>",
+		details: []string{"Alias for `task open <id>`.", "Use this when marking a task as ready for work."},
+		example: "task ready 42",
+	},
+	"inprogress": {
+		usage:   "task inprogress <id>",
+		details: []string{"Sets the task status to `inprogress`."},
+		example: "task inprogress 42",
+	},
+	"complete": {
+		usage:   "task complete <id>",
+		details: []string{"Sets the task status to `complete`."},
+		example: "task complete 42",
+	},
+	"fail": {
+		usage:   "task fail <id>",
+		details: []string{"Sets the task status to `fail`."},
+		example: "task fail 42",
 	},
 	"add": {
 		usage:   "task add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [title words]",
@@ -155,10 +208,25 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Clears the caller's assignment from the task.", "Fails unless the caller is the current assignee."},
 		example: "task unclaim 42",
 	},
+	"add-dependency": {
+		usage:   "task add-dependency <id> <dependency-id[,dependency-id...]>",
+		details: []string{"Adds one or more `depends_on` links from the task to the listed task IDs.", "Comma-separated dependency IDs are supported."},
+		example: "task add-dependency 4 1,2,3",
+	},
+	"remove-dependency": {
+		usage:   "task remove-dependency <id> <dependency-id[,dependency-id...]>",
+		details: []string{"Removes one or more `depends_on` links from the task to the listed task IDs.", "Comma-separated dependency IDs are supported."},
+		example: "task remove-dependency 4 2",
+	},
 	"dependency": {
-		usage:   "task dependency|dep <add|remove> <id> <dependency-id[,dependency-id...]>",
-		details: []string{"Adds or removes one or more dependencies for a task.", "Comma-separated dependency IDs are supported."},
+		usage:   "task dependency <add|remove> <id> <dependency-id[,dependency-id...]>",
+		details: []string{"Manages `depends_on` links for a task.", "`add` creates dependency links; `remove` deletes them."},
 		example: "task dependency add 4 1,2,3",
+	},
+	"request": {
+		usage:   "task request [<id>]",
+		details: []string{"Requests work for the current user.", "With an id, the server attempts to assign that specific task. Without an id, it assigns the oldest unassigned `open` task in the active project, unless the user already has assigned work to resume."},
+		example: "task request 42",
 	},
 	"user": {
 		usage:   "task user <create|ls|list|rm|delete|enable|disable>",
@@ -169,7 +237,11 @@ var helpIndex = map[string]commandHelp{
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		if strings.HasPrefix(err.Error(), "no such command") {
+			fmt.Fprintln(os.Stderr, err.Error())
+		} else {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -179,7 +251,7 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	trimmedArgs, outputJSON, err = extractOutputFlags(trimmedArgs)
+	trimmedArgs, outputJSON, noColorOutput, err = extractOutputFlags(trimmedArgs)
 	if err != nil {
 		return err
 	}
@@ -216,6 +288,8 @@ func run(args []string) error {
 		return runStatus(trimmedArgs[1:])
 	case "count":
 		return runCount(trimmedArgs[1:])
+	case "req":
+		return runReq(trimmedArgs[1:])
 	case "user":
 		return runUser(trimmedArgs[1:])
 	case "project":
@@ -226,10 +300,24 @@ func run(args []string) error {
 		return runList(trimmedArgs[1:])
 	case "orphans":
 		return runOrphans(trimmedArgs[1:])
-	case "get":
+	case "get", "show":
 		return runGet(trimmedArgs[1:])
 	case "search":
 		return runSearch(trimmedArgs[1:])
+	case "update":
+		return runUpdate(trimmedArgs[1:])
+	case "set-status":
+		return runSetStatus(trimmedArgs[1:])
+	case "open":
+		return runTaskStatusAlias(trimmedArgs[1:], "open", "open")
+	case "ready":
+		return runTaskStatusAlias(trimmedArgs[1:], "open", "ready")
+	case "inprogress":
+		return runTaskStatusAlias(trimmedArgs[1:], "inprogress", "inprogress")
+	case "complete":
+		return runTaskStatusAlias(trimmedArgs[1:], "complete", "complete")
+	case "fail":
+		return runTaskStatusAlias(trimmedArgs[1:], "fail", "fail")
 	case "assign":
 		return runAssign(trimmedArgs[1:])
 	case "unassign":
@@ -238,20 +326,46 @@ func run(args []string) error {
 		return runClaim(trimmedArgs[1:])
 	case "unclaim":
 		return runUnclaim(trimmedArgs[1:])
-	case "dependency", "dep":
+	case "add-dependency":
+		return runDependencyCommand(trimmedArgs[1:], true)
+	case "remove-dependency":
+		return runDependencyCommand(trimmedArgs[1:], false)
+	case "dependency":
 		return runDependency(trimmedArgs[1:])
+	case "request":
+		return runRequest(trimmedArgs[1:])
 	case "history":
 		return runHistory(trimmedArgs[1:])
 	case "comment":
 		return runComment(trimmedArgs[1:])
+	case "curate":
+		return runCurate(trimmedArgs[1:])
+	case "review":
+		return runReview(trimmedArgs[1:])
+	case "accept":
+		return runRequirementStatus("accepted", trimmedArgs[1:])
+	case "reject":
+		return runRequirementStatus("rejected", trimmedArgs[1:])
+	case "revise":
+		return runRevise(trimmedArgs[1:])
+	case "decision":
+		return runDecision(trimmedArgs[1:])
+	case "conversation":
+		return runConversation(trimmedArgs[1:])
 	case "add", "create", "new":
 		return runTaskCreate(trimmedArgs[1:])
+	case "note":
+		return runTypedTaskCreate("note", trimmedArgs[1:])
+	case "question":
+		return runTypedTaskCreate("question", trimmedArgs[1:])
 	case "bug":
 		return runTypedTaskCreate("bug", trimmedArgs[1:])
 	case "epic":
 		return runTypedTaskCreate("epic", trimmedArgs[1:])
+	case "config":
+		return runConfig(trimmedArgs[1:])
 	default:
-		return fmt.Errorf("unknown command %q", trimmedArgs[0])
+		return fmt.Errorf("no such command %q", trimmedArgs[0])
 	}
 }
 
@@ -259,6 +373,9 @@ func runHelp(args []string) error {
 	if len(args) == 0 {
 		fmt.Print(renderRootUsage())
 		return nil
+	}
+	if !hasCommandHelp(args[0]) {
+		return fmt.Errorf("no such command %q", args[0])
 	}
 	fmt.Print(renderCommandHelp(args[0]))
 	return nil
@@ -353,7 +470,7 @@ func runInitDB(args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg.CurrentProject = "default-project"
+	cfg.CurrentProject = "1"
 	cfg.Username = "admin"
 	cfg.ServerURL = config.ResolveServerURL(cfg)
 	if err := config.Save(cfg); err != nil {
@@ -363,7 +480,7 @@ func runInitDB(args []string) error {
 	fmt.Printf("initialized database at %s\n", *dbPath)
 	fmt.Printf("admin user: admin\n")
 	fmt.Printf("admin password: %s\n", password)
-	fmt.Printf("default project: default-project\n")
+	fmt.Printf("default project: 1\n")
 	if generated {
 		fmt.Println("admin password was generated because -password was not provided")
 	}
@@ -644,7 +761,7 @@ func runUser(args []string) error {
 		}
 		fmt.Printf("created user %s\n", user.Username)
 		return nil
-	case "rm", "delete":
+	case "rm", "delete", "del":
 		fs := flag.NewFlagSet("user "+args[0], flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
 		username := fs.String("username", "", "username")
@@ -652,7 +769,7 @@ func runUser(args []string) error {
 			return err
 		}
 		if *username == "" {
-			return errors.New("user rm/delete requires -username")
+			return errors.New("user rm/delete/del requires -username")
 		}
 		if err := api.DeleteUser(*username); err != nil {
 			return err
@@ -720,22 +837,27 @@ func runProject(args []string) error {
 		return nil
 	}
 
+	if projectID, ok := parseProjectCommandID(args[0]); ok {
+		return runProjectByID(api, projectID, args[1:])
+	}
+
 	switch args[0] {
-	case "create":
+	case "create", "add", "new":
 		fs := flag.NewFlagSet("project create", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
 		description := fs.String("description", "", "project description")
+		acceptanceCriteria := fs.String("ac", "", "project acceptance criteria")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 1 {
-			return errors.New("usage: task project create [-description text] \"Project Title\"")
+			return errors.New("usage: task project create [-description text] [-ac text] \"Project Title\"")
 		}
-		project, err := api.CreateProject(fs.Arg(0), *description)
+		project, err := api.CreateProject(fs.Arg(0), *description, *acceptanceCriteria)
 		if err != nil {
 			return err
 		}
-		cfg.CurrentProject = project.Slug
+		cfg.CurrentProject = strconv.FormatInt(project.ID, 10)
 		cfg.CurrentEpicID = 0
 		if err := config.Save(cfg); err != nil {
 			return err
@@ -755,15 +877,15 @@ func runProject(args []string) error {
 		}
 		for _, project := range projects {
 			current := ""
-			if project.Slug == cfg.CurrentProject {
+			if strconv.FormatInt(project.ID, 10) == cfg.CurrentProject {
 				current = "\t(current)"
 			}
-			fmt.Printf("%s\t%s%s\n", project.Slug, project.Title, current)
+			fmt.Printf("%d\t%s\t%s%s\n", project.ID, project.Title, project.Status, current)
 		}
 		return nil
 	case "get":
 		if len(args) != 2 {
-			return errors.New("usage: task project get <project-name or id>")
+			return errors.New("usage: task project get <id>")
 		}
 		project, err := api.GetProject(args[1])
 		if err != nil {
@@ -776,22 +898,223 @@ func runProject(args []string) error {
 		return nil
 	case "use":
 		if len(args) != 2 {
-			return errors.New("usage: task project use <project-name or id>")
+			return errors.New("usage: task project use <id>")
 		}
 		project, err := api.GetProject(args[1])
 		if err != nil {
 			return err
 		}
-		cfg.CurrentProject = project.Slug
+		cfg.CurrentProject = strconv.FormatInt(project.ID, 10)
 		cfg.CurrentEpicID = 0
 		if err := config.Save(cfg); err != nil {
 			return err
 		}
-		fmt.Printf("using project %s\n", project.Slug)
+		fmt.Printf("using project %d\n", project.ID)
 		return nil
 	default:
 		return fmt.Errorf("unknown project command %q", args[0])
 	}
+}
+
+func runReq(args []string) error {
+	fs := flag.NewFlagSet("req", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	filesArg := fs.String("f", "", "comma-separated input files")
+	outputFile := fs.String("o", "", "output file")
+	agent := fs.String("agent", "codex", "agent command")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*filesArg) == "" || strings.TrimSpace(*outputFile) == "" {
+		return errors.New("usage: task req -f <file1,file2,...> -o <output-file> [-agent <agent>]")
+	}
+
+	files := splitCSV(*filesArg)
+	if len(files) == 0 {
+		return errors.New("at least one input file is required")
+	}
+	prompt, err := buildReqPrompt(files, *outputFile)
+	if err != nil {
+		return err
+	}
+	response, err := runAgentCommand(strings.TrimSpace(*agent), prompt)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*outputFile, []byte(response), 0o644); err != nil {
+		return err
+	}
+	fmt.Print(response)
+	if response != "" && !strings.HasSuffix(response, "\n") {
+		fmt.Println()
+	}
+	if outputJSON {
+		return printJSON(map[string]string{
+			"status": "ok",
+			"agent":  strings.TrimSpace(*agent),
+			"output": *outputFile,
+		})
+	}
+	fmt.Printf("wrote %s using %s\n", *outputFile, strings.TrimSpace(*agent))
+	return nil
+}
+
+func splitCSV(raw string) []string {
+	var values []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			values = append(values, part)
+		}
+	}
+	return values
+}
+
+func buildReqPrompt(files []string, outputFile string) (string, error) {
+	var b strings.Builder
+	b.WriteString("Write an example breakdown of implementation requirements as ")
+	b.WriteString(outputFile)
+	b.WriteString(" in the format:\n\n")
+	b.WriteString("EPIC: title\n")
+	b.WriteString("ID: E1, E2, E3 etc\n")
+	b.WriteString("DESCRIPTION: description\n")
+	b.WriteString("AC: list of acceptance criteria\n")
+	b.WriteString("PRIORITY: 1-N (1 highest, do this first)\n")
+	b.WriteString("DEPENDS-ON: E2, E4\n\n")
+	b.WriteString("<indent for stories \"in\" the epic (the story ID should increment and be EPIC-STORY)>\n")
+	b.WriteString("    STORY: title\n")
+	b.WriteString("    ID: E1-S1, E1-2, E1-S3 etc.\n")
+	b.WriteString("    DESCRIPTION: description\n")
+	b.WriteString("    AC: list of acceptance criteria\n")
+	b.WriteString("    PRIORITY: 1-N (1 highest, do this first)\n")
+	b.WriteString("    DEPENDS-ON: E1-S2\n\n")
+	b.WriteString("Use the following input files as source material:\n\n")
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return "", err
+		}
+		b.WriteString("FILE: ")
+		b.WriteString(file)
+		b.WriteString("\n")
+		b.WriteString("-----\n")
+		b.Write(data)
+		if len(data) == 0 || data[len(data)-1] != '\n' {
+			b.WriteString("\n")
+		}
+		b.WriteString("-----\n\n")
+	}
+	return b.String(), nil
+}
+
+func defaultRunAgentCommand(agent, prompt string) (string, error) {
+	if agent == "" {
+		return "", errors.New("agent is required")
+	}
+	var cmd *exec.Cmd
+	if agent == "codex" {
+		cmd = exec.Command("codex", "exec", prompt)
+	} else {
+		cmd = exec.Command(agent, "-p", prompt)
+	}
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return "", err
+		}
+		return "", fmt.Errorf("%v: %s", err, message)
+	}
+	return string(output), nil
+}
+
+func parseProjectCommandID(raw string) (int64, bool) {
+	var id int64
+	if _, err := fmt.Sscan(raw, &id); err != nil {
+		return 0, false
+	}
+	return id, true
+}
+
+func runProjectByID(api *client.Client, projectID int64, args []string) error {
+	if len(args) == 0 {
+		project, err := api.GetProject(strconv.FormatInt(projectID, 10))
+		if err != nil {
+			return err
+		}
+		if outputJSON {
+			return printJSON(project)
+		}
+		printProject(project)
+		return nil
+	}
+	switch args[0] {
+	case "update":
+		fs := flag.NewFlagSet("project update", flag.ContinueOnError)
+		fs.SetOutput(os.Stderr)
+		title := fs.String("title", "", "project title")
+		description := fs.String("description", "", "project description")
+		acceptanceCriteria := fs.String("ac", "", "project acceptance criteria")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		current, err := api.GetProject(strconv.FormatInt(projectID, 10))
+		if err != nil {
+			return err
+		}
+		nextDescription := current.Description
+		nextAC := current.AcceptanceCriteria
+		if fs.Lookup("description") != nil && strings.TrimSpace(*description) != "" || containsFlag(args[1:], "-description") {
+			nextDescription = *description
+		}
+		if containsFlag(args[1:], "-ac") {
+			nextAC = *acceptanceCriteria
+		}
+		project, err := api.UpdateProject(projectID, client.ProjectUpdateRequest{
+			Title:              *title,
+			Description:        nextDescription,
+			AcceptanceCriteria: nextAC,
+		})
+		if err != nil {
+			return err
+		}
+		if outputJSON {
+			return printJSON(project)
+		}
+		printProject(project)
+		return nil
+	case "enable":
+		project, err := api.SetProjectEnabled(projectID, true)
+		if err != nil {
+			return err
+		}
+		if outputJSON {
+			return printJSON(project)
+		}
+		printProject(project)
+		return nil
+	case "disable":
+		project, err := api.SetProjectEnabled(projectID, false)
+		if err != nil {
+			return err
+		}
+		if outputJSON {
+			return printJSON(project)
+		}
+		printProject(project)
+		return nil
+	default:
+		return fmt.Errorf("unknown project command %q", args[0])
+	}
+}
+
+func containsFlag(args []string, flag string) bool {
+	for _, arg := range args {
+		if arg == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func runList(args []string) error {
@@ -893,6 +1216,64 @@ func runSearch(args []string) error {
 	for _, task := range tasks {
 		fmt.Printf("%d\t%s\t%s\t%s\n", task.ID, task.Type, task.Status, task.Title)
 	}
+	return nil
+}
+
+func runSetStatus(args []string) error {
+	if len(args) != 2 {
+		return errors.New("usage: task set-status <id> <status>")
+	}
+	return updateTaskStatus(args[0], args[1])
+}
+
+func runTaskStatusAlias(args []string, status, command string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: task %s <id>", command)
+	}
+	return updateTaskStatus(args[0], status)
+}
+
+func runUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	status := fs.String("status", "", "task status")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || strings.TrimSpace(*status) == "" {
+		return errors.New("usage: task update <id> -status <status>")
+	}
+	return updateTaskStatus(fs.Arg(0), *status)
+}
+
+func updateTaskStatus(idArg, status string) error {
+	var id int64
+	if _, err := fmt.Sscan(idArg, &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	api := client.New(cfg)
+	current, err := api.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+		Title:       current.Title,
+		Description: current.Description,
+		ParentID:    current.ParentID,
+		Assignee:    current.Assignee,
+		Status:      status,
+	})
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(updated)
+	}
+	printTask(updated)
 	return nil
 }
 
@@ -1074,24 +1455,19 @@ func runHistory(args []string) error {
 	return nil
 }
 
-func runDependency(args []string) error {
-	if len(args) != 3 {
-		return errors.New("usage: task dependency|dep <add|remove> <id> <dependency-id[,dependency-id...]>")
+func runDependencyCommand(args []string, add bool) error {
+	command := "add-dependency"
+	if !add {
+		command = "remove-dependency"
 	}
-	var add bool
-	switch args[0] {
-	case "add":
-		add = true
-	case "remove":
-		add = false
-	default:
-		return fmt.Errorf("unknown dependency command %q", args[0])
+	if len(args) != 2 {
+		return fmt.Errorf("usage: task %s <id> <dependency-id[,dependency-id...]>", command)
 	}
 	var taskID int64
-	if _, err := fmt.Sscan(args[1], &taskID); err != nil {
+	if _, err := fmt.Sscan(args[0], &taskID); err != nil {
 		return errors.New("task id must be numeric")
 	}
-	dependencyIDs, err := parseIDList(args[2])
+	dependencyIDs, err := parseIDList(args[1])
 	if err != nil {
 		return err
 	}
@@ -1100,29 +1476,78 @@ func runDependency(args []string) error {
 		return err
 	}
 	for _, depID := range dependencyIDs {
-		req := client.DependencyRequest{ProjectID: project.ID, TaskID: taskID, DependsOn: depID}
+		req := client.DependencyRequest{
+			ProjectID: project.ID,
+			TaskID:    taskID,
+			DependsOn: depID,
+		}
 		if add {
 			if _, err := api.AddDependency(req); err != nil {
 				return err
 			}
-		} else {
-			if err := api.RemoveDependency(req); err != nil {
-				return err
-			}
+			continue
+		}
+		if err := api.RemoveDependency(req); err != nil {
+			return err
 		}
 	}
 	if outputJSON {
-		action := "removed"
-		if add {
-			action = "added"
+		return printJSON(map[string]any{
+			"task_id":      taskID,
+			"dependencies": dependencyIDs,
+			"action":       map[bool]string{true: "added", false: "removed"}[add],
+		})
+	}
+	action := "added"
+	if !add {
+		action = "removed"
+	}
+	fmt.Printf("%s dependencies for %d: %s\n", action, taskID, args[1])
+	return nil
+}
+
+func runDependency(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: task dependency <add|remove> <id> <dependency-id[,dependency-id...]>")
+	}
+	switch args[0] {
+	case "add":
+		return runDependencyCommand(args[1:], true)
+	case "remove":
+		return runDependencyCommand(args[1:], false)
+	default:
+		return fmt.Errorf("unknown dependency action %q", args[0])
+	}
+}
+
+func runRequest(args []string) error {
+	if len(args) > 1 {
+		return errors.New("usage: task request [<id>]")
+	}
+	_, api, project, err := resolveCurrentProjectClient()
+	if err != nil {
+		return err
+	}
+	req := client.TaskRequest{ProjectID: project.ID}
+	if len(args) == 1 {
+		var id int64
+		if _, err := fmt.Sscan(args[0], &id); err != nil {
+			return errors.New("task id must be numeric")
 		}
-		return printJSON(map[string]any{"task_id": taskID, "dependencies": dependencyIDs, "action": action})
+		req.TaskID = &id
 	}
-	if add {
-		fmt.Printf("added dependencies for %d: %s\n", taskID, args[2])
-	} else {
-		fmt.Printf("removed dependencies for %d: %s\n", taskID, args[2])
+	response, err := api.RequestTask(req)
+	if err != nil {
+		return err
 	}
+	if outputJSON {
+		return printJSON(response)
+	}
+	if response.Task != nil {
+		printTask(*response.Task)
+		return nil
+	}
+	fmt.Println(response.Status)
 	return nil
 }
 
@@ -1177,6 +1602,178 @@ func runComment(args []string) error {
 	}
 }
 
+func runCurate(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: task curate <id> [id...]")
+	}
+	_, api, project, err := resolveCurrentProjectClient()
+	if err != nil {
+		return err
+	}
+	var sourceIDs []int64
+	var titles []string
+	for _, arg := range args {
+		var id int64
+		if _, err := fmt.Sscan(arg, &id); err != nil {
+			return fmt.Errorf("invalid task id %q", arg)
+		}
+		task, err := api.GetTask(id)
+		if err != nil {
+			return err
+		}
+		sourceIDs = append(sourceIDs, id)
+		titles = append(titles, task.Title)
+	}
+	title := "Curated requirement"
+	if len(titles) > 0 {
+		title = titles[0]
+	}
+	requirement, err := api.CreateTask(client.TaskCreateRequest{
+		ProjectID:   project.ID,
+		Type:        "requirement",
+		Title:       title,
+		Description: "Curated from source items.",
+	})
+	if err != nil {
+		return err
+	}
+	printTask(requirement)
+	return nil
+}
+
+func runReview(args []string) error {
+	fs := flag.NewFlagSet("review", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	status := fs.String("status", "proposed", "review status")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_, api, project, err := resolveCurrentProjectClient()
+	if err != nil {
+		return err
+	}
+	tasks, err := api.ListTasksFiltered(project.ID, "requirement", *status, "", "", 0)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		fmt.Printf("%d\t%s\t%s\n", task.ID, task.Status, task.Title)
+	}
+	return nil
+}
+
+func runRequirementStatus(status string, args []string) error {
+	commandName := map[string]string{"accepted": "accept", "rejected": "reject"}[status]
+	if len(args) != 2 || args[0] != "requirement" {
+		return fmt.Errorf("usage: task %s requirement <id>", commandName)
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[1], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	api := client.New(cfg)
+	current, err := api.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+		Title:       current.Title,
+		Description: current.Description,
+		ParentID:    current.ParentID,
+		Assignee:    current.Assignee,
+		Status:      status,
+	})
+	if err != nil {
+		return err
+	}
+	printTask(updated)
+	return nil
+}
+
+func runRevise(args []string) error {
+	if len(args) != 2 || args[0] != "requirement" {
+		return errors.New("usage: task revise requirement <id>")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[1], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	api := client.New(cfg)
+	current, err := api.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+		Title:       current.Title + " (revised)",
+		Description: current.Description,
+		ParentID:    current.ParentID,
+		Assignee:    current.Assignee,
+		Status:      "proposed",
+	})
+	if err != nil {
+		return err
+	}
+	printTask(updated)
+	return nil
+}
+
+func runDecision(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: task decision <add|list>")
+	}
+	switch args[0] {
+	case "add":
+		if len(args) != 2 {
+			return errors.New("usage: task decision add \"text\"")
+		}
+		_, api, project, err := resolveCurrentProjectClient()
+		if err != nil {
+			return err
+		}
+		task, err := api.CreateTask(client.TaskCreateRequest{
+			ProjectID:   project.ID,
+			Type:        "decision",
+			Title:       args[1],
+			Description: args[1],
+		})
+		if err != nil {
+			return err
+		}
+		printTask(task)
+		return nil
+	case "list":
+		_, api, project, err := resolveCurrentProjectClient()
+		if err != nil {
+			return err
+		}
+		tasks, err := api.ListTasksFiltered(project.ID, "decision", "", "", "", 0)
+		if err != nil {
+			return err
+		}
+		for _, task := range tasks {
+			fmt.Printf("%d\t%s\t%s\n", task.ID, task.Status, task.Title)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown decision command %q", args[0])
+	}
+}
+
+func runConversation(args []string) error {
+	if len(args) != 2 || args[0] != "show" {
+		return errors.New("usage: task conversation show <id>")
+	}
+	return runHistory(args[1:])
+}
+
 func runTypedTaskCreate(taskType string, args []string) error {
 	fs := flag.NewFlagSet(taskType, flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -1215,7 +1812,7 @@ func runTaskCreate(args []string) error {
 	fs.StringVar(description, "d", "", "task description")
 	acceptanceCriteria := fs.String("ac", "", "acceptance criteria")
 	parent := fs.Int64("parent", 0, "parent task id")
-	project := fs.String("project", "", "project slug or id")
+	project := fs.String("project", "", "project id")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -1278,16 +1875,56 @@ func createTask(opts taskCreateOptions) error {
 	return nil
 }
 
+func runConfig(args []string) error {
+	if len(args) < 2 {
+		return errors.New("usage: task config <set|get> <key> [value]")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "set":
+		if len(args) != 3 {
+			return errors.New("usage: task config set <key> <value>")
+		}
+		switch args[1] {
+		case "server":
+			cfg.ServerURL = args[2]
+		default:
+			return fmt.Errorf("unknown config key %q", args[1])
+		}
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("%s=%s\n", args[1], args[2])
+		return nil
+	case "get":
+		switch args[1] {
+		case "server":
+			fmt.Println(config.ResolveServerURL(cfg))
+			return nil
+		default:
+			return fmt.Errorf("unknown config key %q", args[1])
+		}
+	default:
+		return fmt.Errorf("unknown config action %q", args[0])
+	}
+}
+
 func printProject(project store.Project) {
 	if outputJSON {
 		_ = printJSON(project)
 		return
 	}
 	fmt.Printf("project: %s\n", project.Title)
-	fmt.Printf("slug: %s\n", project.Slug)
+	fmt.Printf("project_id: %d\n", project.ID)
 	fmt.Printf("status: %s\n", project.Status)
 	if project.Description != "" {
 		fmt.Printf("description: %s\n", project.Description)
+	}
+	if project.AcceptanceCriteria != "" {
+		fmt.Printf("acceptance_criteria: %s\n", project.AcceptanceCriteria)
 	}
 }
 
@@ -1328,7 +1965,6 @@ func printTaskDetails(task store.Task, dependencies []store.Dependency) {
 	fmt.Printf("Priority     : %d\n", task.Priority)
 	fmt.Printf("Created      : %s\n", task.CreatedAt)
 	fmt.Printf("LastModified : %s\n", task.UpdatedAt)
-	fmt.Printf("Closed       : \n")
 	fmt.Printf("Acceptance Criteria : %s\n", task.AcceptanceCriteria)
 }
 
@@ -1343,13 +1979,21 @@ func formatDependsOn(dependencies []store.Dependency) string {
 	return "[" + strings.Join(ids, ",") + "]"
 }
 
+func heading(label string) {
+	if noColorOutput {
+		fmt.Printf("%s\n", label)
+		return
+	}
+	fmt.Printf("\x1b[2;36m%s\x1b[0m\n", label)
+}
+
 func resolveCurrentProjectClient() (config.Config, *client.Client, store.Project, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
 	}
 	if cfg.CurrentProject == "" {
-		return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use` first")
+		return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use <id>` first")
 	}
 	api := client.New(cfg)
 	project, err := api.GetProject(cfg.CurrentProject)
@@ -1418,18 +2062,21 @@ func extractURLOverride(args []string) ([]string, string, error) {
 	return out, override, nil
 }
 
-func extractOutputFlags(args []string) ([]string, bool, error) {
+func extractOutputFlags(args []string) ([]string, bool, bool, error) {
 	var out []string
 	var jsonFlag bool
+	var nocolor bool
 	for _, arg := range args {
 		switch arg {
 		case "-json":
 			jsonFlag = true
+		case "-nocolor":
+			nocolor = true
 		default:
 			out = append(out, arg)
 		}
 	}
-	return out, jsonFlag, nil
+	return out, jsonFlag, nocolor, nil
 }
 
 func printJSON(v any) error {
@@ -1577,20 +2224,28 @@ CLIENT COMMANDS
   add         Create a task in the active project
   claim       Assign yourself to a task
   comment     Add comments to a task
+  complete    Set a task status to complete
   count       Count users, projects, and work by type
-  dependency  Manage task dependencies
+  dependency  Manage dependency links between tasks
+  fail        Set a task status to fail
   get         Show a task with history and comments
   help        Show command help
+  inprogress  Set a task status to inprogress
   list        List tasks in the active project
   login       Log into the server
   logout      Clear the local session
   onboard     Append the embedded AGENTS.md template in the current directory
+  open        Set a task status to open
   orphans     List tasks with no parent
   project     Manage projects and active project context
+  ready       Alias for open
+  req         Generate requirements via an external agent
   register    Create a user account on the server
+  request     Request work for the current user
   search      Search tasks in the active project
   status      Show server and authentication status
   unclaim     Remove yourself from a task
+  update      Update a task
   version     Print the current version from VERSION
 
 ADMIN COMMANDS
@@ -1637,15 +2292,13 @@ func printTaskTable(tasks []store.Task) {
 }
 
 func formatStatusCounts(statuses map[string]int) string {
-	order := []string{"done", "in_progress", "open", "blocked", "accepted", "rejected", "proposed"}
+	order := []string{"open", "inprogress", "notready", "complete", "fail"}
 	labels := map[string]string{
-		"done":        "completed",
-		"in_progress": "in progress",
-		"open":        "open",
-		"blocked":     "blocked",
-		"accepted":    "accepted",
-		"rejected":    "rejected",
-		"proposed":    "proposed",
+		"open":       "open",
+		"inprogress": "in progress",
+		"notready":   "not ready",
+		"complete":   "complete",
+		"fail":       "fail",
 	}
 	var parts []string
 	for _, status := range order {
@@ -1669,14 +2322,7 @@ func renderBanner() string {
 }
 
 func renderCommandHelp(command string) string {
-	switch command {
-	case "create", "new":
-		command = "add"
-	case "ls":
-		command = "list"
-	case "dep":
-		command = "dependency"
-	}
+	command = normalizeHelpCommand(command)
 	info, ok := helpIndex[command]
 	if !ok {
 		return renderRootUsage()
@@ -1698,4 +2344,22 @@ func renderCommandHelp(command string) string {
 	b.WriteString(info.example)
 	b.WriteString("\n")
 	return b.String()
+}
+
+func hasCommandHelp(command string) bool {
+	_, ok := helpIndex[normalizeHelpCommand(command)]
+	return ok
+}
+
+func normalizeHelpCommand(command string) string {
+	switch command {
+	case "show":
+		return "get"
+	case "create", "new":
+		return "add"
+	case "ls":
+		return "list"
+	default:
+		return command
+	}
 }

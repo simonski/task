@@ -449,7 +449,7 @@
           statusEl.textContent = data.error || "Project creation failed.";
           return;
         }
-        localStorage.setItem("task-project", data.slug);
+        localStorage.setItem("task-project", String(data.project_id));
         projectForm.reset();
         await loadProjects();
         await loadTasks();
@@ -505,9 +505,9 @@
         projectSelect.innerHTML = '<option value="">No active project</option>';
         for (const project of projects) {
           const option = document.createElement("option");
-          option.value = project.slug;
-          option.textContent = `${project.title} (${project.slug})`;
-          if (project.slug === current) {
+          option.value = String(project.project_id);
+          option.textContent = `${project.project_id}: ${project.title}`;
+          if (String(project.project_id) === current) {
             option.selected = true;
           }
           projectSelect.appendChild(option);
