@@ -1,4 +1,6 @@
 .beads
 bin/
 commands.sh
+task
+parser
 

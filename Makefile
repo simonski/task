@@ -18,7 +18,7 @@ help:
 build:
 	@$(MAKE) bump-version
 	@mkdir -p bin
-	go build -o ./bin/task ./cmd/task
+	go build -o task ./cmd/task
 
 tools:
 	go build -o ./parser ./tools/parser.go
