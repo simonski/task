@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/simonski/task/internal/config"
 	"github.com/simonski/task/internal/store"
 )
 
@@ -734,7 +735,7 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 		"ProjectID    : 7",
 		"Title        : Example Task",
 		"Assignee     : ",
-		"Order        : ",
+		"Order        : 0",
 		"DependsOn    : []",
 		"Status       : open",
 		"Priority     : 1",
@@ -909,6 +910,120 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	}
 }
 
+func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
+	setupLocalCLI(t)
+
+	matchingID := createLocalTask(t, []string{"add", "-d", "Detailed note for customer portal", "-ac", "free form acceptance", "Free form entry"})
+	otherID := createLocalTask(t, []string{"add", "-d", "Detailed note for customer portal", "Free form other"})
+
+	if err := run([]string{"claim", strconv.FormatInt(matchingID, 10)}); err != nil {
+		t.Fatalf("claim error = %v", err)
+	}
+	if err := run([]string{"update", strconv.FormatInt(matchingID, 10), "-status", "inprogress", "-priority", "4"}); err != nil {
+		t.Fatalf("update matching task error = %v", err)
+	}
+	if err := run([]string{"update", strconv.FormatInt(otherID, 10), "-priority", "2"}); err != nil {
+		t.Fatalf("update other task error = %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{
+			"search",
+			"free", "form", "entry",
+			"-status", "inprogress",
+			"-title", "entry",
+			"-description", "customer portal",
+			"-priority", "4",
+			"-owner", currentOSUser(),
+		}); err != nil {
+			t.Fatalf("search error = %v", err)
+		}
+	})
+	if !strings.Contains(output, strconv.FormatInt(matchingID, 10)+"\ttask\tinprogress\tFree form entry") {
+		t.Fatalf("search output missing matching task:\n%s", output)
+	}
+	if strings.Contains(output, strconv.FormatInt(otherID, 10)+"\t") {
+		t.Fatalf("search output should not include non-matching task:\n%s", output)
+	}
+}
+
+func TestRunUpdateSupportsCombinedFields(t *testing.T) {
+	setupLocalCLI(t)
+
+	parentID := createLocalTask(t, []string{"add", "-type", "epic", "Parent Epic"})
+	taskID := createLocalTask(t, []string{"add", "-d", "old description", "-ac", "old ac", "Task Alpha"})
+	if err := run([]string{"claim", strconv.FormatInt(taskID, 10)}); err != nil {
+		t.Fatalf("claim error = %v", err)
+	}
+
+	updateOutput := captureStdout(t, func() {
+		if err := run([]string{
+			"update",
+			strconv.FormatInt(taskID, 10),
+			"-title", "Task Beta",
+			"-desc", "new description",
+			"-ac", "new ac",
+			"-priority", "3",
+			"-order", "7",
+			"-status", "inprogress",
+			"-parent_id", strconv.FormatInt(parentID, 10),
+		}); err != nil {
+			t.Fatalf("update error = %v", err)
+		}
+	})
+	for _, want := range []string{
+		"Title        : Task Beta",
+		"Description  : new description",
+		"ParentID     : " + strconv.FormatInt(parentID, 10),
+		"Order        : 7",
+		"Status       : inprogress",
+		"Priority     : 3",
+		"Acceptance Criteria : new ac",
+	} {
+		if !strings.Contains(updateOutput, want) {
+			t.Fatalf("update output missing %q:\n%s", want, updateOutput)
+		}
+	}
+
+	getOutput := captureStdout(t, func() {
+		if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("get error = %v", err)
+		}
+	})
+	for _, want := range []string{
+		"Title        : Task Beta",
+		"Description  : new description",
+		"ParentID     : " + strconv.FormatInt(parentID, 10),
+		"Order        : 7",
+		"Status       : inprogress",
+		"Priority     : 3",
+		"Acceptance Criteria : new ac",
+	} {
+		if !strings.Contains(getOutput, want) {
+			t.Fatalf("get output missing %q:\n%s", want, getOutput)
+		}
+	}
+}
+
+func TestRunUpdateSupportsDescriptionAlias(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "-d", "old description", "Task Alpha"})
+
+	if err := run([]string{"update", strconv.FormatInt(taskID, 10), "-description", "updated description"}); err != nil {
+		t.Fatalf("update with -description error = %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("get error = %v", err)
+		}
+	})
+	if !strings.Contains(output, "Description  : updated description") {
+		t.Fatalf("get output = %q", output)
+	}
+}
+
 func TestRunTaskCreateSupportsInterspersedFlags(t *testing.T) {
 	setupLocalCLI(t)
 
@@ -926,6 +1041,43 @@ func TestRunTaskCreateSupportsInterspersedFlags(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("interspersed add output missing %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestRunTaskCreateFallsBackToDefaultProject(t *testing.T) {
+	setupLocalCLI(t)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	cfg.CurrentProject = ""
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("config.Save() error = %v", err)
+	}
+
+	taskID := createLocalTask(t, []string{"create", "-t", "epic", "-title", "foo"})
+	output := captureStdout(t, func() {
+		if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("get error = %v", err)
+		}
+	})
+	for _, want := range []string{
+		"Title        : foo",
+		"Type         : epic",
+		"ProjectID    : 1",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("default project fallback output missing %q:\n%s", want, output)
+		}
+	}
+
+	reloaded, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load(reloaded) error = %v", err)
+	}
+	if reloaded.CurrentProject != "1" {
+		t.Fatalf("CurrentProject = %q, want 1", reloaded.CurrentProject)
 	}
 }
 

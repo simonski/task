@@ -20,6 +20,7 @@ type Task struct {
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Status             string `json:"status"`
 	Priority           int    `json:"priority"`
+	Order              int    `json:"order"`
 	Assignee           string `json:"assignee"`
 	Archived           bool   `json:"archived"`
 	CreatedBy          int64  `json:"created_by"`
@@ -36,20 +37,24 @@ type TaskCreateParams struct {
 	Description        string
 	AcceptanceCriteria string
 	Priority           int
+	Order              int
 	Assignee           string
 	Status             string
 	CreatedBy          int64
 }
 
 type TaskUpdateParams struct {
-	Title         string
-	Description   string
-	ParentID      *int64
-	Assignee      string
-	Status        string
-	UpdatedBy     int64
-	ActorUsername string
-	ActorRole     string
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	ParentID           *int64
+	Assignee           string
+	Status             string
+	Priority           int
+	Order              int
+	UpdatedBy          int64
+	ActorUsername      string
+	ActorRole          string
 }
 
 type TaskListParams struct {
@@ -93,11 +98,12 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	if priority == 0 {
 		priority = 1
 	}
+	order := params.Order
 
 	result, err := db.Exec(`
-		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, strings.TrimSpace(params.Assignee), params.CreatedBy)
+		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, order, strings.TrimSpace(params.Assignee), params.CreatedBy)
 	if err != nil {
 		return Task{}, err
 	}
@@ -163,9 +169,9 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 
 	result, err := db.Exec(`
 		UPDATE tasks
-		SET title = ?, description = ?, parent_id = ?, assignee = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+		SET title = ?, description = ?, acceptance_criteria = ?, parent_id = ?, assignee = ?, status = ?, priority = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?
-	`, title, params.Description, nullableInt64(params.ParentID), assignee, status, id)
+	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, status, params.Priority, params.Order, id)
 	if err != nil {
 		return Task{}, err
 	}
@@ -183,8 +189,11 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_updated", map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
+		"acceptance_criteria": task.AcceptanceCriteria,
 		"assignee":    task.Assignee,
 		"status":      task.Status,
+		"priority":    task.Priority,
+		"order":       task.Order,
 		"parent_id":   task.ParentID,
 	}, params.UpdatedBy); err != nil {
 		return Task{}, err
@@ -202,7 +211,7 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ?
 	`
@@ -262,7 +271,7 @@ func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
 
 func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
@@ -278,7 +287,7 @@ func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 
 func GetTask(db *sql.DB, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
@@ -313,6 +322,7 @@ func scanTask(s scanner) (Task, error) {
 		&task.AcceptanceCriteria,
 		&task.Status,
 		&task.Priority,
+		&task.Order,
 		&task.Assignee,
 		&archived,
 		&task.CreatedBy,
@@ -458,14 +468,17 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 			return Task{}, "REJECTED", nil
 		}
 		assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
-			Title:         task.Title,
-			Description:   task.Description,
-			ParentID:      task.ParentID,
-			Assignee:      username,
-			Status:        task.Status,
-			UpdatedBy:     params.UserID,
-			ActorUsername: username,
-			ActorRole:     "user",
+			Title:              task.Title,
+			Description:        task.Description,
+			AcceptanceCriteria: task.AcceptanceCriteria,
+			ParentID:           task.ParentID,
+			Assignee:           username,
+			Status:             task.Status,
+			Priority:           task.Priority,
+			Order:              task.Order,
+			UpdatedBy:          params.UserID,
+			ActorUsername:      username,
+			ActorRole:          "user",
 		})
 		if err != nil {
 			return Task{}, "", err
@@ -481,14 +494,17 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 		return Task{}, "NO-WORK", nil
 	}
 	assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
-		Title:         task.Title,
-		Description:   task.Description,
-		ParentID:      task.ParentID,
-		Assignee:      username,
-		Status:        task.Status,
-		UpdatedBy:     params.UserID,
-		ActorUsername: username,
-		ActorRole:     "user",
+		Title:              task.Title,
+		Description:        task.Description,
+		AcceptanceCriteria: task.AcceptanceCriteria,
+		ParentID:           task.ParentID,
+		Assignee:           username,
+		Status:             task.Status,
+		Priority:           task.Priority,
+		Order:              task.Order,
+		UpdatedBy:          params.UserID,
+		ActorUsername:      username,
+		ActorRole:          "user",
 	})
 	if err != nil {
 		return Task{}, "", err
@@ -498,7 +514,7 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, status string) (Task, bool, error) {
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE assignee = ? AND status = ?
 	`
@@ -523,7 +539,7 @@ func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND status = 'open' AND TRIM(COALESCE(assignee, '')) = ''
 		ORDER BY created_at, task_id
@@ -560,6 +576,7 @@ func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy in
 		Description:        original.Description,
 		AcceptanceCriteria: original.AcceptanceCriteria,
 		Priority:           original.Priority,
+		Order:              original.Order,
 		Assignee:           "",
 		Status:             "notready",
 		CreatedBy:          createdBy,

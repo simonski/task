@@ -197,14 +197,17 @@ func (s *LocalService) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, 
 		return store.Task{}, err
 	}
 	return store.UpdateTask(db, id, store.TaskUpdateParams{
-		Title:         req.Title,
-		Description:   req.Description,
-		ParentID:      req.ParentID,
-		Assignee:      req.Assignee,
-		Status:        req.Status,
-		UpdatedBy:     user.ID,
-		ActorUsername: user.Username,
-		ActorRole:     user.Role,
+		Title:              req.Title,
+		Description:        req.Description,
+		AcceptanceCriteria: req.AcceptanceCriteria,
+		ParentID:           req.ParentID,
+		Assignee:           req.Assignee,
+		Status:             req.Status,
+		Priority:           req.Priority,
+		Order:              req.Order,
+		UpdatedBy:          user.ID,
+		ActorUsername:      user.Username,
+		ActorRole:          user.Role,
 	})
 }
 
@@ -214,11 +217,14 @@ func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {
 		return store.Task{}, err
 	}
 	return s.UpdateTask(id, TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    &parentID,
-		Assignee:    current.Assignee,
-		Status:      current.Status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           &parentID,
+		Assignee:           current.Assignee,
+		Status:             current.Status,
+		Priority:           current.Priority,
+		Order:              current.Order,
 	})
 }
 
@@ -228,11 +234,14 @@ func (s *LocalService) UnsetTaskParent(id int64) (store.Task, error) {
 		return store.Task{}, err
 	}
 	return s.UpdateTask(id, TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    nil,
-		Assignee:    current.Assignee,
-		Status:      current.Status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           nil,
+		Assignee:           current.Assignee,
+		Status:             current.Status,
+		Priority:           current.Priority,
+		Order:              current.Order,
 	})
 }
 

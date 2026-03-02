@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	acceptance_criteria TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'open',
 	priority INTEGER NOT NULL DEFAULT 3,
+	sort_order INTEGER NOT NULL DEFAULT 0,
 	assignee TEXT NOT NULL DEFAULT '',
 	archived INTEGER NOT NULL DEFAULT 0,
 	created_by INTEGER,
@@ -175,6 +176,40 @@ CREATE TABLE IF NOT EXISTS dependencies (
 );
 `
 
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	return migrateSchema(db)
+}
+
+func migrateSchema(db *sql.DB) error {
+	if !columnExists(db, "tasks", "sort_order") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func columnExists(db *sql.DB, tableName, columnName string) bool {
+	rows, err := db.Query(`PRAGMA table_info(` + tableName + `)`)
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull int
+		var dflt sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return false
+		}
+		if name == columnName {
+			return true
+		}
+	}
+	return false
 }

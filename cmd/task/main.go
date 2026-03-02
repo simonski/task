@@ -145,14 +145,14 @@ var helpIndex = map[string]commandHelp{
 		example: "task show 42",
 	},
 	"search": {
-		usage:   "task search \"query\" [-url <server-url>]",
-		details: []string{"Searches task titles and descriptions within the active project."},
-		example: "task search \"password reset\"",
+		usage:   "task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>]",
+		details: []string{"Searches across tasks in all projects using a free-form query.", "Optional filters narrow by status, title text, description text, priority, and owner."},
+		example: "task search password reset -status open -owner alice",
 	},
 	"update": {
-		usage:   "task update <id> -status <status>",
-		details: []string{"Updates a task.", "Current CLI support is focused on `-status` and accepts `notready`, `open`, `inprogress`, `complete`, and `fail`."},
-		example: "task update 42 -status inprogress",
+		usage:   "task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]",
+		details: []string{"Updates one or more task fields in a single command.", "Accepted status values are `notready`, `open`, `inprogress`, `complete`, and `fail`."},
+		example: "task update 42 -title \"Customer Portal\" -status inprogress -priority 2",
 	},
 	"set-parent": {
 		usage:   "task set-parent <id> <parent-id>",
@@ -1266,16 +1266,37 @@ func runGet(args []string) error {
 }
 
 func runSearch(args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage: task search \"query\"")
-	}
-	_, api, project, err := resolveCurrentProjectClient()
+	query, filters, err := parseSearchArgs(args)
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasksFiltered(project.ID, "", "", args[0], "", 0)
+	if query == "" {
+		return errors.New("usage: task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>]")
+	}
+	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	projects, err := svc.ListProjects()
+	if err != nil {
+		return err
+	}
+	var tasks []store.Task
+	for _, project := range projects {
+		projectTasks, err := svc.ListTasksFiltered(project.ID, "", "", "", "", 0)
+		if err != nil {
+			return err
+		}
+		for _, task := range projectTasks {
+			if !taskMatchesSearch(task, query, filters.status, filters.title, filters.description, filters.priority, filters.owner) {
+				continue
+			}
+			tasks = append(tasks, task)
+		}
 	}
 	if outputJSON {
 		return printJSON(tasks)
@@ -1284,6 +1305,96 @@ func runSearch(args []string) error {
 		fmt.Printf("%d\t%s\t%s\t%s\n", task.ID, task.Type, task.Status, task.Title)
 	}
 	return nil
+}
+
+type searchFilters struct {
+	status      string
+	title       string
+	description string
+	priority    int
+	owner       string
+}
+
+func parseSearchArgs(args []string) (string, searchFilters, error) {
+	var filters searchFilters
+	var terms []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-status":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -status requires a value")
+			}
+			filters.status = args[i+1]
+			i++
+		case "-title":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -title requires a value")
+			}
+			filters.title = args[i+1]
+			i++
+		case "-description":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -description requires a value")
+			}
+			filters.description = args[i+1]
+			i++
+		case "-priority":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -priority requires a value")
+			}
+			priority, err := strconv.Atoi(args[i+1])
+			if err != nil {
+				return "", filters, errors.New("search priority must be numeric")
+			}
+			filters.priority = priority
+			i++
+		case "-owner":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -owner requires a value")
+			}
+			filters.owner = args[i+1]
+			i++
+		default:
+			terms = append(terms, args[i])
+		}
+	}
+	return strings.TrimSpace(strings.Join(terms, " ")), filters, nil
+}
+
+func taskMatchesSearch(task store.Task, query, status, title, description string, priority int, owner string) bool {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query != "" {
+		haystack := strings.ToLower(strings.Join([]string{
+			task.Title,
+			task.Description,
+			task.AcceptanceCriteria,
+			task.Assignee,
+			task.Status,
+			strconv.Itoa(task.Priority),
+		}, "\n"))
+		if !strings.Contains(haystack, query) {
+			return false
+		}
+	}
+	if trimmed := strings.TrimSpace(status); trimmed != "" && task.Status != trimmed {
+		return false
+	}
+	if trimmed := strings.ToLower(strings.TrimSpace(title)); trimmed != "" && !strings.Contains(strings.ToLower(task.Title), trimmed) {
+		return false
+	}
+	if trimmed := strings.ToLower(strings.TrimSpace(description)); trimmed != "" {
+		descriptionFields := strings.ToLower(task.Description + "\n" + task.AcceptanceCriteria)
+		if !strings.Contains(descriptionFields, trimmed) {
+			return false
+		}
+	}
+	if priority != 0 && task.Priority != priority {
+		return false
+	}
+	if trimmed := strings.TrimSpace(owner); trimmed != "" && task.Assignee != trimmed {
+		return false
+	}
+	return true
 }
 
 func runSetStatus(args []string) error {
@@ -1358,19 +1469,6 @@ func runTaskStatusAlias(args []string, status, command string) error {
 	return updateTaskStatus(args[0], status)
 }
 
-func runUpdate(args []string) error {
-	fs := flag.NewFlagSet("update", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	status := fs.String("status", "", "task status")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 || strings.TrimSpace(*status) == "" {
-		return errors.New("usage: task update <id> -status <status>")
-	}
-	return updateTaskStatus(fs.Arg(0), *status)
-}
-
 func updateTaskStatus(idArg, status string) error {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
@@ -1389,11 +1487,14 @@ func updateTaskStatus(idArg, status string) error {
 		return err
 	}
 	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    current.ParentID,
-		Assignee:    current.Assignee,
-		Status:      status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           current.Assignee,
+		Status:             status,
+		Priority:           current.Priority,
+		Order:              current.Order,
 	})
 	if err != nil {
 		return err
@@ -1402,6 +1503,103 @@ func updateTaskStatus(idArg, status string) error {
 		return printJSON(updated)
 	}
 	printTask(updated)
+	return nil
+}
+
+func runUpdate(args []string) error {
+	fs := flag.NewFlagSet("update", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	title := fs.String("title", "", "task title")
+	description := fs.String("description", "", "task description")
+	desc := fs.String("desc", "", "task description")
+	acceptanceCriteria := fs.String("ac", "", "task acceptance criteria")
+	priority := fs.Int("priority", 0, "task priority")
+	order := fs.Int("order", 0, "task order")
+	status := fs.String("status", "", "task status")
+	parentIDRaw := fs.String("parent_id", "", "task parent id")
+	if len(args) == 0 {
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[0], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	hasTitle := containsFlag(args[1:], "-title")
+	hasDescription := containsFlag(args[1:], "-description")
+	hasDesc := containsFlag(args[1:], "-desc")
+	hasAC := containsFlag(args[1:], "-ac")
+	hasPriority := containsFlag(args[1:], "-priority")
+	hasOrder := containsFlag(args[1:], "-order")
+	hasStatus := containsFlag(args[1:], "-status")
+	hasParentID := containsFlag(args[1:], "-parent_id")
+	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasStatus && !hasParentID {
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	next := libtask.TaskUpdateRequest{
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           current.Assignee,
+		Status:             current.Status,
+		Priority:           current.Priority,
+		Order:              current.Order,
+	}
+	if hasTitle {
+		next.Title = *title
+	}
+	if hasDescription {
+		next.Description = *description
+	}
+	if hasDesc {
+		next.Description = *desc
+	}
+	if hasAC {
+		next.AcceptanceCriteria = *acceptanceCriteria
+	}
+	if hasPriority {
+		next.Priority = *priority
+	}
+	if hasOrder {
+		next.Order = *order
+	}
+	if hasStatus {
+		next.Status = *status
+	}
+	if hasParentID {
+		parentID, err := strconv.ParseInt(strings.TrimSpace(*parentIDRaw), 10, 64)
+		if err != nil {
+			return errors.New("parent id must be numeric")
+		}
+		next.ParentID = &parentID
+	}
+	updated, err := svc.UpdateTask(id, next)
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(updated)
+	}
+	dependencies, _ := svc.ListDependencies(id)
+	printTaskDetails(updated, dependencies)
 	return nil
 }
 
@@ -2185,7 +2383,7 @@ func printTaskDetails(task store.Task, dependencies []store.Dependency) {
 	fmt.Printf("ProjectID    : %d\n", task.ProjectID)
 	fmt.Printf("Title        : %s\n", task.Title)
 	fmt.Printf("Assignee     : %s\n", task.Assignee)
-	fmt.Printf("Order        : \n")
+	fmt.Printf("Order        : %d\n", task.Order)
 	fmt.Printf("DependsOn    : %s\n", dependsOn)
 	fmt.Printf("Status       : %s\n", task.Status)
 	fmt.Printf("Priority     : %d\n", task.Priority)
@@ -2218,16 +2416,35 @@ func resolveCurrentProjectClient() (config.Config, libtask.Service, store.Projec
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
 	}
-	if cfg.CurrentProject == "" {
-		return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use <id>` first")
-	}
 	svc, err := resolveService(cfg)
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
 	}
-	project, err := svc.GetProject(cfg.CurrentProject)
+
+	projectID := strings.TrimSpace(cfg.CurrentProject)
+	if projectID == "" {
+		projectID = "1"
+	}
+
+	project, err := svc.GetProject(projectID)
+	if err != nil && projectID != "1" {
+		project, err = svc.GetProject("1")
+		if err == nil {
+			projectID = "1"
+		}
+	}
 	if err != nil {
+		if strings.TrimSpace(cfg.CurrentProject) == "" {
+			return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use <id>` first")
+		}
 		return config.Config{}, nil, store.Project{}, err
+	}
+
+	if cfg.CurrentProject != projectID {
+		cfg.CurrentProject = projectID
+		if saveErr := config.Save(cfg); saveErr != nil {
+			return config.Config{}, nil, store.Project{}, saveErr
+		}
 	}
 	return cfg, svc, project, nil
 }

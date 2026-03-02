@@ -109,6 +109,53 @@ func TestHTTPServiceSetTaskParent(t *testing.T) {
 	}
 }
 
+func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
+	_, svc := newRemoteFixture(t)
+
+	parent, err := svc.CreateTask(libtask.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "epic",
+		Title:     "Parent",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(parent) error = %v", err)
+	}
+	task, err := svc.CreateTask(libtask.TaskCreateRequest{
+		ProjectID:          1,
+		Type:               "task",
+		Title:              "Child",
+		Description:        "old description",
+		AcceptanceCriteria: "old ac",
+		Priority:           1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(task) error = %v", err)
+	}
+	if _, err := svc.RequestTask(libtask.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
+		t.Fatalf("RequestTask() error = %v", err)
+	}
+
+	updated, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		Title:              "Updated Child",
+		Description:        "new description",
+		AcceptanceCriteria: "new ac",
+		ParentID:           &parent.ID,
+		Assignee:           task.Assignee,
+		Status:             "inprogress",
+		Priority:           3,
+		Order:              7,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "inprogress" || updated.Priority != 3 || updated.Order != 7 {
+		t.Fatalf("UpdateTask() = %#v", updated)
+	}
+	if updated.ParentID == nil || *updated.ParentID != parent.ID {
+		t.Fatalf("UpdateTask() parent = %#v", updated)
+	}
+}
+
 func TestHTTPServiceCountRequiresAuth(t *testing.T) {
 	t.Setenv("TASK_MODE", "remote")
 	fixture, _ := newRemoteFixture(t)

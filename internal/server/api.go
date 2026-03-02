@@ -554,14 +554,17 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				return
 			}
 			task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
-				Title:         req.Title,
-				Description:   req.Description,
-				ParentID:      req.ParentID,
-				Assignee:      req.Assignee,
-				Status:        req.Status,
-				UpdatedBy:     user.ID,
-				ActorUsername: user.Username,
-				ActorRole:     user.Role,
+				Title:              req.Title,
+				Description:        req.Description,
+				AcceptanceCriteria: req.AcceptanceCriteria,
+				ParentID:           req.ParentID,
+				Assignee:           req.Assignee,
+				Status:             req.Status,
+				Priority:           req.Priority,
+				Order:              req.Order,
+				UpdatedBy:          user.ID,
+				ActorUsername:      user.Username,
+				ActorRole:          user.Role,
 			})
 			if err != nil {
 				if errors.Is(err, store.ErrTaskNotFound) {
@@ -649,6 +652,7 @@ type taskRequest struct {
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Status             string `json:"status"`
 	Priority           int    `json:"priority"`
+	Order              int    `json:"order"`
 	Assignee           string `json:"assignee"`
 }
 

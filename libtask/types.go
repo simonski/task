@@ -36,11 +36,14 @@ type TaskCreateRequest struct {
 }
 
 type TaskUpdateRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	ParentID    *int64 `json:"parent_id,omitempty"`
-	Assignee    string `json:"assignee"`
-	Status      string `json:"status,omitempty"`
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	AcceptanceCriteria string `json:"acceptance_criteria"`
+	ParentID           *int64 `json:"parent_id,omitempty"`
+	Assignee           string `json:"assignee"`
+	Status             string `json:"status,omitempty"`
+	Priority           int    `json:"priority"`
+	Order              int    `json:"order"`
 }
 
 type CommentCreateRequest struct {
