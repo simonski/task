@@ -1,6 +1,8 @@
 .beads
 bin/
 commands.sh
+commands2.sh
 task
 parser
+task.db
 
