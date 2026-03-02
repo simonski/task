@@ -56,13 +56,12 @@ go install github.com/simonski/task@latest
 ## Running
 
 ```bash
-task init
+task initdb
 task server
 ```
 
 ## Usage
 
 Either via the website `http://localhost:8000` or via the terminal using `task`
-
 
 

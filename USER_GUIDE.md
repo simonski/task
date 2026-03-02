@@ -40,7 +40,7 @@ If `-f` is omitted, `task initdb` creates the SQLite database at `$TASK_HOME/tas
 `task initdb` creates:
 
 1. an `admin` account
-2. the default project, `default-project`
+2. the default project, `Default Project` with project id `1`
 
 Bootstrap resolution works like this:
 
@@ -138,20 +138,42 @@ On successful login:
 
 Registering a user does not log that user in or create local session credentials.
 
-Check the status of the user and connection:
+Check the current mode and connection state:
 
 ```bash
 task status
 ```
 
-`task status` pings the server and shows:
+`task status` always prints the current effective configuration first, then performs a mode-appropriate connectivity check.
 
-- the resolved server URL
-- authentication state
-- server version
-- client version
+In REMOTE mode it prints:
 
-If the server and client versions differ, it prints a warning.
+- `mode: remote`
+- `server: <TASK_SERVER>`
+- `username: <configured username or blank>`
+- `authenticated: true|false`
+
+Then it calls the remote status endpoint and prints:
+
+- `connection: success` in green if the server responds successfully
+- `connection: failure` in red if the server cannot be contacted or returns an error
+
+In LOCAL mode it prints:
+
+- `mode: local`
+- `db_path: <resolved database path>`
+- `db_exists: true|false`
+
+Then it opens the database if present and verifies the schema is usable. It prints:
+
+- `connection: success` in green if the database can be opened and queried
+- `connection: failure` in red if the database is missing, cannot be opened, or the schema is invalid
+
+If the database does not exist in LOCAL mode, it also prints:
+
+- `hint: run task initdb`
+
+If `-nocolor` is set, the same output is printed without ANSI colors.
 
 Show aggregate counts:
 

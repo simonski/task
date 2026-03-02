@@ -88,8 +88,7 @@ If any client command succeeds, exit 0
     tasks 123 (50 completed, 75 in progress, 110)
     epics 10 (5 completed)
 
-`task status` should ping the server and indicate the server version and the client version.
-    It should warn if versions differ.
+`task status` should print the effective configuration first, then perform the documented remote/local connectivity check.
 
 `task assign <id> <name>` is an admin only command that assigns a task ID to a user
 `task unassign <id> <name>` is an admin only command that un-assigns a task ID to a user
@@ -275,13 +274,17 @@ If a user is not authenticated
     - instruct user to run `task login`
     
 `task status` in remote mode:
-    - Will print out the local configuration then attempt a remote connection.
-    - print the address and username and attempt a connection
-    - connection attempts mean:
-         calling the status endpoint in remote
-         finding amd opening the database to count items
-
-    if remote print out in a friendly method "success/failure" in green/red if it can/cnanot contact the server.
+    - prints the current effective configuration first
+    - prints:
+         mode: remote
+         server: <TASK_SERVER>
+         username: <configured username or blank>
+         authenticated: true|false
+    - attempts a remote connection by calling the remote status endpoint
+    - prints:
+         connection: success   (green)
+         connection: failure   (red)
+    - if `-nocolor` is set, print the same output without ANSI colors
 
 LOCAL-mode
 
@@ -296,15 +299,72 @@ It will then select a database file using the following logic
 TASK_USERNAME and TASK_PASSWORD are NOT used in local mode.  The username is $USERNAME of the computer.
 
 `task status` in local mode:
-    print the location of the db and if it exists
-    if if exists, attempt a connection to verify schema
-    if local print out in a friendly method "success/failure" in green/red if it can/cnanot contact the database.
-    - Will print out the local configuration then attempt a remote connection.
-    - print the address and username and attempt a connection
-    - connection attempts mean:
-         calling the status endpoint in remote
-         finding amd opening the database to count items
-    - if the database does not exist, pritn the usage to create it
+    - prints the current effective configuration first
+    - prints:
+         mode: local
+         db_path: <resolved database path>
+         db_exists: true|false
+    - if the database exists, opens it and verifies the schema is usable
+    - a usable schema means the required application tables exist and can be queried
+    - prints:
+         connection: success   (green)
+         connection: failure   (red)
+    - if the database does not exist, print:
+         hint: run task initdb
+    - if `-nocolor` is set, print the same output without ANSI colors
+
+------------------------------------------------------------------
+
+REFACTOR: LOCAL AND REMOTE CLIENT LIBRARIES
+
+Refactor the task code so that the CLI does not directly decide between store calls and HTTP calls throughout the command handlers.
+
+Create two libraries with the same task-domain service contract:
+
+`libtask`
+    - defines the service interface used by the CLI
+    - provides the LOCAL implementation backed by SQLite/store
+    - owns local-mode behavior, including DB path resolution and local user resolution
+
+`libtaskhttp`
+    - provides the REMOTE implementation of the same service interface
+    - talks to the HTTP API described by the OpenAPI spec
+    - should not expose raw HTTP details to the CLI
+
+Dependency direction:
+
+    cmd/task      -> chooses libtask or libtaskhttp based on TASK_MODE
+    libtaskhttp   -> calls HTTP endpoints only
+    internal/server -> uses libtask service implementation internally
+    libtask       -> uses store/database
+
+Do not define the interface around raw tables or CRUD helpers.  Define it around task-domain operations the CLI actually needs, for example:
+
+    Status
+    Login / Logout / Register
+    Count
+    ListProjects / GetProject / CreateProject / UpdateProject / SetProjectEnabled
+    ListTasks / GetTask / CreateTask / UpdateTask / CloneTask / RequestTask
+    ListDependencies / AddDependency / RemoveDependency
+    ListHistory / AddComment / ListComments
+    ListUsers / CreateUser / DeleteUser / SetUserEnabled
+
+Testing requirements:
+
+    - Create a comprehensive contract test suite for the shared service interface.
+    - Run the same red/green service tests against:
+         1. libtask (local SQLite-backed implementation)
+         2. libtaskhttp (HTTP-backed implementation)
+    - Keep transport-specific tests for HTTP request/response handling in libtaskhttp.
+    - Keep storage/schema edge-case tests in store/libtask.
+
+Acceptance criteria:
+
+    - CLI command handlers depend on the shared service interface, not on HTTP/store branching.
+    - LOCAL mode uses libtask.
+    - REMOTE mode uses libtaskhttp.
+    - Existing CLI behavior remains the same in both modes.
+    - `go test ./...` passes with comprehensive coverage for both implementations.
 
 ------------------------------------------------------------------
 

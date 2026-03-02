@@ -2,12 +2,15 @@ package client
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	osuser "os/user"
 	"strings"
 
 	"github.com/simonski/task/internal/config"
@@ -18,6 +21,7 @@ type Client struct {
 	baseURL string
 	token   string
 	http    *http.Client
+	mode    string
 }
 
 type AuthResponse struct {
@@ -87,14 +91,22 @@ type TaskRequestResponse struct {
 }
 
 func New(cfg config.Config) *Client {
+	mode, err := config.ResolveMode()
+	if err != nil {
+		mode = config.ModeLocal
+	}
 	return &Client{
 		baseURL: strings.TrimRight(config.ResolveServerURL(cfg), "/"),
 		token:   cfg.Token,
 		http:    http.DefaultClient,
+		mode:    mode,
 	}
 }
 
 func (c *Client) Register(username, password string) (store.User, error) {
+	if c.mode == config.ModeLocal {
+		return store.User{}, errors.New("task register requires TASK_MODE=remote")
+	}
 	var user store.User
 	err := c.doJSON(http.MethodPost, "/api/register", map[string]string{
 		"username": username,
@@ -104,6 +116,9 @@ func (c *Client) Register(username, password string) (store.User, error) {
 }
 
 func (c *Client) Login(username, password string) (AuthResponse, error) {
+	if c.mode == config.ModeLocal {
+		return AuthResponse{}, errors.New("task login requires TASK_MODE=remote")
+	}
 	var response AuthResponse
 	err := c.doJSON(http.MethodPost, "/api/login", map[string]string{
 		"username": username,
@@ -113,16 +128,45 @@ func (c *Client) Login(username, password string) (AuthResponse, error) {
 }
 
 func (c *Client) Logout() error {
+	if c.mode == config.ModeLocal {
+		return errors.New("task logout requires TASK_MODE=remote")
+	}
 	return c.doJSON(http.MethodPost, "/api/logout", nil, nil)
 }
 
 func (c *Client) Status() (StatusResponse, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return StatusResponse{}, err
+		}
+		defer db.Close()
+
+		username := localUsername()
+		user, err := ensureLocalUser(db, username)
+		if err != nil {
+			return StatusResponse{}, err
+		}
+		return StatusResponse{
+			Status:        "ok",
+			Authenticated: true,
+			User:          &user,
+		}, nil
+	}
 	var status StatusResponse
 	err := c.doJSON(http.MethodGet, "/api/status", nil, &status)
 	return status, err
 }
 
 func (c *Client) Count(projectID *int64) (CountSummary, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return CountSummary{}, err
+		}
+		defer db.Close()
+		return store.CountEverything(db, projectID)
+	}
 	var summary CountSummary
 	path := "/api/count"
 	if projectID != nil {
@@ -133,6 +177,14 @@ func (c *Client) Count(projectID *int64) (CountSummary, error) {
 }
 
 func (c *Client) CreateUser(username, password string) (store.User, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.User{}, err
+		}
+		defer db.Close()
+		return store.CreateUser(db, username, password, "user")
+	}
 	var user store.User
 	err := c.doJSON(http.MethodPost, "/api/users", map[string]string{
 		"username": username,
@@ -142,6 +194,14 @@ func (c *Client) CreateUser(username, password string) (store.User, error) {
 }
 
 func (c *Client) SetUserEnabled(username string, enabled bool) error {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return store.SetUserEnabled(db, username, enabled)
+	}
 	action := "disable"
 	if enabled {
 		action = "enable"
@@ -150,16 +210,44 @@ func (c *Client) SetUserEnabled(username string, enabled bool) error {
 }
 
 func (c *Client) ListUsers() ([]store.User, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListUsers(db)
+	}
 	var users []store.User
 	err := c.doJSON(http.MethodGet, "/api/users", nil, &users)
 	return users, err
 }
 
 func (c *Client) DeleteUser(username string) error {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return store.DeleteUser(db, username)
+	}
 	return c.doJSON(http.MethodDelete, "/api/users/"+username, nil, nil)
 }
 
 func (c *Client) CreateProject(title, description, acceptanceCriteria string) (store.Project, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Project{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Project{}, err
+		}
+		return store.CreateProject(db, title, description, acceptanceCriteria, user.ID)
+	}
 	var project store.Project
 	err := c.doJSON(http.MethodPost, "/api/projects", ProjectCreateRequest{
 		Title:              title,
@@ -170,24 +258,56 @@ func (c *Client) CreateProject(title, description, acceptanceCriteria string) (s
 }
 
 func (c *Client) ListProjects() ([]store.Project, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListProjects(db)
+	}
 	var projects []store.Project
 	err := c.doJSON(http.MethodGet, "/api/projects", nil, &projects)
 	return projects, err
 }
 
 func (c *Client) GetProject(id string) (store.Project, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Project{}, err
+		}
+		defer db.Close()
+		return store.GetProject(db, id)
+	}
 	var project store.Project
 	err := c.doJSON(http.MethodGet, "/api/projects/"+id, nil, &project)
 	return project, err
 }
 
 func (c *Client) UpdateProject(id int64, req ProjectUpdateRequest) (store.Project, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Project{}, err
+		}
+		defer db.Close()
+		return store.UpdateProject(db, id, req.Title, req.Description, req.AcceptanceCriteria)
+	}
 	var project store.Project
 	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/projects/%d", id), req, &project)
 	return project, err
 }
 
 func (c *Client) SetProjectEnabled(id int64, enabled bool) (store.Project, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Project{}, err
+		}
+		defer db.Close()
+		return store.SetProjectStatus(db, id, enabled)
+	}
 	action := "disable"
 	if enabled {
 		action = "enable"
@@ -198,6 +318,29 @@ func (c *Client) SetProjectEnabled(id int64, enabled bool) (store.Project, error
 }
 
 func (c *Client) CreateTask(req TaskCreateRequest) (store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Task{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Task{}, err
+		}
+		return store.CreateTask(db, store.TaskCreateParams{
+			ProjectID:          req.ProjectID,
+			ParentID:           req.ParentID,
+			CloneOf:            req.CloneOf,
+			Type:               req.Type,
+			Title:              req.Title,
+			Description:        req.Description,
+			AcceptanceCriteria: req.AcceptanceCriteria,
+			Priority:           req.Priority,
+			Assignee:           req.Assignee,
+			CreatedBy:          user.ID,
+		})
+	}
 	var task store.Task
 	err := c.doJSON(http.MethodPost, "/api/tasks", req, &task)
 	return task, err
@@ -208,6 +351,21 @@ func (c *Client) ListTasks(projectID int64) ([]store.Task, error) {
 }
 
 func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListTasks(db, store.TaskListParams{
+			ProjectID: projectID,
+			Type:      taskType,
+			Status:    status,
+			Search:    search,
+			Assignee:  assignee,
+			Limit:     limit,
+		})
+	}
 	var tasks []store.Task
 	values := url.Values{}
 	if taskType != "" {
@@ -234,58 +392,208 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, as
 }
 
 func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Task{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Task{}, err
+		}
+		return store.UpdateTask(db, id, store.TaskUpdateParams{
+			Title:         req.Title,
+			Description:   req.Description,
+			ParentID:      req.ParentID,
+			Assignee:      req.Assignee,
+			Status:        req.Status,
+			UpdatedBy:     user.ID,
+			ActorUsername: user.Username,
+			ActorRole:     user.Role,
+		})
+	}
 	var task store.Task
 	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tasks/%d", id), req, &task)
 	return task, err
 }
 
+func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
+	current, err := c.GetTask(id)
+	if err != nil {
+		return store.Task{}, err
+	}
+	return c.UpdateTask(id, TaskUpdateRequest{
+		Title:       current.Title,
+		Description: current.Description,
+		ParentID:    &parentID,
+		Assignee:    current.Assignee,
+		Status:      current.Status,
+	})
+}
+
+func (c *Client) UnsetTaskParent(id int64) (store.Task, error) {
+	current, err := c.GetTask(id)
+	if err != nil {
+		return store.Task{}, err
+	}
+	return c.UpdateTask(id, TaskUpdateRequest{
+		Title:       current.Title,
+		Description: current.Description,
+		ParentID:    nil,
+		Assignee:    current.Assignee,
+		Status:      current.Status,
+	})
+}
+
 func (c *Client) GetTask(id int64) (store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Task{}, err
+		}
+		defer db.Close()
+		return store.GetTask(db, id)
+	}
 	var task store.Task
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d", id), nil, &task)
 	return task, err
 }
 
 func (c *Client) CloneTask(id int64) (store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Task{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Task{}, err
+		}
+		return store.CloneTask(db, id, user.ID)
+	}
 	var task store.Task
 	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tasks/%d/clone", id), nil, &task)
 	return task, err
 }
 
 func (c *Client) ListHistory(id int64) ([]store.HistoryEvent, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListHistoryEvents(db, id)
+	}
 	var events []store.HistoryEvent
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/history", id), nil, &events)
 	return events, err
 }
 
 func (c *Client) AddComment(id int64, comment string) (store.Comment, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Comment{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Comment{}, err
+		}
+		return store.AddComment(db, id, user.ID, comment)
+	}
 	var created store.Comment
 	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", id), CommentCreateRequest{Comment: comment}, &created)
 	return created, err
 }
 
 func (c *Client) ListComments(id int64) ([]store.Comment, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListComments(db, id)
+	}
 	var comments []store.Comment
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/comments", id), nil, &comments)
 	return comments, err
 }
 
 func (c *Client) AddDependency(req DependencyRequest) (store.Dependency, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Dependency{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return store.Dependency{}, err
+		}
+		return store.AddDependency(db, req.ProjectID, req.TaskID, req.DependsOn, user.ID)
+	}
 	var dependency store.Dependency
 	err := c.doJSON(http.MethodPost, "/api/dependencies", req, &dependency)
 	return dependency, err
 }
 
 func (c *Client) RemoveDependency(req DependencyRequest) error {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return store.DeleteDependency(db, req.ProjectID, req.TaskID, req.DependsOn)
+	}
 	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/dependencies?project_id=%d&task_id=%d&depends_on=%d", req.ProjectID, req.TaskID, req.DependsOn), nil, nil)
 }
 
 func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return nil, err
+		}
+		defer db.Close()
+		return store.ListDependencies(db, id)
+	}
 	var dependencies []store.Dependency
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/dependencies", id), nil, &dependencies)
 	return dependencies, err
 }
 
 func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return TaskRequestResponse{}, err
+		}
+		defer db.Close()
+		user, err := c.localUser(db)
+		if err != nil {
+			return TaskRequestResponse{}, err
+		}
+		task, status, err := store.RequestTask(db, store.TaskRequestParams{
+			ProjectID: req.ProjectID,
+			TaskID:    req.TaskID,
+			Username:  user.Username,
+			UserID:    user.ID,
+		})
+		if err != nil {
+			return TaskRequestResponse{}, err
+		}
+		response := TaskRequestResponse{Status: status}
+		if status == "ASSIGNED" {
+			response.Task = &task
+		}
+		return response, nil
+	}
 	var reader *bytes.Reader
 	payload, err := json.Marshal(req)
 	if err != nil {
@@ -327,6 +635,58 @@ func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
 		return TaskRequestResponse{}, err
 	}
 	return response, nil
+}
+
+func (c *Client) openLocalDB() (*sql.DB, error) {
+	path, err := config.ResolveDatabasePath()
+	if err != nil {
+		return nil, err
+	}
+	return store.Open(path)
+}
+
+func (c *Client) localUser(db *sql.DB) (store.User, error) {
+	return ensureLocalUser(db, localUsername())
+}
+
+func ensureLocalUser(db *sql.DB, username string) (store.User, error) {
+	if user, err := store.GetUserByUsername(db, username); err == nil {
+		if user.Enabled {
+			return user, nil
+		}
+		if err := store.SetUserEnabled(db, username, true); err != nil {
+			return store.User{}, err
+		}
+		return store.GetUserByUsername(db, username)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return store.User{}, err
+	}
+	user, err := store.CreateUser(db, username, "local-mode", "admin")
+	if err != nil {
+		return store.User{}, err
+	}
+	return user, nil
+}
+
+func localUsername() string {
+	user, err := osuser.Current()
+	if err == nil && strings.TrimSpace(user.Username) != "" {
+		parts := strings.Split(user.Username, `\`)
+		return parts[len(parts)-1]
+	}
+	if env := strings.TrimSpace(getenvFirst("USER", "USERNAME")); env != "" {
+		return env
+	}
+	return "user"
+}
+
+func getenvFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (c *Client) doJSON(method, path string, body any, out any) error {

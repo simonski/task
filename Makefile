@@ -1,4 +1,4 @@
-.PHONY: help default build tools bump-version test test-go test-playwright clean
+.PHONY: help default build tools bump-version test test-go test-go-cover test-playwright clean
 
 VERSION_FILE := cmd/task/VERSION
 
@@ -11,6 +11,7 @@ help:
 	@printf "  make tools           Build helper binaries in the repo root.\n"
 	@printf "  make test            Run all tests.\n"
 	@printf "  make test-go         Run Go tests.\n"
+	@printf "  make test-go-cover   Run Go tests with package coverage thresholds.\n"
 	@printf "  make test-playwright Run browser/frontend smoke checks.\n"
 	@printf "  make clean           Remove built binaries from ./bin.\n"
 	@printf "\n"
@@ -46,6 +47,31 @@ test: test-go test-playwright
 
 test-go:
 	go test ./...
+
+test-go-cover:
+	@set -e; \
+	for entry in \
+		"./cmd/task 55" \
+		"./libtask 65" \
+		"./libtaskhttp 75" \
+		"./internal/client 55" \
+		"./internal/store 70" \
+		"./internal/config 70" \
+		"./tools/parser 75"; do \
+		pkg=$${entry% *}; \
+		min=$${entry#* }; \
+		out=$$(go test "$$pkg" -cover | tail -n 1); \
+		printf "%s\n" "$$out"; \
+		pct=$$(printf "%s" "$$out" | sed -n 's/.*coverage: \([0-9.]*\)%.*/\1/p'); \
+		if [ -z "$$pct" ]; then \
+			printf "could not parse coverage for %s\n" "$$pkg" >&2; \
+			exit 1; \
+		fi; \
+		awk -v pct="$$pct" -v min="$$min" 'BEGIN { if (pct + 0 < min + 0) exit 1 }' || { \
+			printf "coverage threshold failed for %s: got %s%%, need %s%%\n" "$$pkg" "$$pct" "$$min" >&2; \
+			exit 1; \
+		}; \
+	done
 
 test-playwright:
 	@printf "No Playwright tests implemented yet; frontend smoke checks are deferred.\n"

@@ -1,0 +1,393 @@
+package libtasktest
+
+import (
+	"testing"
+
+	"github.com/simonski/task/libtask"
+)
+
+type Factory func(t *testing.T) libtask.Service
+
+func RunServiceContractTests(t *testing.T, factory Factory) {
+	t.Helper()
+
+	t.Run("project-task-request-clone-comment-dependency", func(t *testing.T) {
+		svc := factory(t)
+
+		projects, err := svc.ListProjects()
+		if err != nil {
+			t.Fatalf("ListProjects() error = %v", err)
+		}
+		if len(projects) == 0 {
+			t.Fatal("ListProjects() returned no projects")
+		}
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+			Title:              "Contract Project",
+			Description:        "Description",
+			AcceptanceCriteria: "AC",
+		})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+		if project.ID == 0 {
+			t.Fatalf("CreateProject() = %#v", project)
+		}
+
+		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID: project.ID,
+			Type:      "task",
+			Title:     "Contract Task",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+		if task.ID == 0 {
+			t.Fatalf("CreateTask() = %#v", task)
+		}
+
+		response, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID})
+		if err != nil {
+			t.Fatalf("RequestTask() error = %v", err)
+		}
+		if response.Status != "ASSIGNED" || response.Task == nil {
+			t.Fatalf("RequestTask() = %#v", response)
+		}
+
+		updated, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+			Title:       task.Title,
+			Description: task.Description,
+			ParentID:    task.ParentID,
+			Assignee:    response.Task.Assignee,
+			Status:      "inprogress",
+		})
+		if err != nil {
+			t.Fatalf("UpdateTask() error = %v", err)
+		}
+		if updated.Status != "inprogress" {
+			t.Fatalf("UpdateTask().Status = %q, want inprogress", updated.Status)
+		}
+
+		comment, err := svc.AddComment(task.ID, "contract comment")
+		if err != nil {
+			t.Fatalf("AddComment() error = %v", err)
+		}
+		if comment.ID == 0 {
+			t.Fatalf("AddComment() = %#v", comment)
+		}
+
+		comments, err := svc.ListComments(task.ID)
+		if err != nil {
+			t.Fatalf("ListComments() error = %v", err)
+		}
+		if len(comments) != 1 {
+			t.Fatalf("ListComments() len = %d, want 1", len(comments))
+		}
+
+		other, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID: project.ID,
+			Type:      "task",
+			Title:     "Dependency Task",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask(other) error = %v", err)
+		}
+
+		dependency, err := svc.AddDependency(libtask.DependencyRequest{
+			ProjectID: project.ID,
+			TaskID:    task.ID,
+			DependsOn: other.ID,
+		})
+		if err != nil {
+			t.Fatalf("AddDependency() error = %v", err)
+		}
+		if dependency.ID == 0 {
+			t.Fatalf("AddDependency() = %#v", dependency)
+		}
+
+		dependencies, err := svc.ListDependencies(task.ID)
+		if err != nil {
+			t.Fatalf("ListDependencies() error = %v", err)
+		}
+		if len(dependencies) != 1 {
+			t.Fatalf("ListDependencies() len = %d, want 1", len(dependencies))
+		}
+
+		if err := svc.RemoveDependency(libtask.DependencyRequest{
+			ProjectID: project.ID,
+			TaskID:    task.ID,
+			DependsOn: other.ID,
+		}); err != nil {
+			t.Fatalf("RemoveDependency() error = %v", err)
+		}
+
+		cloned, err := svc.CloneTask(task.ID)
+		if err != nil {
+			t.Fatalf("CloneTask() error = %v", err)
+		}
+		if cloned.CloneOf == nil || *cloned.CloneOf != task.ID {
+			t.Fatalf("CloneTask() = %#v", cloned)
+		}
+		if cloned.Status != "notready" {
+			t.Fatalf("CloneTask().Status = %q, want notready", cloned.Status)
+		}
+
+		status, err := svc.Status()
+		if err != nil {
+			t.Fatalf("Status() error = %v", err)
+		}
+		if status.Status != "ok" {
+			t.Fatalf("Status() = %#v", status)
+		}
+	})
+
+	t.Run("project-update-and-enable-disable", func(t *testing.T) {
+		svc := factory(t)
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+			Title:              "Project A",
+			Description:        "Before",
+			AcceptanceCriteria: "AC1",
+		})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+
+		updated, err := svc.UpdateProject(project.ID, libtask.ProjectUpdateRequest{
+			Title:              "Project B",
+			Description:        "After",
+			AcceptanceCriteria: "AC2",
+		})
+		if err != nil {
+			t.Fatalf("UpdateProject() error = %v", err)
+		}
+		if updated.Title != "Project B" || updated.Description != "After" || updated.AcceptanceCriteria != "AC2" {
+			t.Fatalf("UpdateProject() = %#v", updated)
+		}
+
+		disabled, err := svc.SetProjectEnabled(project.ID, false)
+		if err != nil {
+			t.Fatalf("SetProjectEnabled(false) error = %v", err)
+		}
+		if disabled.Status != "disabled" {
+			t.Fatalf("SetProjectEnabled(false).Status = %q, want disabled", disabled.Status)
+		}
+
+		enabled, err := svc.SetProjectEnabled(project.ID, true)
+		if err != nil {
+			t.Fatalf("SetProjectEnabled(true) error = %v", err)
+		}
+		if enabled.Status != "active" {
+			t.Fatalf("SetProjectEnabled(true).Status = %q, want active", enabled.Status)
+		}
+	})
+
+	t.Run("task-filter-history-and-closed-ticket-rules", func(t *testing.T) {
+		svc := factory(t)
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Tasks"})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+
+		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID:   project.ID,
+			Type:        "bug",
+			Title:       "Bug task",
+			Description: "find me",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+
+		requested, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID, TaskID: &task.ID})
+		if err != nil {
+			t.Fatalf("RequestTask() error = %v", err)
+		}
+		if requested.Status != "ASSIGNED" || requested.Task == nil {
+			t.Fatalf("RequestTask() = %#v", requested)
+		}
+
+		filtered, err := svc.ListTasksFiltered(project.ID, "bug", "open", "find", requested.Task.Assignee, 10)
+		if err != nil {
+			t.Fatalf("ListTasksFiltered() error = %v", err)
+		}
+		if len(filtered) != 1 || filtered[0].ID != task.ID {
+			t.Fatalf("ListTasksFiltered() = %#v", filtered)
+		}
+
+		completed, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+			Title:       task.Title,
+			Description: task.Description,
+			ParentID:    task.ParentID,
+			Assignee:    requested.Task.Assignee,
+			Status:      "complete",
+		})
+		if err != nil {
+			t.Fatalf("UpdateTask(complete) error = %v", err)
+		}
+		if completed.Status != "complete" {
+			t.Fatalf("UpdateTask(complete).Status = %q", completed.Status)
+		}
+
+		history, err := svc.ListHistory(task.ID)
+		if err != nil {
+			t.Fatalf("ListHistory() error = %v", err)
+		}
+		if len(history) == 0 {
+			t.Fatal("ListHistory() returned no history")
+		}
+
+		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+			Title:       task.Title,
+			Description: task.Description,
+			ParentID:    task.ParentID,
+			Assignee:    requested.Task.Assignee,
+			Status:      "open",
+		}); err == nil {
+			t.Fatal("UpdateTask(reopen) error = nil, want closed ticket error")
+		}
+	})
+
+	t.Run("negative-paths", func(t *testing.T) {
+		svc := factory(t)
+
+		if _, err := svc.GetProject("999999"); err == nil {
+			t.Fatal("GetProject(missing) error = nil")
+		}
+		if _, err := svc.GetTask(999999); err == nil {
+			t.Fatal("GetTask(missing) error = nil")
+		}
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Negative"})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID: project.ID,
+			Type:      "task",
+			Title:     "Negative Task",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+
+		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+			Title:       task.Title,
+			Description: task.Description,
+			ParentID:    task.ParentID,
+			Assignee:    task.Assignee,
+			Status:      "bogus",
+		}); err == nil {
+			t.Fatal("UpdateTask(invalid status) error = nil")
+		}
+
+		if err := svc.RemoveDependency(libtask.DependencyRequest{
+			ProjectID: project.ID,
+			TaskID:    task.ID,
+			DependsOn: 424242,
+		}); err == nil {
+			t.Fatal("RemoveDependency(missing) error = nil")
+		}
+
+		if _, err := svc.CreateUser("someone-else", "secret"); err != nil {
+			t.Fatalf("CreateUser(someone-else) error = %v", err)
+		}
+
+		assignedElsewhere, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID: project.ID,
+			Type:      "task",
+			Title:     "Assigned Elsewhere",
+			Assignee:  "someone-else",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask(assigned) error = %v", err)
+		}
+		rejected, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID, TaskID: &assignedElsewhere.ID})
+		if err != nil {
+			t.Fatalf("RequestTask(rejected) error = %v", err)
+		}
+		if rejected.Status != "REJECTED" {
+			t.Fatalf("RequestTask(rejected) = %#v", rejected)
+		}
+	})
+
+	t.Run("status-change-requires-assignee", func(t *testing.T) {
+		svc := factory(t)
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Assign Rules"})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+		if _, err := svc.CreateUser("bob", "secret"); err != nil {
+			t.Fatalf("CreateUser(bob) error = %v", err)
+		}
+		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+			ProjectID: project.ID,
+			Type:      "task",
+			Title:     "Assigned to bob",
+			Assignee:  "bob",
+		})
+		if err != nil {
+			t.Fatalf("CreateTask() error = %v", err)
+		}
+		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+			Title:       task.Title,
+			Description: task.Description,
+			ParentID:    task.ParentID,
+			Assignee:    task.Assignee,
+			Status:      "inprogress",
+		}); err == nil {
+			t.Fatal("UpdateTask(status by non-assignee) error = nil")
+		}
+	})
+
+	t.Run("user-management-and-request-no-work", func(t *testing.T) {
+		svc := factory(t)
+
+		user, err := svc.CreateUser("alice", "secret")
+		if err != nil {
+			t.Fatalf("CreateUser() error = %v", err)
+		}
+		if user.Username != "alice" {
+			t.Fatalf("CreateUser() = %#v", user)
+		}
+
+		users, err := svc.ListUsers()
+		if err != nil {
+			t.Fatalf("ListUsers() error = %v", err)
+		}
+		var found bool
+		for _, entry := range users {
+			if entry.Username == "alice" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("ListUsers() missing alice: %#v", users)
+		}
+
+		if err := svc.SetUserEnabled("alice", false); err != nil {
+			t.Fatalf("SetUserEnabled(false) error = %v", err)
+		}
+		if err := svc.SetUserEnabled("alice", true); err != nil {
+			t.Fatalf("SetUserEnabled(true) error = %v", err)
+		}
+		if err := svc.DeleteUser("alice"); err != nil {
+			t.Fatalf("DeleteUser() error = %v", err)
+		}
+
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Empty"})
+		if err != nil {
+			t.Fatalf("CreateProject() error = %v", err)
+		}
+		response, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID})
+		if err != nil {
+			t.Fatalf("RequestTask(no work) error = %v", err)
+		}
+		if response.Status != "NO-WORK" || response.Task != nil {
+			t.Fatalf("RequestTask(no work) = %#v", response)
+		}
+	})
+}

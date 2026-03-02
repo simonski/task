@@ -713,6 +713,63 @@ func TestCloneTaskAPI(t *testing.T) {
 	}
 }
 
+func TestAPIMethodValidation(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	resp := doJSONRequest(t, handler, http.MethodPost, "/api/status", nil, "")
+	if resp.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status method code = %d, want %d", resp.Code, http.StatusMethodNotAllowed)
+	}
+
+	resp = doJSONRequest(t, handler, http.MethodGet, "/api/login", nil, "")
+	if resp.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("login method code = %d, want %d", resp.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestAPIInvalidJSONAndBadParams(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	loginResp := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("login status = %d", loginResp.Code)
+	}
+	var auth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, loginResp, &auth)
+
+	invalidJSON := doRawRequest(t, handler, http.MethodPost, "/api/register", []byte("{bad"), "")
+	if invalidJSON.Code != http.StatusBadRequest {
+		t.Fatalf("register invalid json code = %d, want %d", invalidJSON.Code, http.StatusBadRequest)
+	}
+
+	badCount := doJSONRequest(t, handler, http.MethodGet, "/api/count?project_id=abc", nil, auth.Token)
+	if badCount.Code != http.StatusBadRequest {
+		t.Fatalf("count bad project_id code = %d, want %d", badCount.Code, http.StatusBadRequest)
+	}
+
+	badTask := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/not-a-number", nil, auth.Token)
+	if badTask.Code != http.StatusNotFound {
+		t.Fatalf("task bad id code = %d, want %d", badTask.Code, http.StatusNotFound)
+	}
+}
+
+func TestAPIMissingAuth(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	resp := doJSONRequest(t, handler, http.MethodGet, "/api/users", nil, "")
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("missing auth code = %d, want %d", resp.Code, http.StatusUnauthorized)
+	}
+}
+
 func testHandler(t *testing.T) (http.Handler, *sql.DB) {
 	t.Helper()
 
@@ -752,6 +809,18 @@ func doJSONRequest(t *testing.T, handler http.Handler, method, path string, payl
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func doRawRequest(t *testing.T, handler http.Handler, method, path string, body []byte, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, req)
 	return recorder

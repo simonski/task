@@ -1,0 +1,205 @@
+package libtaskhttp
+
+import (
+	"database/sql"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+
+	"github.com/simonski/task/internal/client"
+	"github.com/simonski/task/internal/config"
+	"github.com/simonski/task/internal/server"
+	"github.com/simonski/task/internal/store"
+	"github.com/simonski/task/libtask"
+	"github.com/simonski/task/libtasktest"
+)
+
+func TestHTTPServiceContract(t *testing.T) {
+	libtasktest.RunServiceContractTests(t, func(t *testing.T) libtask.Service {
+		_, svc := newRemoteFixture(t)
+		return svc
+	})
+}
+
+func TestHTTPServiceStatusUnauthenticated(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	fixture, _ := newRemoteFixture(t)
+
+	svc := New(config.Config{ServerURL: fixture.server.URL})
+	status, err := svc.Status()
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.Authenticated {
+		t.Fatalf("Status().Authenticated = true, want false: %#v", status)
+	}
+}
+
+func TestHTTPServiceRegisterLoginLogoutRoundTrip(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	fixture, _ := newRemoteFixture(t)
+
+	svc := New(config.Config{ServerURL: fixture.server.URL})
+	user, err := svc.Register("alice", "secret")
+	if err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	if user.Username != "alice" {
+		t.Fatalf("Register() = %#v", user)
+	}
+
+	loggedIn, token, err := svc.Login("alice", "secret")
+	if err != nil {
+		t.Fatalf("Login() error = %v", err)
+	}
+	if loggedIn.Username != "alice" || token == "" {
+		t.Fatalf("Login() = %#v, token=%q", loggedIn, token)
+	}
+
+	authed := New(config.Config{ServerURL: fixture.server.URL, Token: token, Username: "alice"})
+	status, err := authed.Status()
+	if err != nil {
+		t.Fatalf("Status(authenticated) error = %v", err)
+	}
+	if !status.Authenticated || status.User == nil || status.User.Username != "alice" {
+		t.Fatalf("Status(authenticated) = %#v", status)
+	}
+
+	if err := authed.Logout(); err != nil {
+		t.Fatalf("Logout() error = %v", err)
+	}
+}
+
+func TestHTTPServiceSetTaskParent(t *testing.T) {
+	_, svc := newRemoteFixture(t)
+
+	parent, err := svc.CreateTask(libtask.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "epic",
+		Title:     "Parent",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(parent) error = %v", err)
+	}
+	child, err := svc.CreateTask(libtask.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Child",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(child) error = %v", err)
+	}
+
+	updated, err := svc.SetTaskParent(child.ID, parent.ID)
+	if err != nil {
+		t.Fatalf("SetTaskParent() error = %v", err)
+	}
+	if updated.ParentID == nil || *updated.ParentID != parent.ID {
+		t.Fatalf("SetTaskParent() = %#v", updated)
+	}
+
+	detached, err := svc.UnsetTaskParent(child.ID)
+	if err != nil {
+		t.Fatalf("UnsetTaskParent() error = %v", err)
+	}
+	if detached.ParentID != nil {
+		t.Fatalf("UnsetTaskParent() = %#v", detached)
+	}
+}
+
+func TestHTTPServiceCountRequiresAuth(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	fixture, _ := newRemoteFixture(t)
+
+	svc := New(config.Config{ServerURL: fixture.server.URL})
+	if _, err := svc.Count(nil); err == nil {
+		t.Fatal("Count() error = nil, want auth error")
+	}
+}
+
+func TestHTTPServicePropagatesMalformedJSON(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{not-json"))
+	}))
+	defer server.Close()
+
+	svc := New(config.Config{ServerURL: server.URL})
+	if _, err := svc.Status(); err == nil {
+		t.Fatal("Status() error = nil, want JSON decode error")
+	}
+}
+
+func TestHTTPServicePropagatesNonJSONErrorBody(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "plain failure", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	svc := New(config.Config{ServerURL: server.URL})
+	if _, err := svc.Count(nil); err == nil {
+		t.Fatal("Count() error = nil, want HTTP status error")
+	}
+}
+
+func TestHTTPServiceHandlesNetworkFailure(t *testing.T) {
+	t.Setenv("TASK_MODE", "remote")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	addr := listener.Addr().String()
+	_ = listener.Close()
+
+	svc := New(config.Config{ServerURL: "http://" + addr})
+	if _, err := svc.Status(); err == nil {
+		t.Fatal("Status() error = nil, want network error")
+	}
+}
+
+type remoteFixture struct {
+	server *httptest.Server
+	db     *sql.DB
+}
+
+func newRemoteFixture(t *testing.T) (*remoteFixture, *Service) {
+	t.Helper()
+	t.Setenv("TASK_MODE", "remote")
+	tempDir := t.TempDir()
+	t.Setenv("TASK_HOME", tempDir)
+
+	dbPath := filepath.Join(tempDir, "task.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	handler, err := server.Handler(db, "test-version", false, nil)
+	if err != nil {
+		t.Fatalf("server.Handler() error = %v", err)
+	}
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(httpServer.Close)
+
+	raw := client.New(config.Config{ServerURL: httpServer.URL})
+	auth, err := raw.Login("admin", "secret")
+	if err != nil {
+		t.Fatalf("raw Login() error = %v", err)
+	}
+
+	svc := New(config.Config{
+		ServerURL: httpServer.URL,
+		Token:     auth.Token,
+		Username:  auth.User.Username,
+	})
+	return &remoteFixture{server: httpServer, db: db}, svc
+}

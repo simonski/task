@@ -2,7 +2,7 @@ EPIC: Core Platform And Runtime
 ID: E1
 DESCRIPTION: Build the single-binary application foundation, including SQLite initialization, configuration, shared runtime wiring, HTTP server startup, embedded frontend serving, and developer quality gates.
 AC:
-- `task init -f <db> -username <admin> -password <password>` creates a new SQLite database and bootstraps the initial administrator account.
+- `task initdb -f <db> -password <password>` creates a new SQLite database and bootstraps the initial administrator account.
 - `task server -f <db>` starts the API server and serves the embedded frontend from the same binary on `http://localhost:8000` by default.
 - The application supports configuration for remote CLI usage, including `TASK_URL`.
 - Passwords are stored securely using Argon2id hashes in SQLite.
@@ -18,7 +18,7 @@ DEPENDS-ON: NONE
     ID: E1-S1
     DESCRIPTION: Implement database initialization, schema creation, and first-run administrator bootstrap through the CLI.
     AC:
-    - Running `task init -f filename.db -username admin -password password` creates the SQLite file, schema, and initial admin account.
+    - Running `task initdb -f filename.db -password password` creates the SQLite file, schema, and initial admin account.
     - Re-running init against an existing database fails safely or requires an explicit overwrite flag.
     - The bootstrap password is stored as an Argon2id hash rather than plaintext.
     - The initialization flow is covered by automated Go tests.
@@ -178,8 +178,8 @@ DEPENDS-ON: E2
     AC:
     - `task project create "Customer Portal"` creates a project.
     - `task project list` lists projects.
-    - `task project get <project-name or id>` shows project details.
-    - `task project use customer-portal` sets the active project.
+    - `task project get <id>` shows project details.
+    - `task project use <id>` sets the active project.
     - `task project` shows the current project context.
     - Active-project behavior is covered by automated tests.
     - All tests pass.

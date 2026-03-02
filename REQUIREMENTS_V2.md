@@ -35,7 +35,7 @@ DEPENDS-ON: NONE
     - `task initdb` creates a database at `$TASK_HOME/task.db` when `-f` is omitted.
     - `task initdb -f task.db --force -password secret` overwrites an existing database and uses the supplied password.
     - `task initdb` without `-password` generates a random admin password and prints it to stdout.
-    - The initialized database contains the `admin` user and the `default-project`.
+    - The initialized database contains the `admin` user and the default project with project id `1`.
     - Passwords are stored as Argon2id hashes in SQLite.
     - Automated tests cover first-run, overwrite, and generated-password flows.
     - use red/green testing
@@ -140,8 +140,9 @@ DEPENDS-ON: E1
     ID: E2-S4
     DESCRIPTION: Expose server status and version information and reuse the same authentication model in the browser.
     AC:
-    - `task status` prints the resolved server URL, authentication state, server version, and client version.
-    - `task status` warns when the server version differs from the client version.
+    - `task status` prints the effective configuration first, then performs a mode-appropriate connectivity check.
+    - In remote mode it prints mode, server, username, authentication state, and remote connection success/failure.
+    - In local mode it prints mode, resolved database path, file existence, and local connection success/failure.
     - The web UI supports login, logout, and authenticated session reuse.
     - Automated tests cover status responses and browser auth state transitions.
     - use red/green testing
@@ -169,7 +170,7 @@ DEPENDS-ON: E2
     DESCRIPTION: Add the backend project domain model and authenticated APIs for create, list, and lookup.
     AC:
     - Projects persist `project_id`, `title`, `description`, `created_at`, `created_by`, and `status`.
-    - The API supports project creation, listing, and lookup by slug or id.
+    - The API supports project creation, listing, and lookup by numeric id.
     - Project records are available to both CLI and web clients through the same API.
     - Automated tests cover create, list, and lookup behavior.
     - use red/green testing
@@ -184,10 +185,10 @@ DEPENDS-ON: E2
     AC:
     - `task project create "Customer Portal"` creates a project and makes it current.
     - `task project list` and `task project ls` list projects.
-    - `task project get customer-portal` shows project details.
-    - `task project use customer-portal` changes the active project.
+    - `task project get 2` shows project details.
+    - `task project use 2` changes the active project.
     - `task project` shows the current project or `no active project`.
-    - Automated tests cover active-project persistence and lookup by slug or id.
+    - Automated tests cover active-project persistence and lookup by id.
     - use red/green testing
     - use make to verify all tests pass
     - work in a branch that contains the EPIC and TASK name for example `feature/<epic>-<task>`

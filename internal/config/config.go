@@ -5,9 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const defaultServerURL = "http://localhost:8080"
+
+const (
+	ModeLocal  = "local"
+	ModeRemote = "remote"
+)
 
 type Config struct {
 	ServerURL      string `json:"server_url"`
@@ -114,6 +120,9 @@ func ClearCredentials() error {
 }
 
 func ResolveServerURL(cfg Config) string {
+	if env := os.Getenv("TASK_SERVER"); env != "" {
+		return env
+	}
 	if env := os.Getenv("TASK_URL"); env != "" {
 		return env
 	}
@@ -121,6 +130,33 @@ func ResolveServerURL(cfg Config) string {
 		return cfg.ServerURL
 	}
 	return defaultServerURL
+}
+
+func ResolveMode() (string, error) {
+	mode := strings.TrimSpace(strings.ToLower(os.Getenv("TASK_MODE")))
+	if mode == "" {
+		return ModeLocal, nil
+	}
+	switch mode {
+	case ModeLocal, ModeRemote:
+		return mode, nil
+	default:
+		return "", errors.New("TASK_MODE must be local or remote")
+	}
+}
+
+func ResolveDatabasePath() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("TASK_DB_OVERRIDE")); override != "" {
+		return override, nil
+	}
+	if home := strings.TrimSpace(os.Getenv("TASK_HOME")); home != "" {
+		return filepath.Join(home, "task.db"), nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cwd, "task.db"), nil
 }
 
 func Path() (string, error) {

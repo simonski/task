@@ -16,6 +16,19 @@ type Server struct {
 }
 
 func New(addr string, db *sql.DB, version string, verbose bool, output io.Writer) (*Server, error) {
+	handler, err := Handler(db, version, verbose, output)
+	if err != nil {
+		return nil, err
+	}
+	return &Server{
+		httpServer: &http.Server{
+			Addr:    addr,
+			Handler: handler,
+		},
+	}, nil
+}
+
+func Handler(db *sql.DB, version string, verbose bool, output io.Writer) (http.Handler, error) {
 	staticFS, err := fs.Sub(web.Static, "static")
 	if err != nil {
 		return nil, err
@@ -31,13 +44,7 @@ func New(addr string, db *sql.DB, version string, verbose bool, output io.Writer
 	if verbose {
 		handler = loggingHandler(handler, output)
 	}
-
-	return &Server{
-		httpServer: &http.Server{
-			Addr:    addr,
-			Handler: handler,
-		},
-	}, nil
+	return handler, nil
 }
 
 func (s *Server) ListenAndServe() error {

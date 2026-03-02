@@ -48,16 +48,75 @@ func TestSaveLoadAndResolveServerURL(t *testing.T) {
 		t.Fatalf("Load().CurrentProject = %q, want 2", reloaded.CurrentProject)
 	}
 
-	t.Setenv("TASK_URL", "http://env.test:7000")
+	t.Setenv("TASK_SERVER", "http://env.test:7000")
 	if resolved := ResolveServerURL(got); resolved != "http://env.test:7000" {
 		t.Fatalf("ResolveServerURL() with env = %q", resolved)
 	}
 }
 
 func TestResolveServerURLDefault(t *testing.T) {
+	t.Setenv("TASK_SERVER", "")
 	t.Setenv("TASK_URL", "")
 	if resolved := ResolveServerURL(Config{}); resolved != "http://localhost:8080" {
 		t.Fatalf("ResolveServerURL(default) = %q", resolved)
+	}
+}
+
+func TestResolveModeDefaultsToLocal(t *testing.T) {
+	t.Setenv("TASK_MODE", "")
+	mode, err := ResolveMode()
+	if err != nil {
+		t.Fatalf("ResolveMode() error = %v", err)
+	}
+	if mode != ModeLocal {
+		t.Fatalf("ResolveMode() = %q, want %q", mode, ModeLocal)
+	}
+}
+
+func TestResolveModeRejectsInvalidValue(t *testing.T) {
+	t.Setenv("TASK_MODE", "bogus")
+	if _, err := ResolveMode(); err == nil {
+		t.Fatal("ResolveMode() error = nil, want invalid mode error")
+	}
+}
+
+func TestResolveDatabasePathUsesOverrideTaskHomeAndCWD(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TASK_DB_OVERRIDE", filepath.Join(tempDir, "override.db"))
+	path, err := ResolveDatabasePath()
+	if err != nil {
+		t.Fatalf("ResolveDatabasePath(override) error = %v", err)
+	}
+	if path != filepath.Join(tempDir, "override.db") {
+		t.Fatalf("ResolveDatabasePath(override) = %q", path)
+	}
+
+	t.Setenv("TASK_DB_OVERRIDE", "")
+	t.Setenv("TASK_HOME", tempDir)
+	path, err = ResolveDatabasePath()
+	if err != nil {
+		t.Fatalf("ResolveDatabasePath(TASK_HOME) error = %v", err)
+	}
+	if path != filepath.Join(tempDir, "task.db") {
+		t.Fatalf("ResolveDatabasePath(TASK_HOME) = %q", path)
+	}
+
+	t.Setenv("TASK_HOME", "")
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Chdir(tempDir) error = %v", err)
+	}
+	defer func() { _ = os.Chdir(originalWD) }()
+	path, err = ResolveDatabasePath()
+	if err != nil {
+		t.Fatalf("ResolveDatabasePath(CWD) error = %v", err)
+	}
+	wantPath := strings.TrimPrefix(filepath.Clean(filepath.Join(tempDir, "task.db")), "/private")
+	if strings.TrimPrefix(filepath.Clean(path), "/private") != wantPath {
+		t.Fatalf("ResolveDatabasePath(CWD) = %q", path)
 	}
 }
 

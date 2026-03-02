@@ -219,7 +219,48 @@ task logout
 
 `task onboard` must append the embedded `cmd/task/AGENTS.md` template into `${CWD}/AGENTS.md`, creating that file if it does not exist.
 
-`task status` must display both the server version and the client version and warn when they differ.
+`task status` must always print the current effective configuration first, then perform a mode-appropriate connectivity check.
+
+In REMOTE mode it must print at least:
+
+- `mode: remote`
+- `server: <TASK_SERVER>`
+- `username: <configured username or blank>`
+- `authenticated: true|false`
+
+The REMOTE connectivity check is:
+
+- call the remote status endpoint
+
+The REMOTE result must then print:
+
+- `connection: success` in green if the server responds successfully
+- `connection: failure` in red if the server cannot be contacted or returns an error
+
+In LOCAL mode it must print at least:
+
+- `mode: local`
+- `db_path: <resolved database path>`
+- `db_exists: true|false`
+
+The LOCAL connectivity check is:
+
+- if the database file exists, open it and verify the schema is usable
+
+A usable schema means:
+
+- the required application tables exist and can be queried
+
+The LOCAL result must then print:
+
+- `connection: success` in green if the database can be opened and the schema is valid
+- `connection: failure` in red if the database is missing, cannot be opened, or the schema is invalid
+
+If the database does not exist in LOCAL mode, `task status` must also print:
+
+- `hint: run task initdb`
+
+If `-nocolor` is set, the same output must be printed without ANSI colors.
 
 `task count` must query the server and print aggregate counts for users and work item types. Without a project filter it must also print the project count. With `-project_id <id>` it must scope work item counts to that project.
 

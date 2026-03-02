@@ -17,10 +17,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/simonski/task/internal/client"
 	"github.com/simonski/task/internal/config"
 	"github.com/simonski/task/internal/server"
 	"github.com/simonski/task/internal/store"
+	"github.com/simonski/task/libtask"
+	"github.com/simonski/task/libtaskhttp"
 	"golang.org/x/term"
 )
 
@@ -85,22 +86,22 @@ var helpIndex = map[string]commandHelp{
 	},
 	"login": {
 		usage:   "task login [-username <name>] [-password <password>] [-url <server-url>]",
-		details: []string{"Logs into the configured server and stores the session token in `$TASK_HOME/credentials.json`.", "Login resolution order: valid `$TASK_HOME/credentials.json`, then `username` in `$TASK_HOME/config.json`, then `-username` / `-password`, then `TASK_USERNAME` / `TASK_PASSWORD`, then prompts.", "If prompting is needed, discovered values are used as editable defaults.", "URL resolution: `-url`, then `TASK_URL`, then configured URL, then `http://localhost:8080`."},
+		details: []string{"REMOTE mode only. Logs into the configured server and stores the session token in `$TASK_HOME/credentials.json`.", "Login resolution order: valid `$TASK_HOME/credentials.json`, then `username` in `$TASK_HOME/config.json`, then `-username` / `-password`, then `TASK_USERNAME` / `TASK_PASSWORD`, then prompts.", "If prompting is needed, discovered values are used as editable defaults.", "Server resolution: `-url`, then `TASK_SERVER`, then `TASK_URL`, then configured URL, then `http://localhost:8080`."},
 		example: "task login -username simon -password secret -url http://localhost:8080",
 	},
 	"register": {
 		usage:   "task register [-username <name>] [-password <password>] [-url <server-url>]",
-		details: []string{"Creates a user account on the configured server but does not log the user in.", "Credential resolution: `-username`, then `TASK_USERNAME`, then OS `whoami`; `-password`, then `TASK_PASSWORD`, then `password`."},
+		details: []string{"REMOTE mode only. Creates a user account on the configured server but does not log the user in.", "Credential resolution: `-username`, then `TASK_USERNAME`, then OS `whoami`; `-password`, then `TASK_PASSWORD`, then `password`."},
 		example: "task register -username simon -password secret",
 	},
 	"logout": {
 		usage:   "task logout [-url <server-url>]",
-		details: []string{"Logs out from the configured server and removes `$TASK_HOME/credentials.json`."},
+		details: []string{"REMOTE mode only. Logs out from the configured server and removes `$TASK_HOME/credentials.json`."},
 		example: "task logout",
 	},
 	"status": {
-		usage:   "task status [-url <server-url>]",
-		details: []string{"Pings the server and shows authentication state, server version, and client version.", "Warns when the server version differs from the client version."},
+		usage:   "task status [-url <server-url>] [-f <db-path>] [-nocolor]",
+		details: []string{"Prints the current effective configuration first, then performs a mode-specific connectivity check.", "REMOTE mode prints `mode`, `server`, `username`, `authenticated`, then calls the remote status endpoint.", "LOCAL mode prints `mode`, `db_path`, `db_exists`, then opens the database and verifies the schema is usable."},
 		example: "task status",
 	},
 	"help": {
@@ -152,6 +153,16 @@ var helpIndex = map[string]commandHelp{
 		usage:   "task update <id> -status <status>",
 		details: []string{"Updates a task.", "Current CLI support is focused on `-status` and accepts `notready`, `open`, `inprogress`, `complete`, and `fail`."},
 		example: "task update 42 -status inprogress",
+	},
+	"set-parent": {
+		usage:   "task set-parent <id> <parent-id>",
+		details: []string{"Sets the parent of a task or story.", "Both ids must be numeric task ids in the active project."},
+		example: "task set-parent 1 2",
+	},
+	"unset-parent": {
+		usage:   "task unset-parent <id>",
+		details: []string{"Clears the parent of a task or story.", "After this, the task becomes an orphan."},
+		example: "task unset-parent 1",
 	},
 	"open": {
 		usage:   "task open <id>",
@@ -252,7 +263,15 @@ func main() {
 }
 
 func run(args []string) error {
+	mode, err := config.ResolveMode()
+	if err != nil {
+		return err
+	}
 	trimmedArgs, urlOverride, err := extractURLOverride(args)
+	if err != nil {
+		return err
+	}
+	trimmedArgs, dbOverride, err := extractDBOverride(trimmedArgs)
 	if err != nil {
 		return err
 	}
@@ -261,7 +280,15 @@ func run(args []string) error {
 		return err
 	}
 	if urlOverride != "" {
+		if err := os.Setenv("TASK_SERVER", urlOverride); err != nil {
+			return err
+		}
 		if err := os.Setenv("TASK_URL", urlOverride); err != nil {
+			return err
+		}
+	}
+	if dbOverride != "" {
+		if err := os.Setenv("TASK_DB_OVERRIDE", dbOverride); err != nil {
 			return err
 		}
 	}
@@ -284,10 +311,19 @@ func run(args []string) error {
 	case "version":
 		return runVersion(trimmedArgs[1:])
 	case "register":
+		if mode != config.ModeRemote {
+			return errors.New("task register requires TASK_MODE=remote")
+		}
 		return runRegister(trimmedArgs[1:])
 	case "login":
+		if mode != config.ModeRemote {
+			return errors.New("task login requires TASK_MODE=remote")
+		}
 		return runLogin(trimmedArgs[1:])
 	case "logout":
+		if mode != config.ModeRemote {
+			return errors.New("task logout requires TASK_MODE=remote")
+		}
 		return runLogout(trimmedArgs[1:])
 	case "status":
 		return runStatus(trimmedArgs[1:])
@@ -311,6 +347,10 @@ func run(args []string) error {
 		return runSearch(trimmedArgs[1:])
 	case "update":
 		return runUpdate(trimmedArgs[1:])
+	case "set-parent":
+		return runSetParent(trimmedArgs[1:])
+	case "unset-parent":
+		return runUnsetParent(trimmedArgs[1:])
 	case "set-status":
 		return runSetStatus(trimmedArgs[1:])
 	case "open":
@@ -554,7 +594,11 @@ func runRegister(args []string) error {
 	if err != nil {
 		return err
 	}
-	user, err := client.New(cfg).Register(username, password)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	user, err := svc.Register(username, password)
 	if err != nil {
 		return err
 	}
@@ -587,10 +631,13 @@ func runLogin(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
 
 	if cfg.Token != "" {
-		status, err := api.Status()
+		status, err := svc.Status()
 		if err == nil && status.Authenticated && status.User != nil {
 			cfg.Username = status.User.Username
 			cfg.ServerURL = config.ResolveServerURL(cfg)
@@ -609,9 +656,9 @@ func runLogin(args []string) error {
 	password = resolveLoginPassword(*passwordFlag)
 
 	if username != "" && password != "" {
-		response, err := api.Login(username, password)
+		user, token, err := svc.Login(username, password)
 		if err == nil {
-			return finishLogin(cfg, response)
+			return finishLogin(cfg, user, token)
 		}
 		if err.Error() != "invalid credentials" {
 			return err
@@ -623,26 +670,26 @@ func runLogin(args []string) error {
 	if err != nil {
 		return err
 	}
-	response, err := api.Login(username, password)
+	user, token, err := svc.Login(username, password)
 	if err != nil {
 		return err
 	}
-	return finishLogin(cfg, response)
+	return finishLogin(cfg, user, token)
 }
 
-func finishLogin(cfg config.Config, response client.AuthResponse) error {
-	cfg.Username = response.User.Username
+func finishLogin(cfg config.Config, user store.User, token string) error {
+	cfg.Username = user.Username
 	cfg.ServerURL = config.ResolveServerURL(cfg)
 	if err := config.Save(cfg); err != nil {
 		return err
 	}
-	if err := config.SaveCredentials(config.Credentials{Token: response.Token}); err != nil {
+	if err := config.SaveCredentials(config.Credentials{Token: token}); err != nil {
 		return err
 	}
 	if outputJSON {
-		return printJSON(response)
+		return printJSON(map[string]any{"token": token, "user": user})
 	}
-	fmt.Printf("logged in as %s\n", response.User.Username)
+	fmt.Printf("logged in as %s\n", user.Username)
 	return nil
 }
 
@@ -654,7 +701,11 @@ func runLogout(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := client.New(cfg).Logout(); err != nil {
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	if err := svc.Logout(); err != nil {
 		if clearErr := config.ClearCredentials(); clearErr != nil {
 			return clearErr
 		}
@@ -678,29 +729,22 @@ func runStatus(args []string) error {
 	if len(args) != 0 {
 		return errors.New("usage: task status")
 	}
+	mode, err := config.ResolveMode()
+	if err != nil {
+		return err
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	status, err := client.New(cfg).Status()
-	if err != nil {
-		return err
+	switch mode {
+	case config.ModeRemote:
+		return runRemoteStatus(cfg)
+	case config.ModeLocal:
+		return runLocalStatus()
+	default:
+		return fmt.Errorf("unsupported TASK_MODE %q", mode)
 	}
-	if outputJSON {
-		return printJSON(status)
-	}
-	fmt.Printf("server: %s\n", config.ResolveServerURL(cfg))
-	fmt.Printf("status: %s\n", status.Status)
-	fmt.Printf("server_version: %s\n", status.ServerVersion)
-	fmt.Printf("client_version: %s\n", strings.TrimSpace(embeddedVersion))
-	fmt.Printf("authenticated: %t\n", status.Authenticated)
-	if status.User != nil {
-		fmt.Printf("user: %s (%s)\n", status.User.Username, status.User.Role)
-	}
-	if status.ServerVersion != "" && status.ServerVersion != strings.TrimSpace(embeddedVersion) {
-		fmt.Printf("warning: server version %s differs from client version %s\n", status.ServerVersion, strings.TrimSpace(embeddedVersion))
-	}
-	return nil
 }
 
 func runCount(args []string) error {
@@ -717,15 +761,18 @@ func runCount(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
 	var projectFilter *int64
 	if *projectID != 0 {
 		projectFilter = projectID
-		if _, err := api.GetProject(fmt.Sprintf("%d", *projectID)); err != nil {
+		if _, err := svc.GetProject(fmt.Sprintf("%d", *projectID)); err != nil {
 			return err
 		}
 	}
-	summary, err := api.Count(projectFilter)
+	summary, err := svc.Count(projectFilter)
 	if err != nil {
 		return err
 	}
@@ -744,7 +791,10 @@ func runUser(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
 
 	switch args[0] {
 	case "create":
@@ -759,7 +809,7 @@ func runUser(args []string) error {
 		if err != nil {
 			return err
 		}
-		user, err := api.CreateUser(username, password)
+		user, err := svc.CreateUser(username, password)
 		if err != nil {
 			return err
 		}
@@ -778,7 +828,7 @@ func runUser(args []string) error {
 		if *username == "" {
 			return errors.New("user rm/delete/del requires -username")
 		}
-		if err := api.DeleteUser(*username); err != nil {
+		if err := svc.DeleteUser(*username); err != nil {
 			return err
 		}
 		if outputJSON {
@@ -796,7 +846,7 @@ func runUser(args []string) error {
 		if *username == "" {
 			return errors.New("user enable/disable requires -username")
 		}
-		if err := api.SetUserEnabled(*username, args[0] == "enable"); err != nil {
+		if err := svc.SetUserEnabled(*username, args[0] == "enable"); err != nil {
 			return err
 		}
 		if outputJSON {
@@ -805,7 +855,7 @@ func runUser(args []string) error {
 		fmt.Printf("%sd user %s\n", args[0], *username)
 		return nil
 	case "list", "ls":
-		users, err := api.ListUsers()
+		users, err := svc.ListUsers()
 		if err != nil {
 			return err
 		}
@@ -826,14 +876,17 @@ func runProject(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
 
 	if len(args) == 0 {
 		if cfg.CurrentProject == "" {
 			fmt.Println("no active project")
 			return nil
 		}
-		project, err := api.GetProject(cfg.CurrentProject)
+		project, err := svc.GetProject(cfg.CurrentProject)
 		if err != nil {
 			return err
 		}
@@ -845,7 +898,7 @@ func runProject(args []string) error {
 	}
 
 	if projectID, ok := parseProjectCommandID(args[0]); ok {
-		return runProjectByID(api, projectID, args[1:])
+		return runProjectByID(svc, projectID, args[1:])
 	}
 
 	switch args[0] {
@@ -860,7 +913,11 @@ func runProject(args []string) error {
 		if fs.NArg() != 1 {
 			return errors.New("usage: task project create [-description text] [-ac text] \"Project Title\"")
 		}
-		project, err := api.CreateProject(fs.Arg(0), *description, *acceptanceCriteria)
+		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+			Title:              fs.Arg(0),
+			Description:        *description,
+			AcceptanceCriteria: *acceptanceCriteria,
+		})
 		if err != nil {
 			return err
 		}
@@ -875,7 +932,7 @@ func runProject(args []string) error {
 		printProject(project)
 		return nil
 	case "list", "ls":
-		projects, err := api.ListProjects()
+		projects, err := svc.ListProjects()
 		if err != nil {
 			return err
 		}
@@ -894,7 +951,7 @@ func runProject(args []string) error {
 		if len(args) != 2 {
 			return errors.New("usage: task project get <id>")
 		}
-		project, err := api.GetProject(args[1])
+		project, err := svc.GetProject(args[1])
 		if err != nil {
 			return err
 		}
@@ -907,7 +964,7 @@ func runProject(args []string) error {
 		if len(args) != 2 {
 			return errors.New("usage: task project use <id>")
 		}
-		project, err := api.GetProject(args[1])
+		project, err := svc.GetProject(args[1])
 		if err != nil {
 			return err
 		}
@@ -1043,9 +1100,9 @@ func parseProjectCommandID(raw string) (int64, bool) {
 	return id, true
 }
 
-func runProjectByID(api *client.Client, projectID int64, args []string) error {
+func runProjectByID(svc libtask.Service, projectID int64, args []string) error {
 	if len(args) == 0 {
-		project, err := api.GetProject(strconv.FormatInt(projectID, 10))
+		project, err := svc.GetProject(strconv.FormatInt(projectID, 10))
 		if err != nil {
 			return err
 		}
@@ -1065,7 +1122,7 @@ func runProjectByID(api *client.Client, projectID int64, args []string) error {
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		current, err := api.GetProject(strconv.FormatInt(projectID, 10))
+		current, err := svc.GetProject(strconv.FormatInt(projectID, 10))
 		if err != nil {
 			return err
 		}
@@ -1077,7 +1134,7 @@ func runProjectByID(api *client.Client, projectID int64, args []string) error {
 		if containsFlag(args[1:], "-ac") {
 			nextAC = *acceptanceCriteria
 		}
-		project, err := api.UpdateProject(projectID, client.ProjectUpdateRequest{
+		project, err := svc.UpdateProject(projectID, libtask.ProjectUpdateRequest{
 			Title:              *title,
 			Description:        nextDescription,
 			AcceptanceCriteria: nextAC,
@@ -1091,7 +1148,7 @@ func runProjectByID(api *client.Client, projectID int64, args []string) error {
 		printProject(project)
 		return nil
 	case "enable":
-		project, err := api.SetProjectEnabled(projectID, true)
+		project, err := svc.SetProjectEnabled(projectID, true)
 		if err != nil {
 			return err
 		}
@@ -1101,7 +1158,7 @@ func runProjectByID(api *client.Client, projectID int64, args []string) error {
 		printProject(project)
 		return nil
 	case "disable":
-		project, err := api.SetProjectEnabled(projectID, false)
+		project, err := svc.SetProjectEnabled(projectID, false)
 		if err != nil {
 			return err
 		}
@@ -1192,12 +1249,15 @@ func runGet(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	task, err := api.GetTask(id)
+	svc, err := resolveService(cfg)
 	if err != nil {
 		return err
 	}
-	dependencies, _ := api.ListDependencies(id)
+	task, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	dependencies, _ := svc.ListDependencies(id)
 	if outputJSON {
 		return printJSON(task)
 	}
@@ -1233,6 +1293,64 @@ func runSetStatus(args []string) error {
 	return updateTaskStatus(args[0], args[1])
 }
 
+func runSetParent(args []string) error {
+	if len(args) != 2 {
+		return errors.New("usage: task set-parent <id> <parent-id>")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[0], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	var parentID int64
+	if _, err := fmt.Sscan(args[1], &parentID); err != nil {
+		return errors.New("parent id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	updated, err := svc.SetTaskParent(id, parentID)
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(updated)
+	}
+	printTask(updated)
+	return nil
+}
+
+func runUnsetParent(args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: task unset-parent <id>")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[0], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	updated, err := svc.UnsetTaskParent(id)
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(updated)
+	}
+	printTask(updated)
+	return nil
+}
+
 func runTaskStatusAlias(args []string, status, command string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: task %s <id>", command)
@@ -1262,12 +1380,15 @@ func updateTaskStatus(idArg, status string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	current, err := api.GetTask(id)
+	svc, err := resolveService(cfg)
 	if err != nil {
 		return err
 	}
-	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
 		Title:       current.Title,
 		Description: current.Description,
 		ParentID:    current.ParentID,
@@ -1306,10 +1427,14 @@ func runClaim(args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Username) == "" {
+	username := strings.TrimSpace(cfg.Username)
+	if mode, err := config.ResolveMode(); err == nil && mode == config.ModeLocal {
+		username = currentOSUser()
+	}
+	if strings.TrimSpace(username) == "" {
 		return errors.New("no current username; log in first")
 	}
-	return assignTask(args[0], cfg.Username, false)
+	return assignTask(args[0], username, false)
 }
 
 func runUnclaim(args []string) error {
@@ -1320,10 +1445,14 @@ func runUnclaim(args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.Username) == "" {
+	username := strings.TrimSpace(cfg.Username)
+	if mode, err := config.ResolveMode(); err == nil && mode == config.ModeLocal {
+		username = currentOSUser()
+	}
+	if strings.TrimSpace(username) == "" {
 		return errors.New("no current username; log in first")
 	}
-	return unassignTask(args[0], cfg.Username, false)
+	return unassignTask(args[0], username, false)
 }
 
 func assignTask(idArg, assignee string, requireAdmin bool) error {
@@ -1335,19 +1464,22 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	status, err := api.Status()
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	status, err := svc.Status()
 	if err != nil {
 		return err
 	}
 	if requireAdmin && (status.User == nil || status.User.Role != "admin") {
 		return errors.New("user is not an admin")
 	}
-	current, err := api.GetTask(id)
+	current, err := svc.GetTask(id)
 	if err != nil {
 		return err
 	}
-	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
 		Title:       current.Title,
 		Description: current.Description,
 		ParentID:    current.ParentID,
@@ -1377,8 +1509,11 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	status, err := api.Status()
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	status, err := svc.Status()
 	if err != nil {
 		return err
 	}
@@ -1386,7 +1521,7 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 		return errors.New("user is not an admin")
 	}
 	if requireAdmin {
-		users, err := api.ListUsers()
+		users, err := svc.ListUsers()
 		if err != nil {
 			return err
 		}
@@ -1404,14 +1539,14 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 			return errors.New("user not found")
 		}
 	}
-	current, err := api.GetTask(id)
+	current, err := svc.GetTask(id)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(current.Assignee) != strings.TrimSpace(expectedAssignee) {
 		return fmt.Errorf("task is not assigned to %s", expectedAssignee)
 	}
-	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
 		Title:       current.Title,
 		Description: current.Description,
 		ParentID:    current.ParentID,
@@ -1440,7 +1575,11 @@ func runHistory(args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := client.New(cfg).ListHistory(id)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	events, err := svc.ListHistory(id)
 	if err != nil {
 		return err
 	}
@@ -1483,7 +1622,7 @@ func runDependencyCommand(args []string, add bool) error {
 		return err
 	}
 	for _, depID := range dependencyIDs {
-		req := client.DependencyRequest{
+		req := libtask.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    taskID,
 			DependsOn: depID,
@@ -1535,7 +1674,7 @@ func runRequest(args []string) error {
 	if err != nil {
 		return err
 	}
-	req := client.TaskRequest{ProjectID: project.ID}
+	req := libtask.TaskRequest{ProjectID: project.ID}
 	if len(args) == 1 {
 		var id int64
 		if _, err := fmt.Sscan(args[0], &id); err != nil {
@@ -1595,7 +1734,11 @@ func runComment(args []string) error {
 		if err != nil {
 			return err
 		}
-		comment, err := client.New(cfg).AddComment(id, args[2])
+		svc, err := resolveService(cfg)
+		if err != nil {
+			return err
+		}
+		comment, err := svc.AddComment(id, args[2])
 		if err != nil {
 			return err
 		}
@@ -1621,7 +1764,11 @@ func runClone(args []string) error {
 	if err != nil {
 		return err
 	}
-	task, err := client.New(cfg).CloneTask(id)
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	task, err := svc.CloneTask(id)
 	if err != nil {
 		return err
 	}
@@ -1658,7 +1805,7 @@ func runCurate(args []string) error {
 	if len(titles) > 0 {
 		title = titles[0]
 	}
-	requirement, err := api.CreateTask(client.TaskCreateRequest{
+	requirement, err := api.CreateTask(libtask.TaskCreateRequest{
 		ProjectID:   project.ID,
 		Type:        "requirement",
 		Title:       title,
@@ -1705,12 +1852,15 @@ func runRequirementStatus(status string, args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	current, err := api.GetTask(id)
+	svc, err := resolveService(cfg)
 	if err != nil {
 		return err
 	}
-	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
 		Title:       current.Title,
 		Description: current.Description,
 		ParentID:    current.ParentID,
@@ -1736,12 +1886,15 @@ func runRevise(args []string) error {
 	if err != nil {
 		return err
 	}
-	api := client.New(cfg)
-	current, err := api.GetTask(id)
+	svc, err := resolveService(cfg)
 	if err != nil {
 		return err
 	}
-	updated, err := api.UpdateTask(id, client.TaskUpdateRequest{
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
 		Title:       current.Title + " (revised)",
 		Description: current.Description,
 		ParentID:    current.ParentID,
@@ -1768,7 +1921,7 @@ func runDecision(args []string) error {
 		if err != nil {
 			return err
 		}
-		task, err := api.CreateTask(client.TaskCreateRequest{
+		task, err := api.CreateTask(libtask.TaskCreateRequest{
 			ProjectID:   project.ID,
 			Type:        "decision",
 			Title:       args[1],
@@ -1829,6 +1982,10 @@ type taskCreateOptions struct {
 }
 
 func runTaskCreate(args []string) error {
+	normalizedArgs, err := normalizeTaskCreateArgs(args)
+	if err != nil {
+		return err
+	}
 	fs := flag.NewFlagSet("create", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	taskType := fs.String("type", "task", "task type")
@@ -1843,7 +2000,7 @@ func runTaskCreate(args []string) error {
 	acceptanceCriteria := fs.String("ac", "", "acceptance criteria")
 	parent := fs.Int64("parent", 0, "parent task id")
 	project := fs.String("project", "", "project id")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(normalizedArgs); err != nil {
 		return err
 	}
 	title := strings.TrimSpace(*titleFlag)
@@ -1868,6 +2025,39 @@ func runTaskCreate(args []string) error {
 	return createTask(opts)
 }
 
+func normalizeTaskCreateArgs(args []string) ([]string, error) {
+	knownValueFlags := map[string]bool{
+		"-type":        true,
+		"-t":           true,
+		"-title":       true,
+		"-priority":    true,
+		"-p":           true,
+		"-assignee":    true,
+		"-a":           true,
+		"-description": true,
+		"-d":           true,
+		"-ac":          true,
+		"-parent":      true,
+		"-project":     true,
+	}
+
+	var flagArgs []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if knownValueFlags[arg] {
+			if i+1 >= len(args) {
+				return nil, fmt.Errorf("flag needs an argument: %s", arg)
+			}
+			flagArgs = append(flagArgs, arg, args[i+1])
+			i++
+			continue
+		}
+		positional = append(positional, arg)
+	}
+	return append(flagArgs, positional...), nil
+}
+
 func createTask(opts taskCreateOptions) error {
 	cfg, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
@@ -1879,7 +2069,7 @@ func createTask(opts taskCreateOptions) error {
 			return err
 		}
 	}
-	task, err := api.CreateTask(client.TaskCreateRequest{
+	task, err := api.CreateTask(libtask.TaskCreateRequest{
 		ProjectID:          project.ID,
 		ParentID:           opts.ParentID,
 		Type:               opts.TaskType,
@@ -2023,7 +2213,7 @@ func heading(label string) {
 	fmt.Printf("\x1b[2;36m%s\x1b[0m\n", label)
 }
 
-func resolveCurrentProjectClient() (config.Config, *client.Client, store.Project, error) {
+func resolveCurrentProjectClient() (config.Config, libtask.Service, store.Project, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
@@ -2031,12 +2221,34 @@ func resolveCurrentProjectClient() (config.Config, *client.Client, store.Project
 	if cfg.CurrentProject == "" {
 		return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use <id>` first")
 	}
-	api := client.New(cfg)
-	project, err := api.GetProject(cfg.CurrentProject)
+	svc, err := resolveService(cfg)
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
 	}
-	return cfg, api, project, nil
+	project, err := svc.GetProject(cfg.CurrentProject)
+	if err != nil {
+		return config.Config{}, nil, store.Project{}, err
+	}
+	return cfg, svc, project, nil
+}
+
+func resolveService(cfg config.Config) (libtask.Service, error) {
+	mode, err := config.ResolveMode()
+	if err != nil {
+		return nil, err
+	}
+	switch mode {
+	case config.ModeLocal:
+		return libtask.NewLocal(cfg), nil
+	case config.ModeRemote:
+		serverURL := strings.TrimSpace(config.ResolveServerURL(cfg))
+		if serverURL == "" {
+			return nil, errors.New("TASK_SERVER is required in remote mode")
+		}
+		return libtaskhttp.New(cfg), nil
+	default:
+		return nil, fmt.Errorf("unsupported TASK_MODE %q", mode)
+	}
 }
 
 func resolveCredentials(usernameFlag, passwordFlag string, useEnv bool) (string, string, error) {
@@ -2088,6 +2300,26 @@ func extractURLOverride(args []string) ([]string, string, error) {
 		if args[i] == "-url" {
 			if i+1 >= len(args) {
 				return nil, "", errors.New("missing value for -url")
+			}
+			override = args[i+1]
+			i++
+			continue
+		}
+		out = append(out, args[i])
+	}
+	return out, override, nil
+}
+
+func extractDBOverride(args []string) ([]string, string, error) {
+	if len(args) == 0 {
+		return args, "", nil
+	}
+	var out []string
+	var override string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-f" {
+			if i+1 >= len(args) {
+				return nil, "", errors.New("missing value for -f")
 			}
 			override = args[i+1]
 			i++
@@ -2151,11 +2383,95 @@ func removeDBFiles(path string) error {
 }
 
 func defaultDatabasePath() (string, error) {
-	home, err := config.Home()
-	if err != nil {
-		return "", err
+	return config.ResolveDatabasePath()
+}
+
+func runRemoteStatus(cfg config.Config) error {
+	serverURL := strings.TrimSpace(config.ResolveServerURL(cfg))
+	if serverURL == "" {
+		return errors.New("TASK_SERVER is required in remote mode")
 	}
-	return filepath.Join(home, "task.db"), nil
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	status, err := svc.Status()
+	authenticated := err == nil && status.Authenticated
+	username := strings.TrimSpace(cfg.Username)
+	if status.User != nil {
+		username = status.User.Username
+	}
+	if outputJSON {
+		return printJSON(map[string]any{
+			"mode":          config.ModeRemote,
+			"server":        serverURL,
+			"username":      username,
+			"authenticated": authenticated,
+			"connection":    map[bool]string{true: "success", false: "failure"}[err == nil],
+		})
+	}
+	fmt.Printf("mode: %s\n", config.ModeRemote)
+	fmt.Printf("server: %s\n", serverURL)
+	fmt.Printf("username: %s\n", username)
+	fmt.Printf("authenticated: %t\n", authenticated)
+	printConnectionLine(err == nil)
+	return err
+}
+
+func runLocalStatus() error {
+	dbPath, err := config.ResolveDatabasePath()
+	if err != nil {
+		return err
+	}
+	_, statErr := os.Stat(dbPath)
+	dbExists := statErr == nil
+	if outputJSON {
+		return printJSON(map[string]any{
+			"mode":       config.ModeLocal,
+			"db_path":    dbPath,
+			"db_exists":  dbExists,
+			"connection": map[bool]string{true: "success", false: "failure"}[localStatusCheck(dbPath) == nil],
+		})
+	}
+	fmt.Printf("mode: %s\n", config.ModeLocal)
+	fmt.Printf("db_path: %s\n", dbPath)
+	fmt.Printf("db_exists: %t\n", dbExists)
+	err = localStatusCheck(dbPath)
+	printConnectionLine(err == nil)
+	if !dbExists {
+		fmt.Println("hint: run task initdb")
+	}
+	return err
+}
+
+func localStatusCheck(dbPath string) error {
+	if _, err := os.Stat(dbPath); err != nil {
+		return err
+	}
+	db, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM projects`).Scan(&count); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printConnectionLine(ok bool) {
+	status := "failure"
+	color := "\x1b[31m"
+	if ok {
+		status = "success"
+		color = "\x1b[32m"
+	}
+	if noColorOutput {
+		fmt.Printf("connection: %s\n", status)
+		return
+	}
+	fmt.Printf("connection: %s%s\x1b[0m\n", color, status)
 }
 
 func promptForCredentials(in io.Reader, out io.Writer, defaultUsername, defaultPassword string) (string, string, error) {
@@ -2280,7 +2596,9 @@ CLIENT COMMANDS
   register    Create a user account on the server
   request     Request work for the current user
   search      Search tasks in the active project
+  set-parent  Set the parent of a task
   status      Show server and authentication status
+  unset-parent Clear the parent of a task
   unclaim     Remove yourself from a task
   update      Update a task
   version     Print the current version from VERSION
