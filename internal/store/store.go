@@ -120,6 +120,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	task_id INTEGER PRIMARY KEY AUTOINCREMENT,
 	project_id INTEGER NOT NULL,
 	parent_id INTEGER,
+	clone_of INTEGER,
 	type TEXT NOT NULL,
 	title TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
@@ -133,6 +134,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY(project_id) REFERENCES projects(project_id),
 	FOREIGN KEY(parent_id) REFERENCES tasks(task_id),
+	FOREIGN KEY(clone_of) REFERENCES tasks(task_id),
 	FOREIGN KEY(created_by) REFERENCES users(user_id)
 );
 

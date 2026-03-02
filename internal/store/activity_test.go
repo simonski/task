@@ -30,7 +30,6 @@ func TestHistoryAndComments(t *testing.T) {
 		Title:       task.Title,
 		Description: "Updated description",
 		ParentID:    task.ParentID,
-		Status:      "inprogress",
 		UpdatedBy:   1,
 	})
 	if err != nil {

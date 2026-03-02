@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestCreateUpdateAndListTasks(t *testing.T) {
 	db := testDB(t)
@@ -311,5 +314,152 @@ func TestUpdateTaskAssignRequiresExistingEnabledUser(t *testing.T) {
 		ActorRole:     "admin",
 	}); err == nil || err.Error() != "user is disabled" {
 		t.Fatalf("UpdateTask(assign disabled user) error = %v, want user is disabled", err)
+	}
+}
+
+func TestUpdateTaskStatusRequiresAssignee(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+	task, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Status-owned task",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := UpdateTask(db, task.ID, TaskUpdateParams{
+		Title:         task.Title,
+		Description:   task.Description,
+		ParentID:      task.ParentID,
+		Assignee:      "",
+		Status:        "inprogress",
+		UpdatedBy:     2,
+		ActorUsername: "alice",
+		ActorRole:     "user",
+	}); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("UpdateTask(status unassigned) error = %v, want ErrForbidden", err)
+	}
+}
+
+func TestClosedTaskCannotBeReopened(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+	task, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Closed task",
+		Assignee:  "alice",
+		Status:    "complete",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if _, err := UpdateTask(db, task.ID, TaskUpdateParams{
+		Title:         task.Title,
+		Description:   task.Description,
+		ParentID:      task.ParentID,
+		Assignee:      "alice",
+		Status:        "open",
+		UpdatedBy:     2,
+		ActorUsername: "alice",
+		ActorRole:     "user",
+	}); err == nil || err.Error() != "closed ticket cannot be reopened" {
+		t.Fatalf("UpdateTask(reopen) error = %v", err)
+	}
+}
+
+func TestCloneTaskClonesSingleTask(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	task, err := CreateTask(db, TaskCreateParams{
+		ProjectID:          project.ID,
+		Type:               "task",
+		Title:              "Original task",
+		Description:        "desc",
+		AcceptanceCriteria: "ac",
+		Assignee:           "alice",
+		Status:             "inprogress",
+		Priority:           3,
+		CreatedBy:          1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	cloned, err := CloneTask(db, task.ID, 1)
+	if err != nil {
+		t.Fatalf("CloneTask() error = %v", err)
+	}
+	if cloned.ID == task.ID || cloned.Status != "notready" || cloned.Assignee != "" {
+		t.Fatalf("CloneTask() = %#v", cloned)
+	}
+	if cloned.CloneOf == nil || *cloned.CloneOf != task.ID {
+		t.Fatalf("CloneTask().CloneOf = %#v, want %d", cloned.CloneOf, task.ID)
+	}
+}
+
+func TestCloneEpicClonesChildren(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	epic, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "epic",
+		Title:     "Epic",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(epic) error = %v", err)
+	}
+	child, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &epic.ID,
+		Type:      "task",
+		Title:     "Child",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(child) error = %v", err)
+	}
+	clonedEpic, err := CloneTask(db, epic.ID, 1)
+	if err != nil {
+		t.Fatalf("CloneTask(epic) error = %v", err)
+	}
+	tasks, err := ListTasksByProject(db, project.ID)
+	if err != nil {
+		t.Fatalf("ListTasksByProject() error = %v", err)
+	}
+	var clonedChild Task
+	var found bool
+	for _, task := range tasks {
+		if task.CloneOf != nil && *task.CloneOf == child.ID {
+			clonedChild = task
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("cloned child not found in %#v", tasks)
+	}
+	if clonedChild.ParentID == nil || *clonedChild.ParentID != clonedEpic.ID {
+		t.Fatalf("cloned child parent = %#v, want %d", clonedChild.ParentID, clonedEpic.ID)
 	}
 }

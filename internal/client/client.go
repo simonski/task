@@ -49,6 +49,7 @@ type ProjectUpdateRequest struct {
 type TaskCreateRequest struct {
 	ProjectID          int64  `json:"project_id"`
 	ParentID           *int64 `json:"parent_id,omitempty"`
+	CloneOf            *int64 `json:"clone_of,omitempty"`
 	Type               string `json:"type"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
@@ -241,6 +242,12 @@ func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
 func (c *Client) GetTask(id int64) (store.Task, error) {
 	var task store.Task
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d", id), nil, &task)
+	return task, err
+}
+
+func (c *Client) CloneTask(id int64) (store.Task, error) {
+	var task store.Task
+	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tasks/%d/clone", id), nil, &task)
 	return task, err
 }
 

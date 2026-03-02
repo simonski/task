@@ -1,10 +1,16 @@
+------------------------------------------------------------------
 0. <freeform converted to DESIGN.md>
 
+------------------------------------------------------------------
 1. Write a USER_GUIDE.md at the top based on a hypothetical implementation of this using the docs/DESIGN.md.    
 
-Do not include how to run it, only from the perspective of a user in the terminal.
+Do not include how to run it, only from the perspective of a user in the terminal using the software.
 
-2. Using the DESIGN and USER_GUIDE write an example breakdown of implementation requirements as REQUIREMENTS.md in the format:
+------------------------------------------------------------------
+2. Refine the USER_GUIDE and docs/DESIGN so they are consistent and do not contradict each other.
+
+------------------------------------------------------------------
+3. Using the DESIGN and USER_GUIDE write an example breakdown of implementation requirements as REQUIREMENTS.md in the format:
 
 EPIC: title
 ID: E1, E2, E3 etc
@@ -21,26 +27,28 @@ DEPENDS-ON: E2, E4
     PRIORITY: 1-N (1 highest, do this first)
     DEPENDS-ON: E1-S2
 
-The intent is to take this output and model it in beads, or jira, or an issue tracker.  The scope is:
+The intent is to take this output and model it in an issue tracker.  The scope is:
 - ALL examples in the user guides
 - ALL of the backend and frontend functionality as per the design
 
 Note the DEPENDS-ON is a method of describing blocking features.
 
 Ensure the acceptance critera contains
-    - use red/green testing 
-    - use make to verify all tests pass
     - work in a branch that contains the EPIC and TASK name for example feature/<epic>-<task>
 
-3. Write/rewrite a parser go program that translates a requirements.md into `task` commands (but do not call `task`). It should just be a single go file runnable as "parser -f REQUIREMENTS.md" which writes to stdout all the `task` commands with double- newlines between them.   It should read the whole requirements, validate they are correct and have referntial integrity where they refer to other EPICS or STORIES, call out the error-line if there is one, exit 1 if there is a problem, or just print the commands and exit 0.
+------------------------------------------------------------------
+4. Write/rewrite a parser go program that translates a requirements.md into `task` commands (but do not call `task`). 
+
+It should just be a single go file runnable as "parser -f REQUIREMENTS.md" which writes to stdout all the `task` commands with double- newlines between them.   It should read the whole requirements, validate they are correct and have referntial integrity where they refer to other EPICS or STORIES, call out the error-line if there is one, exit 1 if there is a problem, or just print the commands and exit 0.
 
 Each entry acceptance criteria should include a reference to look at RULES.md, DESIGN.md, USER_GUIDE.md as additional context.
 
 Put this in tools/parser.go and update e the Makefile to have a `make tools` which builds a parser binary in the root
 
-4. Work on the REQUIREMENTS in order.
+------------------------------------------------------------------
+5. Work on the REQUIREMENTS in order.
 
------
+------------------------------------------------------------------
 
 `-json` in client calls will pretty-print JSON as the response.
 
@@ -200,12 +208,14 @@ task project N disable
 
 `task req -f file1,file2,file3 -o requirements.md` should read all files mentioned in -f and write to the -o filename the results of the prompt to an agent.  The agent should be prompted via a process invocation that receives the entire prompt.  
 
+The invocation should be wired to print the STDOUT as well as to the file.
+
 The agent should default to codex however can be overridden using `-agent` in which case e.g. a call to copilot coudl occurr using `copilot -p PROMPT`
 
 PROMPT:
 -------
 
-Write an example breakdown of implementation requirements as OUTPUT_FILE in the format:
+Write an example breakdown of implementation requirements as $OUTPUT_FILE in the format:
 
 EPIC: title
 ID: E1, E2, E3 etc
@@ -222,3 +232,104 @@ DEPENDS-ON: E2, E4
     PRIORITY: 1-N (1 highest, do this first)
     DEPENDS-ON: E1-S2
 ----
+
+------------------------------------------------------------------
+
+test and implement as server side checks
+- a ticket must be assigned to the user in order to modify the status or return 403.
+
+- a closed ticket cannot be reopened
+
+- a ticket can be cloned/copied using `task cp,clone`.  Update the clone ticket to have a clone_of key/value.   A clone should be set to status=notready and unassisnged.
+
+- an epic can be cloned/copied using `task cp,clone`.  All sub-tickets are the cloned also.  
+
+------------------------------------------------------------------
+
+MODE: REMOTE or LOCAL
+
+The task process can work in REMOTE (TASK_MODE=remote) or LOCAL (TASK_MODE=local).  This is set using 
+
+```bash
+# either
+export TASK_MODE=local
+# or
+export TASK_MODE=remote
+```
+
+If unspecified TASK_MODE will default to local.
+
+REMOTE-mode
+
+Uses TASK_HOME for local files (~/.config/task/)
+
+- Requires TASK_SERVER to be set to the address of the remote server.  If it is not present, fail.
+- Requires a valid session token for all comms (except login/register)
+- `task login` will store the session token in $TASK_HOME/credentials.json
+- If the user supplied the username via the login prompt directly, the username will be stored in `$TASK_HOME/config.json` to be used on next login as the default.
+
+TASK_USERNAME/TASK_PASSWORD are only used in REMOTE mode when logging in; If present they are used to authenticate via login and then a session token is used after that.  If they are not present the user is prompted for their username/password.
+
+If a user is not authenticated
+    - fail
+    - instruct user to run `task login`
+    
+`task status` in remote mode:
+    - Will print out the local configuration then attempt a remote connection.
+    - print the address and username and attempt a connection
+    - connection attempts mean:
+         calling the status endpoint in remote
+         finding amd opening the database to count items
+
+    if remote print out in a friendly method "success/failure" in green/red if it can/cnanot contact the server.
+
+LOCAL-mode
+
+In Local mode TASK_SERVER, TASK_USERNAME, TASK_PASSWORD are ignored.
+
+It will then select a database file using the following logic
+
+    1. if -f <task_db_file> is specified in any command, chooose this
+    2. if TASK_HOME is specified, choose this and assume `$TASK_HOME/task.db`
+    3. fallback to a `$CWD/task.db` file
+
+TASK_USERNAME and TASK_PASSWORD are NOT used in local mode.  The username is $USERNAME of the computer.
+
+`task status` in local mode:
+    print the location of the db and if it exists
+    if if exists, attempt a connection to verify schema
+    if local print out in a friendly method "success/failure" in green/red if it can/cnanot contact the database.
+    - Will print out the local configuration then attempt a remote connection.
+    - print the address and username and attempt a connection
+    - connection attempts mean:
+         calling the status endpoint in remote
+         finding amd opening the database to count items
+    - if the database does not exist, pritn the usage to create it
+
+------------------------------------------------------------------
+
+CONFIGURATION
+
+Configuration key/pairs can be set using a config file.  
+    - local `.task-config.toml` file 
+    - user-wide $TASK_HOME/task-config.toml
+    
+Configuration can be set
+
+task config set key value -scope local,global
+task config rm key value -scope local,global
+task config ls,list [-scope local,global]
+
+local = $CWD/task-config.json
+global = $TASK_HOME/task-config.json
+
+Configuration keys
+
+# the default CLI output mode if not specified (default)
+output.format=json,markdown (markdown)
+
+# the default CLI output mode if not specified (default)
+output.format=json,markdown (markdown)
+
+# the default CLI output mode if not specified (default)
+task.file=$TASK_HOME/task.db

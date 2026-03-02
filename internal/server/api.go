@@ -521,6 +521,20 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 
+		if len(parts) == 2 && parts[1] == "clone" && r.Method == http.MethodPost {
+			cloned, err := store.CloneTask(db, id, user.ID)
+			if err != nil {
+				if errors.Is(err, store.ErrTaskNotFound) {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusCreated, cloned)
+			return
+		}
+
 		switch r.Method {
 		case http.MethodGet:
 			task, err := store.GetTask(db, id)

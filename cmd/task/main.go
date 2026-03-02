@@ -188,6 +188,11 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Adds a comment to a task and records a corresponding history event."},
 		example: "task comment add 42 \"Need product sign-off.\"",
 	},
+	"clone": {
+		usage:   "task clone|cp <id>",
+		details: []string{"Clones a task or epic.", "Cloned items are unassigned, set to `notready`, and keep a `clone_of` reference to the source item. Cloning an epic also clones its child tasks."},
+		example: "task clone 42",
+	},
 	"assign": {
 		usage:   "task assign <id> <name>",
 		details: []string{"Admin-only command that assigns a task to a user.", "The target user must exist and be enabled."},
@@ -338,6 +343,8 @@ func run(args []string) error {
 		return runHistory(trimmedArgs[1:])
 	case "comment":
 		return runComment(trimmedArgs[1:])
+	case "clone", "cp":
+		return runClone(trimmedArgs[1:])
 	case "curate":
 		return runCurate(trimmedArgs[1:])
 	case "review":
@@ -1602,6 +1609,29 @@ func runComment(args []string) error {
 	}
 }
 
+func runClone(args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: task clone|cp <id>")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[0], &id); err != nil {
+		return errors.New("task id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	task, err := client.New(cfg).CloneTask(id)
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(task)
+	}
+	printTask(task)
+	return nil
+}
+
 func runCurate(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: task curate <id> [id...]")
@@ -1941,6 +1971,9 @@ func printTask(task store.Task) {
 	if task.ParentID != nil {
 		fmt.Printf("parent_id: %d\n", *task.ParentID)
 	}
+	if task.CloneOf != nil {
+		fmt.Printf("clone_of: %d\n", *task.CloneOf)
+	}
 	if task.Description != "" {
 		fmt.Printf("description: %s\n", task.Description)
 	}
@@ -1956,6 +1989,9 @@ func printTaskDetails(task store.Task, dependencies []store.Dependency) {
 	fmt.Printf("Type         : %s\n", task.Type)
 	fmt.Printf("Description  : %s\n", task.Description)
 	fmt.Printf("ParentID     : %s\n", parentID)
+	if task.CloneOf != nil {
+		fmt.Printf("CloneOf      : %d\n", *task.CloneOf)
+	}
 	fmt.Printf("ProjectID    : %d\n", task.ProjectID)
 	fmt.Printf("Title        : %s\n", task.Title)
 	fmt.Printf("Assignee     : %s\n", task.Assignee)
@@ -2223,6 +2259,7 @@ USAGE
 CLIENT COMMANDS
   add         Create a task in the active project
   claim       Assign yourself to a task
+  clone       Clone a task or epic
   comment     Add comments to a task
   complete    Set a task status to complete
   count       Count users, projects, and work by type
@@ -2359,6 +2396,8 @@ func normalizeHelpCommand(command string) string {
 		return "add"
 	case "ls":
 		return "list"
+	case "cp":
+		return "clone"
 	default:
 		return command
 	}

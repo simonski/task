@@ -3,3 +3,4 @@
 - ensure there are unit tests for all code written (make test-unit)
 - ensure there are integration tests for all code writte (make test-integration)
 - ensure there are playright tests for all endpoints (make test-playwright)
+- keep DESIGN.md and USER_GUIDE.md up to date with codebase

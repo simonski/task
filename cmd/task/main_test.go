@@ -51,6 +51,7 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 	clientOrder := []string{
 		"  add",
 		"  claim",
+		"  clone",
 		"  comment",
 		"  complete",
 		"  count",
@@ -203,7 +204,7 @@ func TestRenderUserHelpIncludesAdmin403Message(t *testing.T) {
 }
 
 func TestHasCommandHelpSupportsAliases(t *testing.T) {
-	for _, command := range []string{"dependency", "show", "create", "new", "ls", "orphans"} {
+	for _, command := range []string{"dependency", "show", "create", "new", "ls", "orphans", "cp", "clone"} {
 		if !hasCommandHelp(command) {
 			t.Fatalf("hasCommandHelp(%q) = false, want true", command)
 		}

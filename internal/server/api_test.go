@@ -186,6 +186,22 @@ func TestTaskAPI(t *testing.T) {
 	}
 	decodeResponse(t, loginResp, &auth)
 
+	createUserResp := doJSONRequest(t, handler, http.MethodPost, "/api/users", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, auth.Token)
+	if createUserResp.Code != http.StatusCreated {
+		t.Fatalf("create alice status = %d body=%s", createUserResp.Code, createUserResp.Body.String())
+	}
+	aliceLoginResp := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, "")
+	var aliceAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, aliceLoginResp, &aliceAuth)
+
 	createProjectResp := doJSONRequest(t, handler, http.MethodPost, "/api/projects", map[string]string{
 		"title": "Customer Portal",
 	}, auth.Token)
@@ -235,12 +251,24 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("limited tasks len = %d, want 1", len(limitedTasks))
 	}
 
+	assignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+		"title":       task.Title,
+		"description": task.Description,
+		"parent_id":   epic.ID,
+		"assignee":    "alice",
+		"status":      task.Status,
+	}, auth.Token)
+	if assignResp.Code != http.StatusOK {
+		t.Fatalf("assign task status = %d body=%s", assignResp.Code, assignResp.Body.String())
+	}
+
 	updateResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       "Add password reset flow",
 		"description": "Email reset support",
 		"parent_id":   epic.ID,
+		"assignee":    "alice",
 		"status":      "inprogress",
-	}, auth.Token)
+	}, aliceAuth.Token)
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("update task status = %d body=%s", updateResp.Code, updateResp.Body.String())
 	}
@@ -471,6 +499,16 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 	if disabledAssignPayload["error"] != "user is disabled" {
 		t.Fatalf("disabled assign payload = %#v", disabledAssignPayload)
 	}
+
+	statusForbiddenResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+		"title":       task.Title,
+		"description": task.Description,
+		"assignee":    "",
+		"status":      "inprogress",
+	}, aliceAuth.Token)
+	if statusForbiddenResp.Code != http.StatusForbidden {
+		t.Fatalf("status change without assignment status = %d, want %d body=%s", statusForbiddenResp.Code, http.StatusForbidden, statusForbiddenResp.Body.String())
+	}
 }
 
 func TestTaskRequestAPI(t *testing.T) {
@@ -557,14 +595,14 @@ func TestTaskRequestAPI(t *testing.T) {
 		t.Fatalf("request specific payload = %#v", requestSpecificPayload)
 	}
 
-	adminClaimedResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(openTask.ID, 10), map[string]any{
+	inProgressResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(openTask.ID, 10), map[string]any{
 		"title":       openTask.Title,
 		"description": openTask.Description,
 		"assignee":    "alice",
 		"status":      "inprogress",
-	}, adminAuth.Token)
-	if adminClaimedResp.Code != http.StatusOK {
-		t.Fatalf("set inprogress status = %d body=%s", adminClaimedResp.Code, adminClaimedResp.Body.String())
+	}, aliceAuth.Token)
+	if inProgressResp.Code != http.StatusOK {
+		t.Fatalf("set inprogress status = %d body=%s", inProgressResp.Code, inProgressResp.Body.String())
 	}
 
 	userResp = doJSONRequest(t, handler, http.MethodPost, "/api/users", map[string]string{
@@ -606,6 +644,72 @@ func TestTaskRequestAPI(t *testing.T) {
 	decodeResponse(t, noWorkResp, &noWorkPayload)
 	if noWorkPayload["status"] != "NO-WORK" {
 		t.Fatalf("request no-work payload = %#v", noWorkPayload)
+	}
+}
+
+func TestCloneTaskAPI(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	loginResp := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	var auth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, loginResp, &auth)
+
+	projectResp := doJSONRequest(t, handler, http.MethodPost, "/api/projects", map[string]string{
+		"title": "Customer Portal",
+	}, auth.Token)
+	var project store.Project
+	decodeResponse(t, projectResp, &project)
+
+	epicResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": project.ID,
+		"type":       "epic",
+		"title":      "Epic",
+	}, auth.Token)
+	var epic store.Task
+	decodeResponse(t, epicResp, &epic)
+
+	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": project.ID,
+		"parent_id":  epic.ID,
+		"type":       "task",
+		"title":      "Child",
+		"status":     "open",
+		"assignee":   "admin",
+	}, auth.Token)
+	var child store.Task
+	decodeResponse(t, childResp, &child)
+
+	cloneResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/"+strconv.FormatInt(epic.ID, 10)+"/clone", nil, auth.Token)
+	if cloneResp.Code != http.StatusCreated {
+		t.Fatalf("clone status = %d, want %d body=%s", cloneResp.Code, http.StatusCreated, cloneResp.Body.String())
+	}
+	var clonedEpic store.Task
+	decodeResponse(t, cloneResp, &clonedEpic)
+	if clonedEpic.CloneOf == nil || *clonedEpic.CloneOf != epic.ID || clonedEpic.Status != "notready" || clonedEpic.Assignee != "" {
+		t.Fatalf("cloned epic = %#v", clonedEpic)
+	}
+
+	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks", nil, auth.Token)
+	var tasks []store.Task
+	decodeResponse(t, listResp, &tasks)
+	var clonedChild *store.Task
+	for i := range tasks {
+		if tasks[i].CloneOf != nil && *tasks[i].CloneOf == child.ID {
+			clonedChild = &tasks[i]
+			break
+		}
+	}
+	if clonedChild == nil {
+		t.Fatalf("cloned child not found in %#v", tasks)
+	}
+	if clonedChild.ParentID == nil || *clonedChild.ParentID != clonedEpic.ID || clonedChild.Status != "notready" || clonedChild.Assignee != "" {
+		t.Fatalf("cloned child = %#v", clonedChild)
 	}
 }
 

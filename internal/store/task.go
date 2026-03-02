@@ -13,6 +13,7 @@ type Task struct {
 	ID                 int64  `json:"task_id"`
 	ProjectID          int64  `json:"project_id"`
 	ParentID           *int64 `json:"parent_id,omitempty"`
+	CloneOf            *int64 `json:"clone_of,omitempty"`
 	Type               string `json:"type"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
@@ -29,6 +30,7 @@ type Task struct {
 type TaskCreateParams struct {
 	ProjectID          int64
 	ParentID           *int64
+	CloneOf            *int64
 	Type               string
 	Title              string
 	Description        string
@@ -93,9 +95,9 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO tasks (project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, params.ProjectID, nullableInt64(params.ParentID), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, strings.TrimSpace(params.Assignee), params.CreatedBy)
+		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, strings.TrimSpace(params.Assignee), params.CreatedBy)
 	if err != nil {
 		return Task{}, err
 	}
@@ -149,6 +151,14 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		if !validStatus(status) {
 			return Task{}, fmt.Errorf("invalid status %q", params.Status)
 		}
+		if status != current.Status {
+			if strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
+				return Task{}, ErrForbidden
+			}
+			if isClosedStatus(current.Status) {
+				return Task{}, errors.New("closed ticket cannot be reopened")
+			}
+		}
 	}
 
 	result, err := db.Exec(`
@@ -192,7 +202,7 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 
 	query := `
-		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ?
 	`
@@ -252,7 +262,7 @@ func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
 
 func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
@@ -268,7 +278,7 @@ func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 
 func GetTask(db *sql.DB, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
@@ -290,11 +300,13 @@ type scanner interface {
 func scanTask(s scanner) (Task, error) {
 	var task Task
 	var parentID sql.NullInt64
+	var cloneOf sql.NullInt64
 	var archived int
 	if err := s.Scan(
 		&task.ID,
 		&task.ProjectID,
 		&parentID,
+		&cloneOf,
 		&task.Type,
 		&task.Title,
 		&task.Description,
@@ -311,6 +323,9 @@ func scanTask(s scanner) (Task, error) {
 	}
 	if parentID.Valid {
 		task.ParentID = &parentID.Int64
+	}
+	if cloneOf.Valid {
+		task.CloneOf = &cloneOf.Int64
 	}
 	task.Archived = archived == 1
 	return task, nil
@@ -369,6 +384,10 @@ func defaultStatusForType(taskType, requested string) string {
 		return requested
 	}
 	return "open"
+}
+
+func isClosedStatus(status string) bool {
+	return status == "complete" || status == "fail"
 }
 
 func validateTaskAssignmentChange(currentAssignee, nextAssignee, actorUsername, actorRole string) error {
@@ -479,7 +498,7 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, status string) (Task, bool, error) {
 	query := `
-		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE assignee = ? AND status = ?
 	`
@@ -504,7 +523,7 @@ func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND status = 'open' AND TRIM(COALESCE(assignee, '')) = ''
 		ORDER BY created_at, task_id
@@ -517,4 +536,50 @@ func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
 		return Task{}, false, err
 	}
 	return task, true, nil
+}
+
+func CloneTask(db *sql.DB, id, createdBy int64) (Task, error) {
+	original, err := GetTask(db, id)
+	if err != nil {
+		return Task{}, err
+	}
+	cloned, err := cloneTaskRecursive(db, original, nil, createdBy)
+	if err != nil {
+		return Task{}, err
+	}
+	return cloned, nil
+}
+
+func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy int64) (Task, error) {
+	cloned, err := CreateTask(db, TaskCreateParams{
+		ProjectID:          original.ProjectID,
+		ParentID:           parentID,
+		CloneOf:            &original.ID,
+		Type:               original.Type,
+		Title:              original.Title,
+		Description:        original.Description,
+		AcceptanceCriteria: original.AcceptanceCriteria,
+		Priority:           original.Priority,
+		Assignee:           "",
+		Status:             "notready",
+		CreatedBy:          createdBy,
+	})
+	if err != nil {
+		return Task{}, err
+	}
+	if original.Type != "epic" {
+		return cloned, nil
+	}
+	children, err := ListTasks(db, TaskListParams{ProjectID: original.ProjectID})
+	if err != nil {
+		return Task{}, err
+	}
+	for _, child := range children {
+		if child.ParentID != nil && *child.ParentID == original.ID {
+			if _, err := cloneTaskRecursive(db, child, &cloned.ID, createdBy); err != nil {
+				return Task{}, err
+			}
+		}
+	}
+	return cloned, nil
 }
