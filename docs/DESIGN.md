@@ -1,5 +1,10 @@
 # Design
 
+The authoritative lifecycle remodel specification is
+`docs/TICKET_LIFECYCLE_SPEC.md`. Where this file still describes the older
+single-status model, the lifecycle spec takes precedence until the rest of this
+document is rewritten.
+
 ## Product Summary
 
 `ticket` is a lightweight ticket and project management system delivered as a single Go binary.
