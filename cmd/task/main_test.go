@@ -474,7 +474,7 @@ func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T)
 	credsPath := filepath.Join(tempDir, "credentials.json")
 	t.Setenv("TASK_MODE", "remote")
 	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TASK_SERVER", "")
 
 	var loginAttempts int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -721,9 +721,14 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 			Description:        "Example description",
 			ProjectID:          7,
 			Priority:           1,
+			EstimateEffort:     3,
+			EstimateComplete:   "2026-04-01T12:00:00Z",
 			CreatedAt:          "2026-03-01 12:00:00",
 			UpdatedAt:          "2026-03-02 09:30:00",
 			AcceptanceCriteria: "- does the thing\n- handles the edge case",
+			Comments: []store.Comment{
+				{Author: "alice", Text: "latest comment", CreatedAt: "2026-03-02 10:00:00"},
+			},
 		}, nil)
 	})
 
@@ -736,12 +741,16 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 		"Title        : Example Task",
 		"Assignee     : ",
 		"Order        : 0",
+		"EstimateEffort   : 3",
+		"EstimateComplete : 2026-04-01T12:00:00Z",
 		"DependsOn    : []",
 		"Status       : open",
 		"Priority     : 1",
 		"Created      : 2026-03-01 12:00:00",
 		"LastModified : 2026-03-02 09:30:00",
 		"Acceptance Criteria : - does the thing",
+		"Comments     :",
+		"[2026-03-02 10:00:00] alice: latest comment",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("printTaskDetails() missing %q:\n%s", want, output)
@@ -805,15 +814,18 @@ func TestRunProjectCommandsInLocalMode(t *testing.T) {
 func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
-	taskID := createLocalTask(t, []string{"add", "-d", "findable description", "-ac", "ship it", "Task Alpha"})
+	taskID := createLocalTask(t, []string{"add", "-d", "findable description", "-ac", "ship it", "-estimate_effort", "8", "-estimate_complete", "2026-04-20T17:00:00Z", "Task Alpha"})
 	depID := createLocalTask(t, []string{"add", "Task Beta"})
+	if err := run([]string{"comment", "add", strconv.FormatInt(taskID, 10), "latest note"}); err != nil {
+		t.Fatalf("comment add error = %v", err)
+	}
 
 	getOutput := captureStdout(t, func() {
 		if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err != nil {
 			t.Fatalf("get error = %v", err)
 		}
 	})
-	for _, want := range []string{"Title        : Task Alpha", "Description  : findable description", "Acceptance Criteria : ship it"} {
+	for _, want := range []string{"Title        : Task Alpha", "Description  : findable description", "Acceptance Criteria : ship it", "EstimateEffort   : 8", "EstimateComplete : 2026-04-20T17:00:00Z", "latest note"} {
 		if !strings.Contains(getOutput, want) {
 			t.Fatalf("get output missing %q:\n%s", want, getOutput)
 		}
@@ -913,8 +925,22 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	setupLocalCLI(t)
 
+	if err := run([]string{"project", "create", "Second Project"}); err != nil {
+		t.Fatalf("project create error = %v", err)
+	}
+	if err := run([]string{"project", "use", "1"}); err != nil {
+		t.Fatalf("project use error = %v", err)
+	}
+
 	matchingID := createLocalTask(t, []string{"add", "-d", "Detailed note for customer portal", "-ac", "free form acceptance", "Free form entry"})
 	otherID := createLocalTask(t, []string{"add", "-d", "Detailed note for customer portal", "Free form other"})
+	if err := run([]string{"project", "use", "2"}); err != nil {
+		t.Fatalf("project use error = %v", err)
+	}
+	crossProjectID := createLocalTask(t, []string{"add", "-d", "Detailed note for customer portal", "Free form entry elsewhere"})
+	if err := run([]string{"project", "use", "1"}); err != nil {
+		t.Fatalf("project use error = %v", err)
+	}
 
 	if err := run([]string{"claim", strconv.FormatInt(matchingID, 10)}); err != nil {
 		t.Fatalf("claim error = %v", err)
@@ -945,6 +971,25 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	if strings.Contains(output, strconv.FormatInt(otherID, 10)+"\t") {
 		t.Fatalf("search output should not include non-matching task:\n%s", output)
 	}
+	if strings.Contains(output, strconv.FormatInt(crossProjectID, 10)+"\t") {
+		t.Fatalf("search output should not include cross-project task without -allprojects:\n%s", output)
+	}
+
+	allProjectsOutput := captureStdout(t, func() {
+		if err := run([]string{
+			"search",
+			"free", "form", "entry",
+			"-allprojects",
+		}); err != nil {
+			t.Fatalf("search allprojects error = %v", err)
+		}
+	})
+	if !strings.Contains(allProjectsOutput, strconv.FormatInt(matchingID, 10)+"\ttask\tinprogress\tFree form entry") {
+		t.Fatalf("allprojects output missing current project task:\n%s", allProjectsOutput)
+	}
+	if !strings.Contains(allProjectsOutput, strconv.FormatInt(crossProjectID, 10)+"\ttask\topen\tFree form entry elsewhere") {
+		t.Fatalf("allprojects output missing cross-project task:\n%s", allProjectsOutput)
+	}
 }
 
 func TestRunUpdateSupportsCombinedFields(t *testing.T) {
@@ -965,6 +1010,8 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 			"-ac", "new ac",
 			"-priority", "3",
 			"-order", "7",
+			"-estimate_effort", "5",
+			"-estimate_complete", "2026-04-15T12:00:00Z",
 			"-status", "inprogress",
 			"-parent_id", strconv.FormatInt(parentID, 10),
 		}); err != nil {
@@ -976,6 +1023,8 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		"Description  : new description",
 		"ParentID     : " + strconv.FormatInt(parentID, 10),
 		"Order        : 7",
+		"EstimateEffort   : 5",
+		"EstimateComplete : 2026-04-15T12:00:00Z",
 		"Status       : inprogress",
 		"Priority     : 3",
 		"Acceptance Criteria : new ac",
@@ -995,6 +1044,8 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		"Description  : new description",
 		"ParentID     : " + strconv.FormatInt(parentID, 10),
 		"Order        : 7",
+		"EstimateEffort   : 5",
+		"EstimateComplete : 2026-04-15T12:00:00Z",
 		"Status       : inprogress",
 		"Priority     : 3",
 		"Acceptance Criteria : new ac",
@@ -1262,7 +1313,7 @@ func setupLocalCLI(t *testing.T) {
 	t.Setenv("TASK_MODE", "local")
 	t.Setenv("TASK_HOME", tempDir)
 	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TASK_SERVER", "")
 	t.Setenv("TASK_DB_OVERRIDE", "")
 	if err := runInitDB([]string{"-password", "secret"}); err != nil {
 		t.Fatalf("runInitDB() error = %v", err)

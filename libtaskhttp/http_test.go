@@ -127,6 +127,8 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		Description:        "old description",
 		AcceptanceCriteria: "old ac",
 		Priority:           1,
+		EstimateEffort:     2,
+		EstimateComplete:   "2026-04-01T09:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask(task) error = %v", err)
@@ -144,11 +146,13 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		Status:             "inprogress",
 		Priority:           3,
 		Order:              7,
+		EstimateEffort:     5,
+		EstimateComplete:   "2026-04-15T12:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
-	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "inprogress" || updated.Priority != 3 || updated.Order != 7 {
+	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "inprogress" || updated.Priority != 3 || updated.Order != 7 || updated.EstimateEffort != 5 || updated.EstimateComplete != "2026-04-15T12:00:00Z" {
 		t.Fatalf("UpdateTask() = %#v", updated)
 	}
 	if updated.ParentID == nil || *updated.ParentID != parent.ID {

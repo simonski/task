@@ -32,6 +32,8 @@ type TaskCreateRequest struct {
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Priority           int    `json:"priority"`
+	EstimateEffort     int    `json:"estimate_effort"`
+	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
 }
 
@@ -44,6 +46,8 @@ type TaskUpdateRequest struct {
 	Status             string `json:"status,omitempty"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
+	EstimateEffort     int    `json:"estimate_effort"`
+	EstimateComplete   string `json:"estimate_complete,omitempty"`
 }
 
 type CommentCreateRequest struct {

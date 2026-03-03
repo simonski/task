@@ -406,6 +406,8 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			Description:        req.Description,
 			AcceptanceCriteria: req.AcceptanceCriteria,
 			Priority:           req.Priority,
+			EstimateEffort:     req.EstimateEffort,
+			EstimateComplete:   req.EstimateComplete,
 			Assignee:           req.Assignee,
 			Status:             req.Status,
 			CreatedBy:          user.ID,
@@ -562,6 +564,8 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				Status:             req.Status,
 				Priority:           req.Priority,
 				Order:              req.Order,
+				EstimateEffort:     req.EstimateEffort,
+				EstimateComplete:   req.EstimateComplete,
 				UpdatedBy:          user.ID,
 				ActorUsername:      user.Username,
 				ActorRole:          user.Role,
@@ -653,6 +657,8 @@ type taskRequest struct {
 	Status             string `json:"status"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
+	EstimateEffort     int    `json:"estimate_effort"`
+	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
 }
 

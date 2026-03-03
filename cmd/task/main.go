@@ -145,14 +145,14 @@ var helpIndex = map[string]commandHelp{
 		example: "task show 42",
 	},
 	"search": {
-		usage:   "task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>]",
-		details: []string{"Searches across tasks in all projects using a free-form query.", "Optional filters narrow by status, title text, description text, priority, and owner."},
-		example: "task search password reset -status open -owner alice",
+		usage:   "task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>] [-allprojects]",
+		details: []string{"Searches tasks in the active project by default.", "Use `-allprojects` to search across every project. Optional filters narrow by status, title text, description text, priority, and owner."},
+		example: "task search password reset -status open -owner alice -allprojects",
 	},
 	"update": {
-		usage:   "task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]",
-		details: []string{"Updates one or more task fields in a single command.", "Accepted status values are `notready`, `open`, `inprogress`, `complete`, and `fail`."},
-		example: "task update 42 -title \"Customer Portal\" -status inprogress -priority 2",
+		usage:   "task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
+		details: []string{"Updates one or more task fields in a single command.", "Accepted status values are `notready`, `open`, `inprogress`, `complete`, and `fail`. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
+		example: "task update 42 -title \"Customer Portal\" -status inprogress -priority 2 -estimate_effort 5",
 	},
 	"set-parent": {
 		usage:   "task set-parent <id> <parent-id>",
@@ -190,8 +190,8 @@ var helpIndex = map[string]commandHelp{
 		example: "task fail 42",
 	},
 	"add": {
-		usage:   "task add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [title words]",
-		details: []string{"Creates a task-like entity in the active project.", "Positional title words and `-title` are equivalent ways to set the title.", "Defaults: `type=task`, `priority=1`, blank assignee, blank description, blank acceptance criteria, blank parent, current project."},
+		usage:   "task add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [-estimate_effort <n>] [-estimate_complete <rfc3339>] [title words]",
+		details: []string{"Creates a task-like entity in the active project.", "Positional title words and `-title` are equivalent ways to set the title.", "Defaults: `type=task`, `priority=1`, blank assignee, blank description, blank acceptance criteria, blank parent, current project, `estimate_effort=0`, blank `estimate_complete`."},
 		example: "task add \"Customers can reset their password.\"",
 	},
 	"comment": {
@@ -1281,9 +1281,18 @@ func runSearch(args []string) error {
 	if err != nil {
 		return err
 	}
-	projects, err := svc.ListProjects()
-	if err != nil {
-		return err
+	var projects []store.Project
+	if filters.allProjects {
+		projects, err = svc.ListProjects()
+		if err != nil {
+			return err
+		}
+	} else {
+		_, _, project, err := resolveCurrentProjectClient()
+		if err != nil {
+			return err
+		}
+		projects = []store.Project{project}
 	}
 	var tasks []store.Task
 	for _, project := range projects {
@@ -1313,6 +1322,7 @@ type searchFilters struct {
 	description string
 	priority    int
 	owner       string
+	allProjects bool
 }
 
 func parseSearchArgs(args []string) (string, searchFilters, error) {
@@ -1354,6 +1364,8 @@ func parseSearchArgs(args []string) (string, searchFilters, error) {
 			}
 			filters.owner = args[i+1]
 			i++
+		case "-allprojects":
+			filters.allProjects = true
 		default:
 			terms = append(terms, args[i])
 		}
@@ -1495,6 +1507,8 @@ func updateTaskStatus(idArg, status string) error {
 		Status:             status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 	if err != nil {
 		return err
@@ -1515,16 +1529,18 @@ func runUpdate(args []string) error {
 	acceptanceCriteria := fs.String("ac", "", "task acceptance criteria")
 	priority := fs.Int("priority", 0, "task priority")
 	order := fs.Int("order", 0, "task order")
+	estimateEffort := fs.Int("estimate_effort", 0, "estimated effort")
+	estimateComplete := fs.String("estimate_complete", "", "estimated completion time (RFC3339)")
 	status := fs.String("status", "", "task status")
 	parentIDRaw := fs.String("parent_id", "", "task parent id")
 	if len(args) == 0 {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
@@ -1536,10 +1552,12 @@ func runUpdate(args []string) error {
 	hasAC := containsFlag(args[1:], "-ac")
 	hasPriority := containsFlag(args[1:], "-priority")
 	hasOrder := containsFlag(args[1:], "-order")
+	hasEstimateEffort := containsFlag(args[1:], "-estimate_effort")
+	hasEstimateComplete := containsFlag(args[1:], "-estimate_complete")
 	hasStatus := containsFlag(args[1:], "-status")
 	hasParentID := containsFlag(args[1:], "-parent_id")
-	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasStatus && !hasParentID {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>]")
+	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasEstimateEffort && !hasEstimateComplete && !hasStatus && !hasParentID {
+		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1562,6 +1580,8 @@ func runUpdate(args []string) error {
 		Status:             current.Status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	}
 	if hasTitle {
 		next.Title = *title
@@ -1580,6 +1600,12 @@ func runUpdate(args []string) error {
 	}
 	if hasOrder {
 		next.Order = *order
+	}
+	if hasEstimateEffort {
+		next.EstimateEffort = *estimateEffort
+	}
+	if hasEstimateComplete {
+		next.EstimateComplete = *estimateComplete
 	}
 	if hasStatus {
 		next.Status = *status
@@ -1678,11 +1704,16 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 		return err
 	}
 	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    current.ParentID,
-		Assignee:    assignee,
-		Status:      current.Status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           assignee,
+		Status:             current.Status,
+		Priority:           current.Priority,
+		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 	if err != nil {
 		return err
@@ -1745,11 +1776,16 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 		return fmt.Errorf("task is not assigned to %s", expectedAssignee)
 	}
 	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    current.ParentID,
-		Assignee:    "",
-		Status:      current.Status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           "",
+		Status:             current.Status,
+		Priority:           current.Priority,
+		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 	if err != nil {
 		return err
@@ -2059,11 +2095,16 @@ func runRequirementStatus(status string, args []string) error {
 		return err
 	}
 	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
-		Title:       current.Title,
-		Description: current.Description,
-		ParentID:    current.ParentID,
-		Assignee:    current.Assignee,
-		Status:      status,
+		Title:              current.Title,
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           current.Assignee,
+		Status:             status,
+		Priority:           current.Priority,
+		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 	if err != nil {
 		return err
@@ -2093,11 +2134,16 @@ func runRevise(args []string) error {
 		return err
 	}
 	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
-		Title:       current.Title + " (revised)",
-		Description: current.Description,
-		ParentID:    current.ParentID,
-		Assignee:    current.Assignee,
-		Status:      "proposed",
+		Title:              current.Title + " (revised)",
+		Description:        current.Description,
+		AcceptanceCriteria: current.AcceptanceCriteria,
+		ParentID:           current.ParentID,
+		Assignee:           current.Assignee,
+		Status:             "proposed",
+		Priority:           current.Priority,
+		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 	if err != nil {
 		return err
@@ -2174,6 +2220,8 @@ type taskCreateOptions struct {
 	Description        string
 	AcceptanceCriteria string
 	Priority           int
+	EstimateEffort     int
+	EstimateComplete   string
 	Assignee           string
 	ParentID           *int64
 	Project            string
@@ -2191,11 +2239,13 @@ func runTaskCreate(args []string) error {
 	titleFlag := fs.String("title", "", "task title")
 	priority := fs.Int("priority", 1, "task priority")
 	fs.IntVar(priority, "p", 1, "task priority")
+	estimateEffort := fs.Int("estimate_effort", 0, "estimated effort")
 	assignee := fs.String("assignee", "", "task assignee")
 	fs.StringVar(assignee, "a", "", "task assignee")
 	description := fs.String("description", "", "task description")
 	fs.StringVar(description, "d", "", "task description")
 	acceptanceCriteria := fs.String("ac", "", "acceptance criteria")
+	estimateComplete := fs.String("estimate_complete", "", "estimated completion time (RFC3339)")
 	parent := fs.Int64("parent", 0, "parent task id")
 	project := fs.String("project", "", "project id")
 	if err := fs.Parse(normalizedArgs); err != nil {
@@ -2206,7 +2256,7 @@ func runTaskCreate(args []string) error {
 		title = strings.Join(fs.Args(), " ")
 	}
 	if title == "" {
-		return errors.New("usage: task add|create|new [-title title] [-t type] [-p priority] [-a assignee] [-d description] [-ac criteria] [-parent id] [-project project] [title words]")
+		return errors.New("usage: task add|create|new [-title title] [-t type] [-p priority] [-a assignee] [-d description] [-ac criteria] [-parent id] [-project project] [-estimate_effort n] [-estimate_complete rfc3339] [title words]")
 	}
 	opts := taskCreateOptions{
 		TaskType:           *taskType,
@@ -2214,6 +2264,8 @@ func runTaskCreate(args []string) error {
 		Description:        *description,
 		AcceptanceCriteria: *acceptanceCriteria,
 		Priority:           *priority,
+		EstimateEffort:     *estimateEffort,
+		EstimateComplete:   *estimateComplete,
 		Assignee:           *assignee,
 		Project:            *project,
 	}
@@ -2225,18 +2277,20 @@ func runTaskCreate(args []string) error {
 
 func normalizeTaskCreateArgs(args []string) ([]string, error) {
 	knownValueFlags := map[string]bool{
-		"-type":        true,
-		"-t":           true,
-		"-title":       true,
-		"-priority":    true,
-		"-p":           true,
-		"-assignee":    true,
-		"-a":           true,
-		"-description": true,
-		"-d":           true,
-		"-ac":          true,
-		"-parent":      true,
-		"-project":     true,
+		"-type":              true,
+		"-t":                 true,
+		"-title":             true,
+		"-priority":          true,
+		"-p":                 true,
+		"-estimate_effort":   true,
+		"-assignee":          true,
+		"-a":                 true,
+		"-description":       true,
+		"-d":                 true,
+		"-ac":                true,
+		"-estimate_complete": true,
+		"-parent":            true,
+		"-project":           true,
 	}
 
 	var flagArgs []string
@@ -2275,6 +2329,8 @@ func createTask(opts taskCreateOptions) error {
 		Description:        opts.Description,
 		AcceptanceCriteria: opts.AcceptanceCriteria,
 		Priority:           opts.Priority,
+		EstimateEffort:     opts.EstimateEffort,
+		EstimateComplete:   opts.EstimateComplete,
 		Assignee:           opts.Assignee,
 	})
 	if err != nil {
@@ -2384,12 +2440,20 @@ func printTaskDetails(task store.Task, dependencies []store.Dependency) {
 	fmt.Printf("Title        : %s\n", task.Title)
 	fmt.Printf("Assignee     : %s\n", task.Assignee)
 	fmt.Printf("Order        : %d\n", task.Order)
+	fmt.Printf("EstimateEffort   : %d\n", task.EstimateEffort)
+	fmt.Printf("EstimateComplete : %s\n", task.EstimateComplete)
 	fmt.Printf("DependsOn    : %s\n", dependsOn)
 	fmt.Printf("Status       : %s\n", task.Status)
 	fmt.Printf("Priority     : %d\n", task.Priority)
 	fmt.Printf("Created      : %s\n", task.CreatedAt)
 	fmt.Printf("LastModified : %s\n", task.UpdatedAt)
 	fmt.Printf("Acceptance Criteria : %s\n", task.AcceptanceCriteria)
+	if len(task.Comments) > 0 {
+		fmt.Println("Comments     :")
+		for _, comment := range task.Comments {
+			fmt.Printf("  - [%s] %s: %s\n", comment.CreatedAt, comment.Author, comment.Text)
+		}
+	}
 }
 
 func formatDependsOn(dependencies []store.Dependency) string {
@@ -2812,7 +2876,7 @@ CLIENT COMMANDS
   req         Generate requirements via an external agent
   register    Create a user account on the server
   request     Request work for the current user
-  search      Search tasks in the active project
+  search      Search tasks in the active project or across all projects
   set-parent  Set the parent of a task
   status      Show server and authentication status
   unset-parent Clear the parent of a task

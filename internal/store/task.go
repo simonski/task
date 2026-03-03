@@ -5,27 +5,31 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var ErrTaskNotFound = errors.New("task not found")
 
 type Task struct {
-	ID                 int64  `json:"task_id"`
-	ProjectID          int64  `json:"project_id"`
-	ParentID           *int64 `json:"parent_id,omitempty"`
-	CloneOf            *int64 `json:"clone_of,omitempty"`
-	Type               string `json:"type"`
-	Title              string `json:"title"`
-	Description        string `json:"description"`
-	AcceptanceCriteria string `json:"acceptance_criteria"`
-	Status             string `json:"status"`
-	Priority           int    `json:"priority"`
-	Order              int    `json:"order"`
-	Assignee           string `json:"assignee"`
-	Archived           bool   `json:"archived"`
-	CreatedBy          int64  `json:"created_by"`
-	CreatedAt          string `json:"created_at"`
-	UpdatedAt          string `json:"updated_at"`
+	ID                 int64     `json:"task_id"`
+	ProjectID          int64     `json:"project_id"`
+	ParentID           *int64    `json:"parent_id,omitempty"`
+	CloneOf            *int64    `json:"clone_of,omitempty"`
+	Type               string    `json:"type"`
+	Title              string    `json:"title"`
+	Description        string    `json:"description"`
+	AcceptanceCriteria string    `json:"acceptance_criteria"`
+	Status             string    `json:"status"`
+	Priority           int       `json:"priority"`
+	Order              int       `json:"order"`
+	EstimateEffort     int       `json:"estimate_effort"`
+	EstimateComplete   string    `json:"estimate_complete,omitempty"`
+	Assignee           string    `json:"assignee"`
+	Comments           []Comment `json:"comments,omitempty"`
+	Archived           bool      `json:"archived"`
+	CreatedBy          int64     `json:"created_by"`
+	CreatedAt          string    `json:"created_at"`
+	UpdatedAt          string    `json:"updated_at"`
 }
 
 type TaskCreateParams struct {
@@ -38,6 +42,8 @@ type TaskCreateParams struct {
 	AcceptanceCriteria string
 	Priority           int
 	Order              int
+	EstimateEffort     int
+	EstimateComplete   string
 	Assignee           string
 	Status             string
 	CreatedBy          int64
@@ -52,6 +58,8 @@ type TaskUpdateParams struct {
 	Status             string
 	Priority           int
 	Order              int
+	EstimateEffort     int
+	EstimateComplete   string
 	UpdatedBy          int64
 	ActorUsername      string
 	ActorRole          string
@@ -93,6 +101,9 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	if !validTaskType(params.Type) {
 		return Task{}, fmt.Errorf("invalid task type %q", params.Type)
 	}
+	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
+		return Task{}, err
+	}
 	status := defaultStatusForType(params.Type, params.Status)
 	priority := params.Priority
 	if priority == 0 {
@@ -101,9 +112,9 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	order := params.Order
 
 	result, err := db.Exec(`
-		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, order, strings.TrimSpace(params.Assignee), params.CreatedBy)
+		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
 	if err != nil {
 		return Task{}, err
 	}
@@ -116,9 +127,11 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 		return Task{}, err
 	}
 	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_created", map[string]any{
-		"type":   task.Type,
-		"title":  task.Title,
-		"status": task.Status,
+		"type":              task.Type,
+		"title":             task.Title,
+		"status":            task.Status,
+		"estimate_effort":   task.EstimateEffort,
+		"estimate_complete": task.EstimateComplete,
 	}, params.CreatedBy); err != nil {
 		return Task{}, err
 	}
@@ -129,6 +142,9 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 	title := strings.TrimSpace(params.Title)
 	if title == "" {
 		return Task{}, errors.New("task title is required")
+	}
+	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
+		return Task{}, err
 	}
 	current, err := GetTask(db, id)
 	if err != nil {
@@ -169,9 +185,9 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 
 	result, err := db.Exec(`
 		UPDATE tasks
-		SET title = ?, description = ?, acceptance_criteria = ?, parent_id = ?, assignee = ?, status = ?, priority = ?, sort_order = ?, updated_at = CURRENT_TIMESTAMP
+		SET title = ?, description = ?, acceptance_criteria = ?, parent_id = ?, assignee = ?, status = ?, priority = ?, sort_order = ?, estimate_effort = ?, estimate_complete = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?
-	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, status, params.Priority, params.Order, id)
+	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, status, params.Priority, params.Order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), id)
 	if err != nil {
 		return Task{}, err
 	}
@@ -187,14 +203,16 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		return Task{}, err
 	}
 	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_updated", map[string]any{
-		"title":       task.Title,
-		"description": task.Description,
+		"title":               task.Title,
+		"description":         task.Description,
 		"acceptance_criteria": task.AcceptanceCriteria,
-		"assignee":    task.Assignee,
-		"status":      task.Status,
-		"priority":    task.Priority,
-		"order":       task.Order,
-		"parent_id":   task.ParentID,
+		"assignee":            task.Assignee,
+		"status":              task.Status,
+		"priority":            task.Priority,
+		"order":               task.Order,
+		"estimate_effort":     task.EstimateEffort,
+		"estimate_complete":   task.EstimateComplete,
+		"parent_id":           task.ParentID,
 	}, params.UpdatedBy); err != nil {
 		return Task{}, err
 	}
@@ -211,7 +229,7 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ?
 	`
@@ -271,7 +289,7 @@ func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
 
 func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
@@ -282,12 +300,12 @@ func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 		}
 		return Task{}, err
 	}
-	return task, nil
+	return hydrateTask(db, task)
 }
 
 func GetTask(db *sql.DB, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
@@ -299,7 +317,7 @@ func GetTask(db *sql.DB, id int64) (Task, error) {
 		}
 		return Task{}, err
 	}
-	return task, nil
+	return hydrateTask(db, task)
 }
 
 type scanner interface {
@@ -323,6 +341,8 @@ func scanTask(s scanner) (Task, error) {
 		&task.Status,
 		&task.Priority,
 		&task.Order,
+		&task.EstimateEffort,
+		&task.EstimateComplete,
 		&task.Assignee,
 		&archived,
 		&task.CreatedBy,
@@ -338,6 +358,15 @@ func scanTask(s scanner) (Task, error) {
 		task.CloneOf = &cloneOf.Int64
 	}
 	task.Archived = archived == 1
+	return task, nil
+}
+
+func hydrateTask(db *sql.DB, task Task) (Task, error) {
+	comments, err := ListComments(db, task.ID)
+	if err != nil {
+		return Task{}, err
+	}
+	task.Comments = comments
 	return task, nil
 }
 
@@ -363,6 +392,17 @@ func normalizeStatus(status string) string {
 		return "complete"
 	}
 	return status
+}
+
+func validateEstimateComplete(raw string) error {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, value); err != nil {
+		return errors.New("estimate_complete must be RFC3339 datetime")
+	}
+	return nil
 }
 
 func validStatus(status string) bool {
@@ -514,7 +554,7 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, status string) (Task, bool, error) {
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE assignee = ? AND status = ?
 	`
@@ -539,7 +579,7 @@ func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND status = 'open' AND TRIM(COALESCE(assignee, '')) = ''
 		ORDER BY created_at, task_id
@@ -577,6 +617,8 @@ func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy in
 		AcceptanceCriteria: original.AcceptanceCriteria,
 		Priority:           original.Priority,
 		Order:              original.Order,
+		EstimateEffort:     original.EstimateEffort,
+		EstimateComplete:   original.EstimateComplete,
 		Assignee:           "",
 		Status:             "notready",
 		CreatedBy:          createdBy,

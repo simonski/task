@@ -18,7 +18,7 @@ Client-side files are stored under `$TASK_HOME`, which defaults to `~/.config/ta
 
 ## Product Principles
 
-1. The server is the single system of record.
+1. The server defines the single system of record and the shared data model used by both remote and local workflows.
 2. The CLI and web app use the same API semantics and data model.
 3. Common operations should be fast and predictable from the terminal.
 4. Projects should support lightweight hierarchy through epics and child tasks.
@@ -88,7 +88,10 @@ Projects are the top-level container for work items.
 - `acceptance_criteria`
 - `status`
 - `priority`
+- `estimate_effort`
+- `estimate_complete`
 - `assignee`
+- `comments`
 - `created_at`
 - `created_by`
 - `updated_at`
@@ -106,6 +109,9 @@ Model notes:
 - tasks are orphaned when `parent_id` is null
 - task creation accepts either a positional title or `-title`
 - `acceptance_criteria` is captured directly on the task record
+- `estimate_effort` is an integer assessment of task effort
+- `estimate_complete` is the estimated delivery datetime and should use RFC3339 format
+- `comments` are exposed on task detail reads as an array of `{author, date, text}` ordered most recent first
 
 CLI creation defaults:
 
@@ -116,6 +122,8 @@ CLI creation defaults:
 - if `-assignee` / `-a` is omitted, the assignee is blank
 - if `-description` / `-d` is omitted, the description is blank
 - if `-ac` is omitted, the acceptance criteria is blank
+- if `-estimate_effort` is omitted, it defaults to `0`
+- if `-estimate_complete` is omitted, it is blank
 - if `-parent` is omitted, the task is created without a parent
 - if `-project` is omitted, the active project is used
 
@@ -266,7 +274,7 @@ If `-nocolor` is set, the same output must be printed without ANSI colors.
 
 The CLI must resolve credentials from `-username` and `-password` first, then `TASK_USERNAME` and `TASK_PASSWORD`, and finally default to OS `whoami` and `password`.
 
-The CLI must resolve the server URL from `-url` first, then `TASK_URL`, then saved config, and finally default to `http://localhost:8080`.
+The CLI must resolve the server URL from `-url` first, then `TASK_SERVER`, then saved config, and finally default to `http://localhost:8080`.
 
 The CLI must expose `task version`, which prints the semantic version embedded into the binary at build time.
 
@@ -362,7 +370,7 @@ Users must be able to:
 1. list all items in the active project
 2. filter by type
 3. filter by status
-4. search across titles and descriptions
+4. search across titles and descriptions within the active project by default
 5. inspect full item detail
 6. list orphaned items with no parent
 
@@ -374,13 +382,16 @@ task ls
 task list --type bug
 task list --status open
 task search "password reset"
+task search "password reset" -allprojects
 task get 42
 task orphans
 ```
 
+`task search` should search the active project by default. If `-allprojects` is supplied, it should search across all projects.
+
 The CLI should support `-json` on client-facing commands and pretty-print the response JSON.
 
-`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `ProjectID`, `Title`, `Assignee`, `Order`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, and `Acceptance Criteria`.
+`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `CloneOf` when present, `ProjectID`, `Title`, `Assignee`, `Order`, `EstimateEffort`, `EstimateComplete`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Acceptance Criteria`, and a `Comments` section ordered most recent first.
 
 `task list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
@@ -407,6 +418,8 @@ Assignment workflows must support:
 - `task request [<id>]` for the caller
 - `task claim <id>` for the caller
 - `task unclaim <id>` for the caller
+- `task set-parent <id> <parent-id>`
+- `task unset-parent <id>`
 - `task list -u <name>` / `task ls -u <name>` for assignee filtering
 - `task open <id>`
 - `task ready <id>` as an alias for `task open <id>`
@@ -414,6 +427,14 @@ Assignment workflows must support:
 - `task complete <id>`
 - `task fail <id>`
 - `task update <id> -status <status>`
+- `task update <id> -title <title>`
+- `task update <id> -description <description>`
+- `task update <id> -ac <acceptance-criteria>`
+- `task update <id> -priority <priority>`
+- `task update <id> -order <order>`
+- `task update <id> -parent_id <parent-id>`
+- `task update <id> -estimate_effort <effort>`
+- `task update <id> -estimate_complete <rfc3339-datetime>`
 
 Assignment rules:
 
@@ -514,7 +535,7 @@ The web UI should make these activities easy:
 ### Storage
 
 - SQLite is the only database in the first release.
-- Only the server accesses SQLite directly.
+- SQLite remains the persistence layer behind the server data model; local mode uses the same data model and validation rules as the server-backed flow.
 
 Suggested storage areas:
 
@@ -593,6 +614,14 @@ This is set using
     `task fail N`
 or
     `task update N -status <status>`
+    `task update N -title <title>`
+    `task update N -description <description>`
+    `task update N -ac <acceptance-criteria>`
+    `task update N -priority <priority>`
+    `task update N -order <order>`
+    `task update N -parent_id <parent-id>`
+    `task update N -estimate_effort <effort>`
+    `task update N -estimate_complete <rfc3339-datetime>`
 
 ## Requesting Tasks
 

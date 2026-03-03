@@ -23,17 +23,22 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	}
 
 	task, err := CreateTask(db, TaskCreateParams{
-		ProjectID: project.ID,
-		ParentID:  &epic.ID,
-		Type:      "task",
-		Title:     "Add password reset",
-		CreatedBy: 1,
+		ProjectID:        project.ID,
+		ParentID:         &epic.ID,
+		Type:             "task",
+		Title:            "Add password reset",
+		EstimateEffort:   5,
+		EstimateComplete: "2026-04-01T12:00:00Z",
+		CreatedBy:        1,
 	})
 	if err != nil {
 		t.Fatalf("CreateTask(task) error = %v", err)
 	}
 	if task.ParentID == nil || *task.ParentID != epic.ID {
 		t.Fatalf("CreateTask().ParentID = %#v, want %d", task.ParentID, epic.ID)
+	}
+	if task.EstimateEffort != 5 || task.EstimateComplete != "2026-04-01T12:00:00Z" {
+		t.Fatalf("CreateTask() estimates = %#v", task)
 	}
 
 	tasks, err := ListTasksByProject(db, project.ID)
@@ -45,9 +50,11 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	}
 
 	updated, err := UpdateTask(db, task.ID, TaskUpdateParams{
-		Title:       "Add password reset workflow",
-		Description: "Support email-based reset",
-		ParentID:    &epic.ID,
+		Title:            "Add password reset workflow",
+		Description:      "Support email-based reset",
+		ParentID:         &epic.ID,
+		EstimateEffort:   8,
+		EstimateComplete: "2026-04-15T09:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
@@ -55,12 +62,17 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	if updated.Title != "Add password reset workflow" {
 		t.Fatalf("UpdateTask().Title = %q", updated.Title)
 	}
+	if updated.EstimateEffort != 8 || updated.EstimateComplete != "2026-04-15T09:00:00Z" {
+		t.Fatalf("UpdateTask() estimates = %#v", updated)
+	}
 
 	statusUpdated, err := UpdateTask(db, task.ID, TaskUpdateParams{
-		Title:       updated.Title,
-		Description: updated.Description,
-		ParentID:    updated.ParentID,
-		Status:      "inprogress",
+		Title:            updated.Title,
+		Description:      updated.Description,
+		ParentID:         updated.ParentID,
+		Status:           "inprogress",
+		EstimateEffort:   updated.EstimateEffort,
+		EstimateComplete: updated.EstimateComplete,
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask(status) error = %v", err)

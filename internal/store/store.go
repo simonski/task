@@ -128,6 +128,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	status TEXT NOT NULL DEFAULT 'open',
 	priority INTEGER NOT NULL DEFAULT 3,
 	sort_order INTEGER NOT NULL DEFAULT 0,
+	estimate_effort INTEGER NOT NULL DEFAULT 0,
+	estimate_complete TEXT NOT NULL DEFAULT '',
 	assignee TEXT NOT NULL DEFAULT '',
 	archived INTEGER NOT NULL DEFAULT 0,
 	created_by INTEGER,
@@ -185,6 +187,16 @@ CREATE TABLE IF NOT EXISTS dependencies (
 func migrateSchema(db *sql.DB) error {
 	if !columnExists(db, "tasks", "sort_order") {
 		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "tasks", "estimate_effort") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN estimate_effort INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "tasks", "estimate_complete") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN estimate_complete TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
 	}

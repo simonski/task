@@ -161,6 +161,8 @@ func (s *LocalService) CreateTask(req TaskCreateRequest) (store.Task, error) {
 		Description:        req.Description,
 		AcceptanceCriteria: req.AcceptanceCriteria,
 		Priority:           req.Priority,
+		EstimateEffort:     req.EstimateEffort,
+		EstimateComplete:   req.EstimateComplete,
 		Assignee:           req.Assignee,
 		CreatedBy:          user.ID,
 	})
@@ -205,6 +207,8 @@ func (s *LocalService) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, 
 		Status:             req.Status,
 		Priority:           req.Priority,
 		Order:              req.Order,
+		EstimateEffort:     req.EstimateEffort,
+		EstimateComplete:   req.EstimateComplete,
 		UpdatedBy:          user.ID,
 		ActorUsername:      user.Username,
 		ActorRole:          user.Role,
@@ -225,6 +229,8 @@ func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {
 		Status:             current.Status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 }
 
@@ -242,6 +248,8 @@ func (s *LocalService) UnsetTaskParent(id int64) (store.Task, error) {
 		Status:             current.Status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 }
 

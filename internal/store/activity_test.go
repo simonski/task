@@ -59,4 +59,15 @@ func TestHistoryAndComments(t *testing.T) {
 	if len(comments) != 1 {
 		t.Fatalf("ListComments() len = %d, want 1", len(comments))
 	}
+	if comments[0].Author != "admin" || comments[0].Text != "Waiting on API changes." {
+		t.Fatalf("ListComments() = %#v", comments)
+	}
+
+	taskWithComments, err := GetTask(db, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+	if len(taskWithComments.Comments) != 1 || taskWithComments.Comments[0].Author != "admin" {
+		t.Fatalf("GetTask().Comments = %#v", taskWithComments.Comments)
+	}
 }

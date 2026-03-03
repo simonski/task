@@ -19,7 +19,9 @@ type Comment struct {
 	ID        int64  `json:"id"`
 	ItemID    int64  `json:"item_id"`
 	UserID    int64  `json:"user_id"`
+	Author    string `json:"author"`
 	Comment   string `json:"comment"`
+	Text      string `json:"text"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -71,23 +73,26 @@ func AddComment(db *sql.DB, taskID, userID int64, comment string) (Comment, erro
 		return Comment{}, err
 	}
 	row := db.QueryRow(`
-		SELECT id, item_id, user_id, comment, created_at
-		FROM comments
-		WHERE id = ?
+		SELECT c.id, c.item_id, c.user_id, u.username, c.comment, c.created_at
+		FROM comments c
+		JOIN users u ON u.user_id = c.user_id
+		WHERE c.id = ?
 	`, id)
 	var c Comment
-	if err := row.Scan(&c.ID, &c.ItemID, &c.UserID, &c.Comment, &c.CreatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.ItemID, &c.UserID, &c.Author, &c.Comment, &c.CreatedAt); err != nil {
 		return Comment{}, err
 	}
+	c.Text = c.Comment
 	return c, nil
 }
 
 func ListComments(db *sql.DB, taskID int64) ([]Comment, error) {
 	rows, err := db.Query(`
-		SELECT id, item_id, user_id, comment, created_at
-		FROM comments
-		WHERE item_id = ?
-		ORDER BY id
+		SELECT c.id, c.item_id, c.user_id, u.username, c.comment, c.created_at
+		FROM comments c
+		JOIN users u ON u.user_id = c.user_id
+		WHERE c.item_id = ?
+		ORDER BY c.created_at DESC, c.id DESC
 	`, taskID)
 	if err != nil {
 		return nil, err
@@ -97,9 +102,10 @@ func ListComments(db *sql.DB, taskID int64) ([]Comment, error) {
 	var comments []Comment
 	for rows.Next() {
 		var c Comment
-		if err := rows.Scan(&c.ID, &c.ItemID, &c.UserID, &c.Comment, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.ItemID, &c.UserID, &c.Author, &c.Comment, &c.CreatedAt); err != nil {
 			return nil, err
 		}
+		c.Text = c.Comment
 		comments = append(comments, c)
 	}
 	return comments, rows.Err()

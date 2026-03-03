@@ -59,6 +59,8 @@ type TaskCreateRequest struct {
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Priority           int    `json:"priority"`
+	EstimateEffort     int    `json:"estimate_effort"`
+	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
 }
 
@@ -71,6 +73,8 @@ type TaskUpdateRequest struct {
 	Status             string `json:"status,omitempty"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
+	EstimateEffort     int    `json:"estimate_effort"`
+	EstimateComplete   string `json:"estimate_complete,omitempty"`
 }
 
 type CommentCreateRequest struct {
@@ -340,6 +344,8 @@ func (c *Client) CreateTask(req TaskCreateRequest) (store.Task, error) {
 			Description:        req.Description,
 			AcceptanceCriteria: req.AcceptanceCriteria,
 			Priority:           req.Priority,
+			EstimateEffort:     req.EstimateEffort,
+			EstimateComplete:   req.EstimateComplete,
 			Assignee:           req.Assignee,
 			CreatedBy:          user.ID,
 		})
@@ -414,6 +420,8 @@ func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
 			Status:             req.Status,
 			Priority:           req.Priority,
 			Order:              req.Order,
+			EstimateEffort:     req.EstimateEffort,
+			EstimateComplete:   req.EstimateComplete,
 			UpdatedBy:          user.ID,
 			ActorUsername:      user.Username,
 			ActorRole:          user.Role,
@@ -438,6 +446,8 @@ func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
 		Status:             current.Status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 }
 
@@ -455,6 +465,8 @@ func (c *Client) UnsetTaskParent(id int64) (store.Task, error) {
 		Status:             current.Status,
 		Priority:           current.Priority,
 		Order:              current.Order,
+		EstimateEffort:     current.EstimateEffort,
+		EstimateComplete:   current.EstimateComplete,
 	})
 }
 

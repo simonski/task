@@ -12,7 +12,7 @@ This guide describes a single Go binary that provides a server, a CLI, and an em
 2. The CLI, which provides fast and explicit terminal workflows.
 3. The web app, which is embedded in the same binary and uses the same API.
 
-All project data lives on the server. Neither the CLI nor the web interface writes directly to the database.
+All project data follows the server data model and API semantics, whether you are working against a remote server or a local workspace.
 
 Client-side files live under `$TASK_HOME`, which defaults to `~/.config/task`.
 
@@ -77,10 +77,10 @@ task version
 
 Running `task` with no arguments prints a colored ASCII-art `TASK` banner above the main usage output.
 
-If you are using the CLI against a running server on another host, configure TASK_URL first:
+If you are using the CLI against a running server on another host, configure TASK_SERVER first:
 
 ```bash
-export TASK_URL=http://your-server:8080
+export TASK_SERVER=http://your-server:8080
 ```
 
 As an admin create users:
@@ -179,7 +179,9 @@ Show aggregate counts:
 
 ```bash
 task count
+15
 task count -project_id 1
+11
 ```
 
 `task count` prints totals for users and work items by type. Without `-project_id` it also prints the total project count.
@@ -293,7 +295,7 @@ task epic "This is an Epic"
 ```
 
 ```bash
-task create -t task -p 1 -a alice -d "This is a Task" -ac "Has a title and description" "This is a Task"
+task create -t task -p 1 -a alice -d "This is a Task" -ac "Has a title and description" -estimate_effort 5 -estimate_complete 2026-04-30T17:00:00Z "This is a Task"
 ```
 
 Creation defaults:
@@ -303,6 +305,8 @@ Creation defaults:
 - `-a` / `-assignee`: defaults to blank
 - `-d` / `-description`: defaults to blank
 - `-ac`: defaults to blank
+- `-estimate_effort`: defaults to `0`
+- `-estimate_complete`: defaults to blank and should use RFC3339 when set
 - `-parent`: defaults to blank
 - `-project`: defaults to the current project
 
@@ -359,10 +363,17 @@ task ls -u alice
 
 `task list` prints a table with the task id, type, status, assignee, priority, and title.
 
-Search across titles and bodies:
+Search within the active project:
 
 ```bash
 task search "password reset"
+task search password reset -status open -owner alice
+```
+
+Search across all projects:
+
+```bash
+task search password reset -allprojects
 ```
 
 Show a single item:
@@ -372,7 +383,7 @@ task get 42
 task get -json 42
 ```
 
-`task get` prints the task fields directly, including `DependsOn` and the acceptance criteria.
+`task get` prints the task fields directly, including `DependsOn`, the acceptance criteria, `EstimateEffort`, `EstimateComplete`, `CloneOf` when the task is a clone, and comments ordered most recent first.
 
 Show orphaned items with no parent:
 
@@ -391,6 +402,8 @@ task claim 42
 task unclaim 42
 task request
 task request 42
+task set-parent 17 9
+task unset-parent 17
 ```
 
 `task assign` and `task unassign` are admin-only.
@@ -409,7 +422,6 @@ task ready 42
 task inprogress 42
 task complete 42
 task fail 42
-task update 42 -status inprogress
 ```
 
 `task ready` is an alias for `task open`.
@@ -484,6 +496,7 @@ task list --type task
 task list --status open
 task list -u <name>
 task search "..."
+task search "..." -allprojects
 task get <id>
 task history <id>
 task comment add <id> "..."
@@ -496,6 +509,8 @@ task unassign <id> <name>
 task claim <id>
 task unclaim <id>
 task request [<id>]
+task set-parent <id> <parent-id>
+task unset-parent <id>
 task open <id>
 task ready <id>
 task inprogress <id>
@@ -504,4 +519,17 @@ task fail <id>
 task update <id> -status <status>
 task count
 task count -project_id <id>
+
+task update <id> -status open
+task update <id> -title "new title"
+task update <id> -description "new description"
+task update <id> -ac "new acceptance criteria"
+task update <id> -priority 4
+task update <id> -order 7
+task update <id> -parent_id 12
+task update <id> -estimate_effort 5
+task update <id> -estimate_complete 2026-04-30T17:00:00Z
+task update <id> -status open -priority 2 -title "new title"
+task update <id> -status closed
+
 ```
