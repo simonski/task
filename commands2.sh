@@ -24,7 +24,7 @@ Embed static runtime assets needed by the CLI, including `VERSION` and the onboa
 
 E1_S2=$(task create -t 'task' -title 'Implement SQLite bootstrap and default workspace initialization' -d 'Source ID: E1-S2
 
-Provide CLI-driven database initialization with safe overwrite behavior and generated admin credentials when needed.' -ac '- `task initdb` creates a database at `$TASK_HOME/task.db` when `-f` is omitted.
+Provide CLI-driven database initialization with safe overwrite behavior and generated admin credentials when needed.' -ac '- `task initdb` creates a database at `$TICKET_HOME/task.db` when `-f` is omitted.
 - `task initdb -f task.db --force -password secret` overwrites an existing database and uses the supplied password.
 - `task initdb` without `-password` generates a random admin password and prints it to stdout.
 - The initialized database contains the `admin` user and the `default-project`.
@@ -37,7 +37,7 @@ Provide CLI-driven database initialization with safe overwrite behavior and gene
 
 E1_S3=$(task create -t 'task' -title 'Implement server startup, banner output, and embedded web serving' -d 'Source ID: E1-S3
 
-Start the HTTP server, serve the embedded frontend, and print the startup banner, version, and database path.' -ac '- `task server` opens `$TASK_HOME/task.db` when `-f` is omitted.
+Start the HTTP server, serve the embedded frontend, and print the startup banner, version, and database path.' -ac '- `task server` opens `$TICKET_HOME/task.db` when `-f` is omitted.
 - `task server -f filename.db` serves the API and embedded frontend against the selected database.
 - `task server` prints the banner, the embedded version, and the resolved task database path before the listen message.
 - `task server -v` logs request and response details to stdout.
@@ -63,7 +63,7 @@ E2=$(task create -t 'epic' -title 'Authentication, Sessions, And Admin User Mana
 Implement registration, login, logout, session storage, status inspection, and admin-only user management across the API, CLI, and web UI.' -ac '- The system supports `admin` and `user` roles.
 - Admins can create, list, delete, enable, and disable users.
 - `task register`, `task login`, `task logout`, and `task status` behave as documented.
-- Client-side state is split between `$TASK_HOME/config.json` and `$TASK_HOME/credentials.json`.
+- Client-side state is split between `$TICKET_HOME/config.json` and `$TICKET_HOME/credentials.json`.
 - The web app uses the same authentication and session model as the CLI.
 - Admin-only calls made by non-admin users return HTTP 403 with `user is not an admin`.
 - use red/green testing
@@ -98,11 +98,11 @@ Support the documented admin CLI commands for managing users.' -ac '- `task user
 E2_S3=$(task create -t 'task' -title 'Implement registration, login, logout, and local session storage' -d 'Source ID: E2-S3
 
 Implement the documented credential resolution rules, interactive prompting, and local session persistence.' -ac '- `task register --username name --password secret` creates an account and does not log the user in.
-- `task register` resolves missing values from `TASK_USERNAME`, `TASK_PASSWORD`, then `whoami` and `password`.
-- `task login` checks `$TASK_HOME/credentials.json`, then `$TASK_HOME/config.json`, then flags, then env vars, then prompts.
+- `task register` resolves missing values from `TICKET_USERNAME`, `TICKET_PASSWORD`, then `whoami` and `password`.
+- `task login` checks `$TICKET_HOME/credentials.json`, then `$TICKET_HOME/config.json`, then flags, then env vars, then prompts.
 - `task login` prompts with editable defaults and masks password input with `*` on interactive terminals.
-- `task login` stores the session token in `$TASK_HOME/credentials.json` and stores `username` and `server_url` in `$TASK_HOME/config.json`.
-- `task logout` removes `$TASK_HOME/credentials.json`.
+- `task login` stores the session token in `$TICKET_HOME/credentials.json` and stores `username` and `server_url` in `$TICKET_HOME/config.json`.
+- `task logout` removes `$TICKET_HOME/credentials.json`.
 - Automated tests cover registration, login success, invalid credentials retry, and logout.
 - use red/green testing
 - use make to verify all tests pass

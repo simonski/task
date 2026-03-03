@@ -96,7 +96,7 @@ func TestAdminUserManagement(t *testing.T) {
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 	if err := Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}

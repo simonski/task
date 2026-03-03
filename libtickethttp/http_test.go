@@ -1,30 +1,31 @@
-package libtaskhttp
+package libtickethttp
 
 import (
 	"database/sql"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
-	"github.com/simonski/task/internal/client"
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/server"
-	"github.com/simonski/task/internal/store"
-	"github.com/simonski/task/libtask"
-	"github.com/simonski/task/libtasktest"
+	"github.com/simonski/ticket/internal/client"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/server"
+	"github.com/simonski/ticket/internal/store"
+	"github.com/simonski/ticket/libticket"
+	"github.com/simonski/ticket/libtickettest"
 )
 
 func TestHTTPServiceContract(t *testing.T) {
-	libtasktest.RunServiceContractTests(t, func(t *testing.T) libtask.Service {
+	libtickettest.RunServiceContractTests(t, func(t *testing.T) libticket.Service {
 		_, svc := newRemoteFixture(t)
 		return svc
-	})
+	}, libtickettest.ContractOptions{RequireStatusOwnership: false})
 }
 
 func TestHTTPServiceStatusUnauthenticated(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	fixture, _ := newRemoteFixture(t)
 
 	svc := New(config.Config{ServerURL: fixture.server.URL})
@@ -38,7 +39,7 @@ func TestHTTPServiceStatusUnauthenticated(t *testing.T) {
 }
 
 func TestHTTPServiceRegisterLoginLogoutRoundTrip(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	fixture, _ := newRemoteFixture(t)
 
 	svc := New(config.Config{ServerURL: fixture.server.URL})
@@ -75,7 +76,7 @@ func TestHTTPServiceRegisterLoginLogoutRoundTrip(t *testing.T) {
 func TestHTTPServiceSetTaskParent(t *testing.T) {
 	_, svc := newRemoteFixture(t)
 
-	parent, err := svc.CreateTask(libtask.TaskCreateRequest{
+	parent, err := svc.CreateTask(libticket.TaskCreateRequest{
 		ProjectID: 1,
 		Type:      "epic",
 		Title:     "Parent",
@@ -83,7 +84,7 @@ func TestHTTPServiceSetTaskParent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask(parent) error = %v", err)
 	}
-	child, err := svc.CreateTask(libtask.TaskCreateRequest{
+	child, err := svc.CreateTask(libticket.TaskCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Child",
@@ -109,10 +110,29 @@ func TestHTTPServiceSetTaskParent(t *testing.T) {
 	}
 }
 
+func TestHTTPServiceDeleteTask(t *testing.T) {
+	_, svc := newRemoteFixture(t)
+
+	task, err := svc.CreateTask(libticket.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Delete me",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := svc.DeleteTask(task.ID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
+	}
+	if _, err := svc.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) && (err == nil || err.Error() != store.ErrTaskNotFound.Error()) {
+		t.Fatalf("GetTask(deleted) error = %v, want task not found", err)
+	}
+}
+
 func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	_, svc := newRemoteFixture(t)
 
-	parent, err := svc.CreateTask(libtask.TaskCreateRequest{
+	parent, err := svc.CreateTask(libticket.TaskCreateRequest{
 		ProjectID: 1,
 		Type:      "epic",
 		Title:     "Parent",
@@ -120,7 +140,7 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask(parent) error = %v", err)
 	}
-	task, err := svc.CreateTask(libtask.TaskCreateRequest{
+	task, err := svc.CreateTask(libticket.TaskCreateRequest{
 		ProjectID:          1,
 		Type:               "task",
 		Title:              "Child",
@@ -133,11 +153,11 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask(task) error = %v", err)
 	}
-	if _, err := svc.RequestTask(libtask.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
+	if _, err := svc.RequestTask(libticket.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
 		t.Fatalf("RequestTask() error = %v", err)
 	}
 
-	updated, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 		Title:              "Updated Child",
 		Description:        "new description",
 		AcceptanceCriteria: "new ac",
@@ -161,7 +181,7 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 }
 
 func TestHTTPServiceCountRequiresAuth(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	fixture, _ := newRemoteFixture(t)
 
 	svc := New(config.Config{ServerURL: fixture.server.URL})
@@ -171,7 +191,7 @@ func TestHTTPServiceCountRequiresAuth(t *testing.T) {
 }
 
 func TestHTTPServicePropagatesMalformedJSON(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte("{not-json"))
@@ -185,7 +205,7 @@ func TestHTTPServicePropagatesMalformedJSON(t *testing.T) {
 }
 
 func TestHTTPServicePropagatesNonJSONErrorBody(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "plain failure", http.StatusForbidden)
 	}))
@@ -198,7 +218,7 @@ func TestHTTPServicePropagatesNonJSONErrorBody(t *testing.T) {
 }
 
 func TestHTTPServiceHandlesNetworkFailure(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen() error = %v", err)
@@ -219,11 +239,11 @@ type remoteFixture struct {
 
 func newRemoteFixture(t *testing.T) (*remoteFixture, *Service) {
 	t.Helper()
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_HOME", tempDir)
 
-	dbPath := filepath.Join(tempDir, "task.db")
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}

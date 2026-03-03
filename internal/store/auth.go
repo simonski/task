@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/simonski/task/internal/password"
+	"github.com/simonski/ticket/internal/password"
 )
 
 var (

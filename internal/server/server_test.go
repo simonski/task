@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/store"
 )
 
 func TestServerServesHealthAndFrontend(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 	if err := store.Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestServerServesHealthAndFrontend(t *testing.T) {
 }
 
 func TestServerVerboseLogging(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 	if err := store.Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}

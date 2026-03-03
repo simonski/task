@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
 )
 
 func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
@@ -71,9 +71,10 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 		"  orphans",
 		"  project",
 		"  ready",
-		"  req",
 		"  register",
+		"\n  ticket          ",
 		"  request",
+		"  request-dryrun",
 		"  search",
 		"  set-parent",
 		"  status",
@@ -127,7 +128,7 @@ func TestParseIDListSupportsCommaSeparatedValues(t *testing.T) {
 func TestRenderBannerContainsTaskArtAndColors(t *testing.T) {
 	banner := renderBanner()
 	if !strings.Contains(banner, "████████╗") {
-		t.Fatalf("banner missing TASK art:\n%s", banner)
+		t.Fatalf("banner missing TICKET art:\n%s", banner)
 	}
 	if !strings.Contains(banner, "\x1b[35m") {
 		t.Fatalf("banner missing rainbow ANSI colors:\n%s", banner)
@@ -139,10 +140,10 @@ func TestRenderCommandHelpIncludesUsageAndExample(t *testing.T) {
 
 	for _, want := range []string{
 		"USAGE",
-		"task initdb",
+		"ticket initdb",
 		"DETAILS",
 		"EXAMPLE",
-		"task initdb -f $TASK_HOME/task.db --force -password secret",
+		"ticket initdb -f $TICKET_HOME/ticket.db --force -password secret",
 	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("command help missing %q:\n%s", want, help)
@@ -185,9 +186,9 @@ func TestRunOnboardAppendsEmbeddedAgentsTemplate(t *testing.T) {
 func TestRenderServerHelpIncludesTaskHomeDefault(t *testing.T) {
 	help := renderCommandHelp("server")
 	for _, want := range []string{
-		"task server [-f <db-path>] [-addr :8080]",
-		"If `-f` is omitted, the server uses `$TASK_HOME/task.db`.",
-		"task server -f $TASK_HOME/task.db -addr :8080",
+		"ticket server [-f <db-path>] [-addr :8080]",
+		"If `-f` is omitted, the server uses `$TICKET_HOME/ticket.db`.",
+		"ticket server -f $TICKET_HOME/ticket.db -addr :8080",
 	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("server help missing %q:\n%s", want, help)
@@ -198,9 +199,9 @@ func TestRenderServerHelpIncludesTaskHomeDefault(t *testing.T) {
 func TestRenderUserHelpIncludesAdmin403Message(t *testing.T) {
 	help := renderCommandHelp("user")
 	for _, want := range []string{
-		"task user <create|ls|list|rm|delete|enable|disable>",
+		"ticket user <create|ls|list|rm|delete|enable|disable>",
 		"user is not an admin",
-		"task user create --username alice --password secret",
+		"ticket user create --username alice --password secret",
 	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("user help missing %q:\n%s", want, help)
@@ -238,7 +239,7 @@ func TestSplitCSV(t *testing.T) {
 	}
 }
 
-func TestBuildReqPromptIncludesFilesAndOutputName(t *testing.T) {
+func TestBuildTicketPromptIncludesFilesAndOutputName(t *testing.T) {
 	tempDir := t.TempDir()
 	file1 := filepath.Join(tempDir, "one.txt")
 	file2 := filepath.Join(tempDir, "two.txt")
@@ -249,18 +250,18 @@ func TestBuildReqPromptIncludesFilesAndOutputName(t *testing.T) {
 		t.Fatalf("WriteFile(file2) error = %v", err)
 	}
 
-	prompt, err := buildReqPrompt([]string{file1, file2}, "requirements.md")
+	prompt, err := buildTicketPrompt([]string{file1, file2}, "requirements.md")
 	if err != nil {
-		t.Fatalf("buildReqPrompt() error = %v", err)
+		t.Fatalf("buildTicketPrompt() error = %v", err)
 	}
 	for _, want := range []string{"requirements.md", "FILE: " + file1, "alpha", "FILE: " + file2, "beta"} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("buildReqPrompt() missing %q:\n%s", want, prompt)
+			t.Fatalf("buildTicketPrompt() missing %q:\n%s", want, prompt)
 		}
 	}
 }
 
-func TestRunReqUsesCodexByDefaultAndWritesOutput(t *testing.T) {
+func TestRunTicketUsesCodexByDefaultAndWritesOutput(t *testing.T) {
 	tempDir := t.TempDir()
 	input := filepath.Join(tempDir, "input.txt")
 	output := filepath.Join(tempDir, "requirements.md")
@@ -279,15 +280,15 @@ func TestRunReqUsesCodexByDefaultAndWritesOutput(t *testing.T) {
 	}
 
 	stdout := captureStdout(t, func() {
-		if err := runReq([]string{"-f", input, "-o", output}); err != nil {
-			t.Fatalf("runReq() error = %v", err)
+		if err := runTicket([]string{"-f", input, "-o", output}); err != nil {
+			t.Fatalf("runTicket() error = %v", err)
 		}
 	})
 	if gotAgent != "codex" {
-		t.Fatalf("runReq() agent = %q, want codex", gotAgent)
+		t.Fatalf("runTicket() agent = %q, want codex", gotAgent)
 	}
 	if !strings.Contains(gotPrompt, "source") || !strings.Contains(gotPrompt, "requirements.md") {
-		t.Fatalf("runReq() prompt = %q", gotPrompt)
+		t.Fatalf("runTicket() prompt = %q", gotPrompt)
 	}
 	data, err := os.ReadFile(output)
 	if err != nil {
@@ -301,7 +302,7 @@ func TestRunReqUsesCodexByDefaultAndWritesOutput(t *testing.T) {
 	}
 }
 
-func TestRunReqUsesConfiguredAgent(t *testing.T) {
+func TestRunTicketUsesConfiguredAgent(t *testing.T) {
 	tempDir := t.TempDir()
 	input := filepath.Join(tempDir, "input.txt")
 	output := filepath.Join(tempDir, "requirements.md")
@@ -318,17 +319,17 @@ func TestRunReqUsesConfiguredAgent(t *testing.T) {
 		return "ok", nil
 	}
 
-	if err := runReq([]string{"-f", input, "-o", output, "-agent", "copilot"}); err != nil {
-		t.Fatalf("runReq(agent override) error = %v", err)
+	if err := runTicket([]string{"-f", input, "-o", output, "-agent", "copilot"}); err != nil {
+		t.Fatalf("runTicket(agent override) error = %v", err)
 	}
 	if gotAgent != "copilot" {
-		t.Fatalf("runReq(agent override) agent = %q, want copilot", gotAgent)
+		t.Fatalf("runTicket(agent override) agent = %q, want copilot", gotAgent)
 	}
 }
 
 func TestResolveCredentialsUsesFlagsEnvAndDefaults(t *testing.T) {
-	t.Setenv("TASK_USERNAME", "env-user")
-	t.Setenv("TASK_PASSWORD", "env-pass")
+	t.Setenv("TICKET_USERNAME", "env-user")
+	t.Setenv("TICKET_PASSWORD", "env-pass")
 
 	username, password, err := resolveCredentials("", "", true)
 	if err != nil {
@@ -346,8 +347,8 @@ func TestResolveCredentialsUsesFlagsEnvAndDefaults(t *testing.T) {
 		t.Fatalf("resolveCredentials(flags) = %q/%q", username, password)
 	}
 
-	t.Setenv("TASK_USERNAME", "")
-	t.Setenv("TASK_PASSWORD", "")
+	t.Setenv("TICKET_USERNAME", "")
+	t.Setenv("TICKET_PASSWORD", "")
 	username, password, err = resolveCredentials("", "", true)
 	if err != nil {
 		t.Fatalf("resolveCredentials(defaults) error = %v", err)
@@ -375,11 +376,11 @@ func TestExtractURLOverride(t *testing.T) {
 }
 
 func TestExtractDBOverride(t *testing.T) {
-	args, override, err := extractDBOverride([]string{"status", "-f", "/tmp/task.db", "-nocolor"})
+	args, override, err := extractDBOverride([]string{"status", "-f", "/tmp/ticket.db", "-nocolor"})
 	if err != nil {
 		t.Fatalf("extractDBOverride() error = %v", err)
 	}
-	if override != "/tmp/task.db" {
+	if override != "/tmp/ticket.db" {
 		t.Fatalf("extractDBOverride() override = %q", override)
 	}
 	if got := strings.Join(args, " "); got != "status -nocolor" {
@@ -399,8 +400,8 @@ func TestEmbeddedVersionMatchesBuildVersionFile(t *testing.T) {
 
 func TestRunInitDBGeneratesPasswordWhenMissing(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 
 	output := captureStdout(t, func() {
 		if err := runInitDB([]string{"-f", dbPath}); err != nil {
@@ -421,21 +422,21 @@ func TestRunInitDBGeneratesPasswordWhenMissing(t *testing.T) {
 
 func TestRunInitDBUsesTaskHomeWhenFIsOmitted(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_HOME", tempDir)
 
 	if err := runInitDB([]string{"-password", "secret"}); err != nil {
 		t.Fatalf("runInitDB() error = %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(tempDir, "task.db")); err != nil {
-		t.Fatalf("expected default db at TASK_HOME/task.db: %v", err)
+	if _, err := os.Stat(filepath.Join(tempDir, "ticket.db")); err != nil {
+		t.Fatalf("expected default db at TICKET_HOME/ticket.db: %v", err)
 	}
 }
 
 func TestRunInitDBForceOverwritesExistingDatabase(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 
 	if err := runInitDB([]string{"-f", dbPath, "-password", "first-pass"}); err != nil {
 		t.Fatalf("first runInitDB() error = %v", err)
@@ -470,11 +471,11 @@ func TestPromptForCredentialsUsesDefaultsWhenInputIsEmpty(t *testing.T) {
 
 func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_HOME", tempDir)
 	credsPath := filepath.Join(tempDir, "credentials.json")
-	t.Setenv("TASK_MODE", "remote")
-	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_SERVER", "")
+	t.Setenv("TICKET_MODE", "remote")
+	t.Setenv("TICKET_SERVER", "")
+	t.Setenv("TICKET_SERVER", "")
 
 	var loginAttempts int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -504,8 +505,8 @@ func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T)
 		}
 	}))
 	defer server.Close()
-	t.Setenv("TASK_SERVER", server.URL)
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TICKET_SERVER", server.URL)
+	t.Setenv("TICKET_URL", "")
 
 	oldIn := loginPromptInput
 	oldOut := loginPromptOutput
@@ -559,10 +560,10 @@ func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T)
 
 func TestRunLoginUsesValidStoredCredentialsFirst(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_HOME", tempDir)
-	t.Setenv("TASK_MODE", "remote")
-	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TICKET_HOME", tempDir)
+	t.Setenv("TICKET_MODE", "remote")
+	t.Setenv("TICKET_SERVER", "")
+	t.Setenv("TICKET_URL", "")
 
 	if err := os.WriteFile(filepath.Join(tempDir, "config.json"), []byte(`{"username":"alice"}`), 0o600); err != nil {
 		t.Fatalf("WriteFile(config.json) error = %v", err)
@@ -588,8 +589,8 @@ func TestRunLoginUsesValidStoredCredentialsFirst(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	t.Setenv("TASK_SERVER", server.URL)
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TICKET_SERVER", server.URL)
+	t.Setenv("TICKET_URL", "")
 
 	output := captureStdout(t, func() {
 		if err := runLogin(nil); err != nil {
@@ -612,10 +613,10 @@ func TestRunLoginUsesValidStoredCredentialsFirst(t *testing.T) {
 }
 
 func TestRunStatusRemoteSuccess(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
-	t.Setenv("TASK_HOME", t.TempDir())
-	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_URL", "")
+	t.Setenv("TICKET_MODE", "remote")
+	t.Setenv("TICKET_HOME", t.TempDir())
+	t.Setenv("TICKET_SERVER", "")
+	t.Setenv("TICKET_URL", "")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/status" {
@@ -626,7 +627,7 @@ func TestRunStatusRemoteSuccess(t *testing.T) {
 		_, _ = w.Write([]byte(`{"status":"ok","authenticated":true,"user":{"username":"alice","role":"user"}}`))
 	}))
 	defer server.Close()
-	t.Setenv("TASK_SERVER", server.URL)
+	t.Setenv("TICKET_SERVER", server.URL)
 
 	output := captureStdout(t, func() {
 		if err := runStatus(nil); err != nil {
@@ -649,8 +650,8 @@ func TestRunStatusRemoteSuccess(t *testing.T) {
 
 func TestRunStatusLocalMissingDatabasePrintsHint(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", "")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", "")
 	originalWD, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd() error = %v", err)
@@ -667,12 +668,12 @@ func TestRunStatusLocalMissingDatabasePrintsHint(t *testing.T) {
 	if !errors.Is(runErr, os.ErrNotExist) {
 		t.Fatalf("runStatus(local missing) error = %v, want os.ErrNotExist", runErr)
 	}
-	expectedPath := normalizeTestPath(filepath.Join(tempDir, "task.db"))
+	expectedPath := normalizeTestPath(filepath.Join(tempDir, "ticket.db"))
 	for _, want := range []string{
 		"mode: local",
 		"db_exists: false",
 		"failure",
-		"hint: run task initdb",
+		"hint: run ticket initdb",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("runStatus(local missing) missing %q:\n%s", want, output)
@@ -685,8 +686,8 @@ func TestRunStatusLocalMissingDatabasePrintsHint(t *testing.T) {
 
 func TestRunStatusLocalSuccess(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
 	if err := runInitDB([]string{"-password", "secret"}); err != nil {
 		t.Fatalf("runInitDB() error = %v", err)
 	}
@@ -696,7 +697,7 @@ func TestRunStatusLocalSuccess(t *testing.T) {
 			t.Fatalf("runStatus(local) error = %v", err)
 		}
 	})
-	expectedPath := normalizeTestPath(filepath.Join(tempDir, "task.db"))
+	expectedPath := normalizeTestPath(filepath.Join(tempDir, "ticket.db"))
 	for _, want := range []string{
 		"mode: local",
 		"db_exists: true",
@@ -811,6 +812,78 @@ func TestRunProjectCommandsInLocalMode(t *testing.T) {
 	}
 }
 
+func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
+	setupLocalCLI(t)
+
+	openID := createLocalTask(t, []string{"add", "Moon Open Task"})
+	inProgressID := createLocalTask(t, []string{"add", "Moon Inprogress Task"})
+	completeID := createLocalTask(t, []string{"add", "Moon Complete Task"})
+	if err := run([]string{"inprogress", strconv.FormatInt(inProgressID, 10)}); err != nil {
+		t.Fatalf("inprogress error = %v", err)
+	}
+	if err := run([]string{"complete", strconv.FormatInt(completeID, 10)}); err != nil {
+		t.Fatalf("complete error = %v", err)
+	}
+
+	// update one task by id to be notready so open and notready states are both exercised.
+	if err := run([]string{"update", strconv.FormatInt(openID, 10), "-status", "notready"}); err != nil {
+		t.Fatalf("update notready error = %v", err)
+	}
+
+	unicodeOutput := captureStdout(t, func() {
+		if err := run([]string{"list"}); err != nil {
+			t.Fatalf("list error = %v", err)
+		}
+	})
+	checkRow := func(statusSymbol, taskID, statusText string) {
+		found := false
+		for _, line := range strings.Split(unicodeOutput, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 && fields[0] == statusSymbol && fields[1] == taskID && fields[2] == "task" && fields[3] == statusText {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("list unicode row missing symbol=%q status=%q id=%q:\n%s", statusSymbol, statusText, taskID, unicodeOutput)
+		}
+	}
+	checkRow("◑", strconv.FormatInt(inProgressID, 10), "inprogress")
+	checkRow("◉", strconv.FormatInt(completeID, 10), "complete")
+	checkRow("○", strconv.FormatInt(openID, 10), "notready")
+
+	for _, want := range []string{"inprogress", "notready", "complete"} {
+		if !strings.Contains(unicodeOutput, want) {
+			t.Fatalf("list unicode output missing %q:\n%s", want, unicodeOutput)
+		}
+	}
+
+	plainOutput := captureStdout(t, func() {
+		if err := run([]string{"list", "--plain"}); err != nil {
+			t.Fatalf("list --plain error = %v", err)
+		}
+	})
+	if strings.ContainsAny(plainOutput, "○◑◉") {
+		t.Fatalf("list --plain output should not contain unicode symbols:\n%s", plainOutput)
+	}
+}
+
+func TestRunUserListShowsUserTable(t *testing.T) {
+	setupLocalCLI(t)
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"user", "ls"}); err != nil {
+			t.Fatalf("user ls error = %v", err)
+		}
+	})
+
+	for _, want := range []string{"USERNAME", "ROLE", "ENABLED", "admin"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("user ls output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
@@ -865,6 +938,15 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	})
 	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: open") {
 		t.Fatalf("request output = %q", requestOutput)
+	}
+
+	requestDryRunOutput := captureStdout(t, func() {
+		if err := run([]string{"request", "-dryrun"}); err != nil {
+			t.Fatalf("request -dryrun error = %v", err)
+		}
+	})
+	if !strings.Contains(requestDryRunOutput, "would assign task: "+strconv.FormatInt(taskID, 10)) {
+		t.Fatalf("request -dryrun output = %q", requestDryRunOutput)
 	}
 
 	claimOutput := captureStdout(t, func() {
@@ -1095,6 +1177,28 @@ func TestRunTaskCreateSupportsInterspersedFlags(t *testing.T) {
 	}
 }
 
+func TestRunTypedTaskCreateSupportsEstimateFlags(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"epic", "-estimate_effort", "8", "-estimate_complete", "2026-04-20T17:00:00Z", "Estimated Epic"})
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("get error = %v", err)
+		}
+	})
+	for _, want := range []string{
+		"Title        : Estimated Epic",
+		"Type         : epic",
+		"EstimateEffort   : 8",
+		"EstimateComplete : 2026-04-20T17:00:00Z",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("typed create output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestRunTaskCreateFallsBackToDefaultProject(t *testing.T) {
 	setupLocalCLI(t)
 
@@ -1134,7 +1238,7 @@ func TestRunTaskCreateFallsBackToDefaultProject(t *testing.T) {
 
 func TestRunAssignAndUnassignInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
-	taskID := createLocalTask(t, []string{"add", "Task Gamma"})
+	taskID := createLocalTask(t, []string{"add", "-estimate_effort", "3", "-estimate_complete", "2026-04-10T09:00:00Z", "Task Gamma"})
 
 	if err := run([]string{"user", "create", "-username", "alice", "-password", "secret"}); err != nil {
 		t.Fatalf("user create error = %v", err)
@@ -1157,6 +1261,112 @@ func TestRunAssignAndUnassignInLocalMode(t *testing.T) {
 	if !strings.Contains(unassignOutput, "unassigned") {
 		t.Fatalf("unassign output = %q", unassignOutput)
 	}
+
+	cloneOutput := captureStdout(t, func() {
+		if err := run([]string{"clone", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("clone error = %v", err)
+		}
+	})
+	for _, want := range []string{"estimate_effort: 3", "estimate_complete: 2026-04-10T09:00:00Z"} {
+		if !strings.Contains(cloneOutput, want) {
+			t.Fatalf("clone output missing %q:\n%s", want, cloneOutput)
+		}
+	}
+}
+
+func TestRunStatusChangeInLocalModeDoesNotRequireOwnership(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "Ownership-free local task"})
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"complete", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("complete error = %v", err)
+		}
+	})
+
+	if !strings.Contains(output, "status: complete") {
+		t.Fatalf("complete output = %q", output)
+	}
+}
+
+func TestRunDeleteTaskInLocalMode(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "Delete me"})
+	output := captureStdout(t, func() {
+		if err := run([]string{"delete", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("delete error = %v", err)
+		}
+	})
+	if !strings.Contains(output, "deleted task "+strconv.FormatInt(taskID, 10)) {
+		t.Fatalf("delete output = %q", output)
+	}
+	if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err == nil || err.Error() != "task not found" {
+		t.Fatalf("get deleted task error = %v, want task not found", err)
+	}
+}
+
+func TestRunDeleteTaskFailsWhenTaskHasChildren(t *testing.T) {
+	setupLocalCLI(t)
+
+	parentID := createLocalTask(t, []string{"add", "-t", "epic", "Parent"})
+	childID := createLocalTask(t, []string{"add", "-parent", strconv.FormatInt(parentID, 10), "Child"})
+	if childID == 0 {
+		t.Fatal("child task id = 0")
+	}
+	if err := run([]string{"rm", strconv.FormatInt(parentID, 10)}); err == nil || err.Error() != "task has child tasks" {
+		t.Fatalf("delete parent error = %v, want task has child tasks", err)
+	}
+}
+
+func TestRunGetJSONUsesCommentAuthorDateTextShape(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "JSON Task"})
+	if err := run([]string{"comment", "add", strconv.FormatInt(taskID, 10), "first"}); err != nil {
+		t.Fatalf("comment add first error = %v", err)
+	}
+	if err := run([]string{"comment", "add", strconv.FormatInt(taskID, 10), "second"}); err != nil {
+		t.Fatalf("comment add second error = %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"get", "-json", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("get -json error = %v", err)
+		}
+	})
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, output)
+	}
+	rawComments, ok := payload["comments"].([]any)
+	if !ok || len(rawComments) != 2 {
+		t.Fatalf("comments payload = %#v", payload["comments"])
+	}
+	first, ok := rawComments[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first comment = %#v", rawComments[0])
+	}
+	second, ok := rawComments[1].(map[string]any)
+	if !ok {
+		t.Fatalf("second comment = %#v", rawComments[1])
+	}
+	if first["text"] != "second" || second["text"] != "first" {
+		t.Fatalf("comments are not newest-first: %#v", rawComments)
+	}
+	for _, comment := range []map[string]any{first, second} {
+		for _, required := range []string{"author", "date", "text"} {
+			if _, ok := comment[required]; !ok {
+				t.Fatalf("comment missing %q: %#v", required, comment)
+			}
+		}
+		for _, unwanted := range []string{"item_id", "user_id", "created_at", "comment"} {
+			if _, ok := comment[unwanted]; ok {
+				t.Fatalf("comment should not contain %q: %#v", unwanted, comment)
+			}
+		}
+	}
 }
 
 func TestRunRejectsInvalidCommand(t *testing.T) {
@@ -1166,7 +1376,7 @@ func TestRunRejectsInvalidCommand(t *testing.T) {
 }
 
 func TestRunRemoteOnlyCommandsFailInLocalMode(t *testing.T) {
-	t.Setenv("TASK_MODE", "local")
+	t.Setenv("TICKET_MODE", "local")
 
 	for _, args := range [][]string{
 		{"login"},
@@ -1180,10 +1390,10 @@ func TestRunRemoteOnlyCommandsFailInLocalMode(t *testing.T) {
 }
 
 func TestRunRemoteModeStatusFailure(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
-	t.Setenv("TASK_SERVER", "http://127.0.0.1:1")
-	t.Setenv("TASK_URL", "")
-	t.Setenv("TASK_HOME", t.TempDir())
+	t.Setenv("TICKET_MODE", "remote")
+	t.Setenv("TICKET_SERVER", "http://127.0.0.1:1")
+	t.Setenv("TICKET_URL", "")
+	t.Setenv("TICKET_HOME", t.TempDir())
 
 	var runErr error
 	output := captureStdout(t, func() {
@@ -1236,6 +1446,9 @@ func TestRunCountHistoryOrphansAndConfigInLocalMode(t *testing.T) {
 	if !strings.Contains(orphansOutput, strconv.FormatInt(orphanID, 10)) || strings.Contains(orphansOutput, strconv.FormatInt(taskID, 10)+"\t") {
 		t.Fatalf("orphans output = %q", orphansOutput)
 	}
+	if strings.Contains(orphansOutput, strconv.FormatInt(epicID, 10)) {
+		t.Fatalf("orphans output should not include epics: %q", orphansOutput)
+	}
 
 	if err := run([]string{"config", "set", "server", "http://example.test"}); err != nil {
 		t.Fatalf("config set error = %v", err)
@@ -1250,6 +1463,36 @@ func TestRunCountHistoryOrphansAndConfigInLocalMode(t *testing.T) {
 	}
 }
 
+func TestRunOrphansExcludesEpicRoots(t *testing.T) {
+	setupLocalCLI(t)
+	epicID := createLocalTask(t, []string{"epic", "Orphan Epic"})
+	orphanID := createLocalTask(t, []string{"add", "Task with no parent"})
+
+	orphansOutput := captureStdout(t, func() {
+		if err := run([]string{"orphans"}); err != nil {
+			t.Fatalf("orphans error = %v", err)
+		}
+	})
+	if !strings.Contains(orphansOutput, strconv.FormatInt(orphanID, 10)) {
+		t.Fatalf("orphans output missing orphan task: %q", orphansOutput)
+	}
+	if strings.Contains(orphansOutput, strconv.FormatInt(epicID, 10)) {
+		t.Fatalf("orphans output should not include epic without parent: %q", orphansOutput)
+	}
+}
+
+func TestRunSetParentDisallowsEpicUnderTask(t *testing.T) {
+	setupLocalCLI(t)
+	epicID := createLocalTask(t, []string{"epic", "Orphan Epic"})
+	taskID := createLocalTask(t, []string{"add", "Task Parent"})
+
+	if err := run([]string{"set-parent", strconv.FormatInt(epicID, 10), strconv.FormatInt(taskID, 10)}); err == nil {
+		t.Fatalf("set-parent should reject epic parenting by task")
+	} else if !strings.Contains(err.Error(), "epic parent must be an epic") {
+		t.Fatalf("set-parent error = %v", err)
+	}
+}
+
 func TestRunNegativeCommandCasesInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
@@ -1257,14 +1500,14 @@ func TestRunNegativeCommandCasesInLocalMode(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"get", "abc"}, "task id must be numeric"},
+		{[]string{"get", "abc"}, "ticket id must be numeric"},
 		{[]string{"dependency", "add", "1", "abc"}, "dependency ids must be numeric"},
-		{[]string{"request", "abc"}, "task id must be numeric"},
-		{[]string{"project", "get"}, "usage: task project get <id>"},
-		{[]string{"list", "-n", "-1"}, "usage: task list|ls"},
-		{[]string{"comment", "add", "1"}, "usage: task comment add <id> \"comment\""},
+		{[]string{"request", "abc"}, "ticket id must be numeric"},
+		{[]string{"project", "get"}, "usage: ticket project get <id>"},
+		{[]string{"list", "-n", "-1"}, "usage: ticket list|ls"},
+		{[]string{"comment", "add", "1"}, "usage: ticket comment add <id> \"comment\""},
 		{[]string{"set-parent", "1", "abc"}, "parent id must be numeric"},
-		{[]string{"unset-parent", "abc"}, "task id must be numeric"},
+		{[]string{"unset-parent", "abc"}, "ticket id must be numeric"},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {
@@ -1310,11 +1553,11 @@ func normalizeTestPath(path string) string {
 func setupLocalCLI(t *testing.T) {
 	t.Helper()
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
-	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_SERVER", "")
-	t.Setenv("TASK_DB_OVERRIDE", "")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	t.Setenv("TICKET_SERVER", "")
+	t.Setenv("TICKET_SERVER", "")
+	t.Setenv("TICKET_DB_OVERRIDE", "")
 	if err := runInitDB([]string{"-password", "secret"}); err != nil {
 		t.Fatalf("runInitDB() error = %v", err)
 	}

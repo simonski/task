@@ -1,39 +1,40 @@
-package libtask_test
+package libticket_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
-	"github.com/simonski/task/libtask"
-	"github.com/simonski/task/libtasktest"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
+	"github.com/simonski/ticket/libticket"
+	"github.com/simonski/ticket/libtickettest"
 )
 
 func TestLocalServiceContract(t *testing.T) {
-	libtasktest.RunServiceContractTests(t, func(t *testing.T) libtask.Service {
+	libtickettest.RunServiceContractTests(t, func(t *testing.T) libticket.Service {
 		tempDir := t.TempDir()
-		t.Setenv("TASK_MODE", "local")
-		t.Setenv("TASK_HOME", tempDir)
-		dbPath := filepath.Join(tempDir, "task.db")
+		t.Setenv("TICKET_MODE", "local")
+		t.Setenv("TICKET_HOME", tempDir)
+		dbPath := filepath.Join(tempDir, "ticket.db")
 		if err := store.Init(dbPath, "admin", "secret"); err != nil {
 			t.Fatalf("store.Init() error = %v", err)
 		}
-		return libtask.NewLocal(config.Config{})
-	})
+		return libticket.NewLocal(config.Config{})
+	}, libtickettest.ContractOptions{RequireStatusOwnership: false})
 }
 
 func TestLocalServiceStatusCreatesLocalUser(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}
 
-	svc := libtask.NewLocal(config.Config{})
+	svc := libticket.NewLocal(config.Config{})
 	status, err := svc.Status()
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
@@ -41,13 +42,13 @@ func TestLocalServiceStatusCreatesLocalUser(t *testing.T) {
 	if !status.Authenticated || status.User == nil {
 		t.Fatalf("Status() = %#v", status)
 	}
-	if status.User.Username != libtask.LocalUsername() {
-		t.Fatalf("Status().User.Username = %q, want %q", status.User.Username, libtask.LocalUsername())
+	if status.User.Username != libticket.LocalUsername() {
+		t.Fatalf("Status().User.Username = %q, want %q", status.User.Username, libticket.LocalUsername())
 	}
 }
 
 func TestLocalServiceRemoteAuthCommandsFail(t *testing.T) {
-	svc := libtask.NewLocal(config.Config{})
+	svc := libticket.NewLocal(config.Config{})
 
 	if _, err := svc.Register("alice", "secret"); err == nil {
 		t.Fatal("Register() error = nil, want remote-mode error")
@@ -62,11 +63,11 @@ func TestLocalServiceRemoteAuthCommandsFail(t *testing.T) {
 
 func TestLocalServiceStatusCreatesDatabaseWhenMissing(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 
-	svc := libtask.NewLocal(config.Config{})
+	svc := libticket.NewLocal(config.Config{})
 	if _, err := svc.Status(); err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
@@ -79,7 +80,7 @@ func TestLocalUsernameUsesEnvironmentFallbacks(t *testing.T) {
 	t.Setenv("USER", "env-user")
 	t.Setenv("USERNAME", "env-username")
 
-	got := libtask.LocalUsername()
+	got := libticket.LocalUsername()
 	if got == "" {
 		t.Fatal("LocalUsername() returned empty username")
 	}
@@ -87,15 +88,15 @@ func TestLocalUsernameUsesEnvironmentFallbacks(t *testing.T) {
 
 func TestLocalServiceUsesTaskHomeDatabasePath(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
 
-	dbPath := filepath.Join(tempDir, "task.db")
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}
 
-	svc := libtask.NewLocal(config.Config{})
+	svc := libticket.NewLocal(config.Config{})
 	projects, err := svc.ListProjects()
 	if err != nil {
 		t.Fatalf("ListProjects() error = %v", err)
@@ -107,19 +108,19 @@ func TestLocalServiceUsesTaskHomeDatabasePath(t *testing.T) {
 
 func TestLocalServiceSetTaskParent(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}
 
-	svc := libtask.NewLocal(config.Config{})
-	parent, err := svc.CreateTask(libtask.TaskCreateRequest{ProjectID: 1, Type: "epic", Title: "Parent"})
+	svc := libticket.NewLocal(config.Config{})
+	parent, err := svc.CreateTask(libticket.TaskCreateRequest{ProjectID: 1, Type: "epic", Title: "Parent"})
 	if err != nil {
 		t.Fatalf("CreateTask(parent) error = %v", err)
 	}
-	child, err := svc.CreateTask(libtask.TaskCreateRequest{ProjectID: 1, Type: "task", Title: "Child"})
+	child, err := svc.CreateTask(libticket.TaskCreateRequest{ProjectID: 1, Type: "task", Title: "Child"})
 	if err != nil {
 		t.Fatalf("CreateTask(child) error = %v", err)
 	}
@@ -143,19 +144,19 @@ func TestLocalServiceSetTaskParent(t *testing.T) {
 
 func TestLocalServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "task.db")
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}
 
-	svc := libtask.NewLocal(config.Config{})
-	parent, err := svc.CreateTask(libtask.TaskCreateRequest{ProjectID: 1, Type: "epic", Title: "Parent"})
+	svc := libticket.NewLocal(config.Config{})
+	parent, err := svc.CreateTask(libticket.TaskCreateRequest{ProjectID: 1, Type: "epic", Title: "Parent"})
 	if err != nil {
 		t.Fatalf("CreateTask(parent) error = %v", err)
 	}
-	task, err := svc.CreateTask(libtask.TaskCreateRequest{
+	task, err := svc.CreateTask(libticket.TaskCreateRequest{
 		ProjectID:          1,
 		Type:               "task",
 		Title:              "Child",
@@ -168,11 +169,11 @@ func TestLocalServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask(task) error = %v", err)
 	}
-	if _, err := svc.RequestTask(libtask.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
+	if _, err := svc.RequestTask(libticket.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
 		t.Fatalf("RequestTask() error = %v", err)
 	}
 
-	updated, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 		Title:              "Updated Child",
 		Description:        "new description",
 		AcceptanceCriteria: "new ac",
@@ -192,5 +193,65 @@ func TestLocalServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	}
 	if updated.ParentID == nil || *updated.ParentID != parent.ID {
 		t.Fatalf("UpdateTask() parent = %#v", updated)
+	}
+}
+
+func TestLocalServiceIgnoresOwnershipForStatusChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	svc := libticket.NewLocal(config.Config{})
+	task, err := svc.CreateTask(libticket.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Unassigned local task",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	updated, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
+		Title:       task.Title,
+		Description: task.Description,
+		ParentID:    task.ParentID,
+		Assignee:    task.Assignee,
+		Status:      "complete",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if updated.Status != "complete" {
+		t.Fatalf("UpdateTask().Status = %q, want complete", updated.Status)
+	}
+}
+
+func TestLocalServiceDeleteTask(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+	dbPath := filepath.Join(tempDir, "ticket.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	svc := libticket.NewLocal(config.Config{})
+	task, err := svc.CreateTask(libticket.TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Delete me",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := svc.DeleteTask(task.ID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
+	}
+	if _, err := svc.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) {
+		t.Fatalf("GetTask(deleted) error = %v, want ErrTaskNotFound", err)
 	}
 }

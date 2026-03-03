@@ -1,6 +1,6 @@
 # Introduction
 
-`task` is a requirements gathering tool.   It is intended to gather and refine requirements into a specification which can be given to a software factory.
+`ticket` is a requirements gathering tool.   It is intended to gather and refine requirements into a specification which can be given to a software factory.
 
 ```bash
 make build
@@ -10,7 +10,7 @@ make tools
 > Note: if you run `make reset` and you use `VSCode` I advise you to restart VSCode as the tasks daemon is a bit flaky.
 
 ```bash
-task count
+ticket count
 ```
 
 ## Create requirements
@@ -18,7 +18,7 @@ task count
 This will generate tasks instructions from the requirements document.
 
 ```bash
-task count
+ticket count
 ```
 
 ## see what ralph would do
@@ -50,18 +50,16 @@ Refresh the kanban
 ## Building
 
 ```bash
-go install github.com/simonski/task@latest
+go install github.com/simonski/ticket@latest
 ```
 
 ## Running
 
 ```bash
-task initdb
-task server
+ticket initdb
+ticket server
 ```
 
 ## Usage
 
-Either via the website `http://localhost:8000` or via the terminal using `task`
-
-
+Either via the website `http://localhost:8000` or via the terminal using `ticket`

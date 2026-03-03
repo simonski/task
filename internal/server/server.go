@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	web "github.com/simonski/task/web"
+	web "github.com/simonski/ticket/web"
 )
 
 type Server struct {

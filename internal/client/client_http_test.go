@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/simonski/task/internal/config"
+	"github.com/simonski/ticket/internal/config"
 )
 
 func TestRemoteClientSendsAuthHeaderAndParsesStatus(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/status" {
@@ -47,7 +47,7 @@ func TestRemoteClientSendsAuthHeaderAndParsesStatus(t *testing.T) {
 }
 
 func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/projects/7/tasks" {
@@ -72,7 +72,7 @@ func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
 }
 
 func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks/request" {
@@ -105,7 +105,7 @@ func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
 }
 
 func TestRemoteClientReturnsAPIErrorMessage(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -121,7 +121,7 @@ func TestRemoteClientReturnsAPIErrorMessage(t *testing.T) {
 }
 
 func TestRemoteClientReturnsStatusErrorForNonJSONFailures(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "plain failure", http.StatusBadGateway)
@@ -135,7 +135,7 @@ func TestRemoteClientReturnsStatusErrorForNonJSONFailures(t *testing.T) {
 }
 
 func TestRemoteClientReturnsDecodeErrorOnMalformedJSON(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -150,7 +150,7 @@ func TestRemoteClientReturnsDecodeErrorOnMalformedJSON(t *testing.T) {
 }
 
 func TestRemoteClientHandlesNetworkFailure(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -166,7 +166,7 @@ func TestRemoteClientHandlesNetworkFailure(t *testing.T) {
 }
 
 func TestLocalModeClientRejectsRemoteOnlyAuthCalls(t *testing.T) {
-	t.Setenv("TASK_MODE", "local")
+	t.Setenv("TICKET_MODE", "local")
 
 	api := New(config.Config{})
 	if _, err := api.Register("alice", "secret"); err == nil {
@@ -181,7 +181,7 @@ func TestLocalModeClientRejectsRemoteOnlyAuthCalls(t *testing.T) {
 }
 
 func TestRemoteClientCRUDRoutes(t *testing.T) {
-	t.Setenv("TASK_MODE", "remote")
+	t.Setenv("TICKET_MODE", "remote")
 
 	projectID := int64(7)
 	taskID := int64(11)
@@ -212,6 +212,8 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","status":"open"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11":
 			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","status":"open"}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/tasks/11":
+			_, _ = w.Write([]byte(`{"status":"deleted"}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/tasks/11":
 			var payload TaskUpdateRequest
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -279,6 +281,9 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 	}
 	if _, err := api.GetTask(taskID); err != nil {
 		t.Fatalf("GetTask() error = %v", err)
+	}
+	if err := api.DeleteTask(taskID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
 	}
 	if _, err := api.UpdateTask(taskID, TaskUpdateRequest{Title: "T", Status: "inprogress"}); err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)

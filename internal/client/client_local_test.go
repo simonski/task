@@ -1,20 +1,21 @@
 package client
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
 )
 
 func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("TASK_MODE", "local")
-	t.Setenv("TASK_HOME", tempDir)
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
 
-	dbPath := filepath.Join(tempDir, "task.db")
+	dbPath := filepath.Join(tempDir, "ticket.db")
 	if err := store.Init(dbPath, "admin", "secret"); err != nil {
 		t.Fatalf("store.Init() error = %v", err)
 	}
@@ -90,7 +91,72 @@ func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddComment() error = %v", err)
 	}
-	if comment.Comment != "hello" {
+	if comment.Text != "hello" || comment.Author == "" {
 		t.Fatalf("AddComment() = %#v", comment)
+	}
+}
+
+func TestLocalModeClientIgnoresOwnershipForStatusChanges(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+
+	dbPath := filepath.Join(tempDir, "ticket.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	api := New(config.Config{})
+	task, err := api.CreateTask(TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Unassigned local task",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if strings.TrimSpace(task.Assignee) != "" {
+		t.Fatalf("CreateTask().Assignee = %q, want unassigned", task.Assignee)
+	}
+
+	updated, err := api.UpdateTask(task.ID, TaskUpdateRequest{
+		Title:       task.Title,
+		Description: task.Description,
+		ParentID:    task.ParentID,
+		Assignee:    task.Assignee,
+		Status:      "complete",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask() error = %v", err)
+	}
+	if updated.Status != "complete" {
+		t.Fatalf("UpdateTask().Status = %q, want complete", updated.Status)
+	}
+}
+
+func TestLocalModeClientDeleteTask(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+
+	dbPath := filepath.Join(tempDir, "ticket.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	api := New(config.Config{})
+	task, err := api.CreateTask(TaskCreateRequest{
+		ProjectID: 1,
+		Type:      "task",
+		Title:     "Delete me",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	if err := api.DeleteTask(task.ID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
+	}
+	if _, err := api.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) {
+		t.Fatalf("GetTask(deleted) error = %v, want ErrTaskNotFound", err)
 	}
 }

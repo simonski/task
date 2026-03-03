@@ -1,14 +1,19 @@
-package libtasktest
+package libtickettest
 
 import (
+	"strings"
 	"testing"
 
-	"github.com/simonski/task/libtask"
+	"github.com/simonski/ticket/libticket"
 )
 
-type Factory func(t *testing.T) libtask.Service
+type Factory func(t *testing.T) libticket.Service
 
-func RunServiceContractTests(t *testing.T, factory Factory) {
+type ContractOptions struct {
+	RequireStatusOwnership bool
+}
+
+func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions) {
 	t.Helper()
 
 	t.Run("project-task-request-clone-comment-dependency", func(t *testing.T) {
@@ -22,7 +27,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatal("ListProjects() returned no projects")
 		}
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{
 			Title:              "Contract Project",
 			Description:        "Description",
 			AcceptanceCriteria: "AC",
@@ -34,7 +39,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateProject() = %#v", project)
 		}
 
-		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+		task, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Contract Task",
@@ -46,7 +51,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateTask() = %#v", task)
 		}
 
-		response, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID})
+		response, err := svc.RequestTask(libticket.TaskRequest{ProjectID: project.ID})
 		if err != nil {
 			t.Fatalf("RequestTask() error = %v", err)
 		}
@@ -54,7 +59,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("RequestTask() = %#v", response)
 		}
 
-		updated, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		updated, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 			Title:       task.Title,
 			Description: task.Description,
 			ParentID:    task.ParentID,
@@ -72,7 +77,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("AddComment() error = %v", err)
 		}
-		if comment.ID == 0 {
+		if comment.Text != "contract comment" || strings.TrimSpace(comment.Author) == "" {
 			t.Fatalf("AddComment() = %#v", comment)
 		}
 
@@ -83,8 +88,11 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 		if len(comments) != 1 {
 			t.Fatalf("ListComments() len = %d, want 1", len(comments))
 		}
+		if comments[0].Text != "contract comment" || strings.TrimSpace(comments[0].Author) == "" {
+			t.Fatalf("ListComments() = %#v", comments)
+		}
 
-		other, err := svc.CreateTask(libtask.TaskCreateRequest{
+		other, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Dependency Task",
@@ -93,7 +101,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateTask(other) error = %v", err)
 		}
 
-		dependency, err := svc.AddDependency(libtask.DependencyRequest{
+		dependency, err := svc.AddDependency(libticket.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    task.ID,
 			DependsOn: other.ID,
@@ -113,7 +121,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("ListDependencies() len = %d, want 1", len(dependencies))
 		}
 
-		if err := svc.RemoveDependency(libtask.DependencyRequest{
+		if err := svc.RemoveDependency(libticket.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    task.ID,
 			DependsOn: other.ID,
@@ -144,7 +152,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 	t.Run("project-update-and-enable-disable", func(t *testing.T) {
 		svc := factory(t)
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{
 			Title:              "Project A",
 			Description:        "Before",
 			AcceptanceCriteria: "AC1",
@@ -153,7 +161,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateProject() error = %v", err)
 		}
 
-		updated, err := svc.UpdateProject(project.ID, libtask.ProjectUpdateRequest{
+		updated, err := svc.UpdateProject(project.ID, libticket.ProjectUpdateRequest{
 			Title:              "Project B",
 			Description:        "After",
 			AcceptanceCriteria: "AC2",
@@ -185,12 +193,12 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 	t.Run("task-filter-history-and-closed-ticket-rules", func(t *testing.T) {
 		svc := factory(t)
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Tasks"})
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{Title: "Tasks"})
 		if err != nil {
 			t.Fatalf("CreateProject() error = %v", err)
 		}
 
-		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+		task, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID:   project.ID,
 			Type:        "bug",
 			Title:       "Bug task",
@@ -200,7 +208,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateTask() error = %v", err)
 		}
 
-		requested, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID, TaskID: &task.ID})
+		requested, err := svc.RequestTask(libticket.TaskRequest{ProjectID: project.ID, TaskID: &task.ID})
 		if err != nil {
 			t.Fatalf("RequestTask() error = %v", err)
 		}
@@ -216,7 +224,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("ListTasksFiltered() = %#v", filtered)
 		}
 
-		completed, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		completed, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 			Title:       task.Title,
 			Description: task.Description,
 			ParentID:    task.ParentID,
@@ -238,7 +246,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatal("ListHistory() returned no history")
 		}
 
-		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		if _, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 			Title:       task.Title,
 			Description: task.Description,
 			ParentID:    task.ParentID,
@@ -259,11 +267,11 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatal("GetTask(missing) error = nil")
 		}
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Negative"})
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{Title: "Negative"})
 		if err != nil {
 			t.Fatalf("CreateProject() error = %v", err)
 		}
-		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+		task, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Negative Task",
@@ -272,7 +280,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateTask() error = %v", err)
 		}
 
-		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		if _, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 			Title:       task.Title,
 			Description: task.Description,
 			ParentID:    task.ParentID,
@@ -282,7 +290,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatal("UpdateTask(invalid status) error = nil")
 		}
 
-		if err := svc.RemoveDependency(libtask.DependencyRequest{
+		if err := svc.RemoveDependency(libticket.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    task.ID,
 			DependsOn: 424242,
@@ -294,7 +302,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("CreateUser(someone-else) error = %v", err)
 		}
 
-		assignedElsewhere, err := svc.CreateTask(libtask.TaskCreateRequest{
+		assignedElsewhere, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Assigned Elsewhere",
@@ -303,7 +311,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("CreateTask(assigned) error = %v", err)
 		}
-		rejected, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID, TaskID: &assignedElsewhere.ID})
+		rejected, err := svc.RequestTask(libticket.TaskRequest{ProjectID: project.ID, TaskID: &assignedElsewhere.ID})
 		if err != nil {
 			t.Fatalf("RequestTask(rejected) error = %v", err)
 		}
@@ -313,16 +321,20 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 	})
 
 	t.Run("status-change-requires-assignee", func(t *testing.T) {
+		if !opts.RequireStatusOwnership {
+			t.Skip("service does not enforce status ownership")
+		}
+
 		svc := factory(t)
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Assign Rules"})
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{Title: "Assign Rules"})
 		if err != nil {
 			t.Fatalf("CreateProject() error = %v", err)
 		}
 		if _, err := svc.CreateUser("bob", "secret"); err != nil {
 			t.Fatalf("CreateUser(bob) error = %v", err)
 		}
-		task, err := svc.CreateTask(libtask.TaskCreateRequest{
+		task, err := svc.CreateTask(libticket.TaskCreateRequest{
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Assigned to bob",
@@ -331,7 +343,7 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 		if err != nil {
 			t.Fatalf("CreateTask() error = %v", err)
 		}
-		if _, err := svc.UpdateTask(task.ID, libtask.TaskUpdateRequest{
+		if _, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
 			Title:       task.Title,
 			Description: task.Description,
 			ParentID:    task.ParentID,
@@ -378,11 +390,11 @@ func RunServiceContractTests(t *testing.T, factory Factory) {
 			t.Fatalf("DeleteUser() error = %v", err)
 		}
 
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{Title: "Empty"})
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{Title: "Empty"})
 		if err != nil {
 			t.Fatalf("CreateProject() error = %v", err)
 		}
-		response, err := svc.RequestTask(libtask.TaskRequest{ProjectID: project.ID})
+		response, err := svc.RequestTask(libticket.TaskRequest{ProjectID: project.ID})
 		if err != nil {
 			t.Fatalf("RequestTask(no work) error = %v", err)
 		}

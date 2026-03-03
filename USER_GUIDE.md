@@ -1,12 +1,12 @@
 # User Guide
 
-`task` is a ticket management tool.
+`ticket` is a ticket management tool.
 
 This guide describes a single Go binary that provides a server, a CLI, and an embedded web application backed by SQLite.
 
-## How `task` Works
+## How `ticket` Works
 
-`task` has three interfaces:
+`ticket` has three interfaces:
 
 1. The server, which owns persistence, authentication, and collaboration.
 2. The CLI, which provides fast and explicit terminal workflows.
@@ -14,30 +14,30 @@ This guide describes a single Go binary that provides a server, a CLI, and an em
 
 All project data follows the server data model and API semantics, whether you are working against a remote server or a local workspace.
 
-Client-side files live under `$TASK_HOME`, which defaults to `~/.config/task`.
+Client-side files live under `$TICKET_HOME`, which defaults to `~/.config/ticket`.
 
-- `$TASK_HOME/config.json` stores non-sensitive client defaults such as the current username, server URL, and active project
-- `$TASK_HOME/credentials.json` stores the current session token
+- `$TICKET_HOME/config.json` stores non-sensitive client defaults such as the current username, server URL, and active project
+- `$TICKET_HOME/credentials.json` stores the current session token
 
 ## Getting Started
 
 Write the local agent instructions template into the current repository:
 
 ```bash
-task onboard
+ticket onboard
 ```
 
-`task onboard` appends the embedded onboarding template into `${CWD}/AGENTS.md`. If the file does not exist yet, it is created.
+`ticket onboard` appends the embedded onboarding template into `${CWD}/AGENTS.md`. If the file does not exist yet, it is created.
 
 Initialize a task sqlite database:
 
 ```bash
-task initdb
+ticket initdb
 ```
 
-If `-f` is omitted, `task initdb` creates the SQLite database at `$TASK_HOME/task.db`.
+If `-f` is omitted, `ticket initdb` creates the SQLite database at `$TICKET_HOME/ticket.db`.
 
-`task initdb` creates:
+`ticket initdb` creates:
 
 1. an `admin` account
 2. the default project, `Default Project` with project id `1`
@@ -51,14 +51,14 @@ Bootstrap resolution works like this:
 Start the server:
 
 ```bash
-task server
+ticket server
 ```
 
-If `-f` is omitted, `task server` uses `$TASK_HOME/task.db`.
+If `-f` is omitted, `ticket server` uses `$TICKET_HOME/ticket.db`.
 
-If `-v` is supplied, `task server` prints verbose request and response logs to stdout.
+If `-v` is supplied, `ticket server` prints verbose request and response logs to stdout.
 
-On startup, `task server` also prints a colored ASCII-art `TASK` banner before the listen message.
+On startup, `ticket server` also prints a colored ASCII-art `TICKET` banner before the listen message.
 
 Immediately below the banner it prints:
 
@@ -70,33 +70,33 @@ By default the web app is available at `http://localhost:8080`.
 Show the current CLI version:
 
 ```bash
-task version
+ticket version
 ```
 
-`task version` prints the semantic version embedded into the binary at build time. Each `make build` increments that semantic version before compiling the binary.
+`ticket version` prints the semantic version embedded into the binary at build time. Each `make build` increments that semantic version before compiling the binary.
 
-Running `task` with no arguments prints a colored ASCII-art `TASK` banner above the main usage output.
+Running `ticket` with no arguments prints a colored ASCII-art `TICKET` banner above the main usage output.
 
-If you are using the CLI against a running server on another host, configure TASK_SERVER first:
+If you are using the CLI against a running server on another host, configure TICKET_SERVER first:
 
 ```bash
-export TASK_SERVER=http://your-server:8080
+export TICKET_SERVER=http://your-server:8080
 ```
 
 As an admin create users:
 
 ```bash
-task user create --username XXXX --password YYYY
+ticket user create --username XXXX --password YYYY
 created user xxxxx
 ```
 
 As an admin enable/disable users:
 
 ```bash
-task user enable --username XXXX
-task user disable --username XXXX
-task user ls|list
-task user rm|delete --username XXXX
+ticket user enable --username XXXX
+ticket user disable --username XXXX
+ticket user ls|list
+ticket user rm|delete --username XXXX
 ```
 
 These commands are admin-only. If a logged-in non-admin user runs them, the server returns `403` and the CLI prints `user is not an admin`.
@@ -106,50 +106,50 @@ These commands are admin-only. If a logged-in non-admin user runs them, the serv
 Create an account:
 
 ```bash
-task register --username name --password '*******'
+ticket register --username name --password '*******'
 ```
 
 Log in:
 
 ```bash
-task login -username name -password '*******'
+ticket login -username name -password '*******'
 ```
 
-For `task register`, you can omit the flags and let the CLI resolve them from `TASK_USERNAME` and `TASK_PASSWORD`. If those are not set, `task register` falls back to `whoami` and `password`.
+For `ticket register`, you can omit the flags and let the CLI resolve them from `TICKET_USERNAME` and `TICKET_PASSWORD`. If those are not set, `ticket register` falls back to `whoami` and `password`.
 
-`task login` resolves values in this order:
+`ticket login` resolves values in this order:
 
-1. a valid session already stored in `$TASK_HOME/credentials.json`
-2. the `username` already stored in `$TASK_HOME/config.json`
+1. a valid session already stored in `$TICKET_HOME/credentials.json`
+2. the `username` already stored in `$TICKET_HOME/config.json`
 3. `-username` and `-password`
-4. `TASK_USERNAME` and `TASK_PASSWORD`
+4. `TICKET_USERNAME` and `TICKET_PASSWORD`
 5. interactive prompts for anything still missing
 
 If login fails with `invalid credentials`, the CLI prints that message, prompts for username and password, and retries once.
 
 When prompts are shown, any discovered values are presented as defaults that you can keep or replace.
 
-When `task login` prompts for a password in an interactive terminal, typed characters are masked with `*`.
+When `ticket login` prompts for a password in an interactive terminal, typed characters are masked with `*`.
 
 On successful login:
 
-- the session token is stored in `$TASK_HOME/credentials.json`
-- the `username` and `server_url` fields in `$TASK_HOME/config.json` are updated
+- the session token is stored in `$TICKET_HOME/credentials.json`
+- the `username` and `server_url` fields in `$TICKET_HOME/config.json` are updated
 
 Registering a user does not log that user in or create local session credentials.
 
 Check the current mode and connection state:
 
 ```bash
-task status
+ticket status
 ```
 
-`task status` always prints the current effective configuration first, then performs a mode-appropriate connectivity check.
+`ticket status` always prints the current effective configuration first, then performs a mode-appropriate connectivity check.
 
 In REMOTE mode it prints:
 
 - `mode: remote`
-- `server: <TASK_SERVER>`
+- `server: <TICKET_SERVER>`
 - `username: <configured username or blank>`
 - `authenticated: true|false`
 
@@ -171,34 +171,34 @@ Then it opens the database if present and verifies the schema is usable. It prin
 
 If the database does not exist in LOCAL mode, it also prints:
 
-- `hint: run task initdb`
+- `hint: run ticket initdb`
 
 If `-nocolor` is set, the same output is printed without ANSI colors.
 
 Show aggregate counts:
 
 ```bash
-task count
+ticket count
 15
-task count -project_id 1
+ticket count -project_id 1
 11
 ```
 
-`task count` prints totals for users and work items by type. Without `-project_id` it also prints the total project count.
+`ticket count` prints totals for users and work items by type. Without `-project_id` it also prints the total project count.
 
 Log out:
 
 ```bash
-task logout
+ticket logout
 ```
 
-`task logout` removes `$TASK_HOME/credentials.json`.
+`ticket logout` removes `$TICKET_HOME/credentials.json`.
 
 The web app uses the same account system. Once logged in, your session is shared across normal browser workflows.
 
 ## Typical Workflow
 
-Most teams use `task` in this order:
+Most teams use `ticket` in this order:
 
 1. Create or select a project.
 2. Capture epics, tasks, and bugs.
@@ -211,7 +211,7 @@ Most teams use `task` in this order:
 Create a project:
 
 ```bash
-task project create -description "Portal backlog" -ac "Portal launch criteria" "Customer Portal"
+ticket project create -description "Portal backlog" -ac "Portal launch criteria" "Customer Portal"
 ```
 
 The project is now the default project.
@@ -219,46 +219,46 @@ The project is now the default project.
 List projects:
 
 ```bash
-task project list
-task project ls
+ticket project list
+ticket project ls
 ```
 
-`task project list` prints the project id, title, and status, and marks the active project as `(current)`.
+`ticket project list` prints the project id, title, and status, and marks the active project as `(current)`.
 
 Select the active project for subsequent commands:
 
 ```bash
-task project use 2
+ticket project use 2
 ```
 
 Show the current project:
 
 ```bash
-task project
+ticket project
 ```
 
-`task project` shows the current active project, or `no active project` if none is selected.
+`ticket project` shows the current active project, or `no active project` if none is selected.
 
 Get details on a project:
 
 ```bash
-task project get <id>
-task project 2
+ticket project get <id>
+ticket project 2
 ```
 
 Update a project:
 
 ```bash
-task project 2 update -title "New project title"
-task project 2 update -description "The new description"
-task project 2 update -ac "The acceptance criteria"
+ticket project 2 update -title "New project title"
+ticket project 2 update -description "The new description"
+ticket project 2 update -ac "The acceptance criteria"
 ```
 
 Enable or disable a project:
 
 ```bash
-task project 2 enable
-task project 2 disable
+ticket project 2 enable
+ticket project 2 disable
 ```
 
 The active project is remembered by the CLI so you do not need to pass a project ID for every command.
@@ -270,32 +270,32 @@ Capture is intentionally lightweight. You can add project work as soon as it app
 Add a task (type defaults to task)
 
 ```bash
-task add "Customers can reset their password."
+ticket add "Customers can reset their password."
 ```
 
 These are equivalent:
 
 ```bash
-task add "I am a new task"
-task create "I am a new task"
-task new "I am a new task"
-task add -title "I am a new task"
+ticket add "I am a new task"
+ticket create "I am a new task"
+ticket new "I am a new task"
+ticket add -title "I am a new task"
 ```
 
 Add a bug:
 
 ```bash
-task bug "This is a bug"
+ticket bug "This is a bug"
 ```
 
 Add an epic:
 
 ```bash
-task epic "This is an Epic"
+ticket epic "This is an Epic"
 ```
 
 ```bash
-task create -t task -p 1 -a alice -d "This is a Task" -ac "Has a title and description" -estimate_effort 5 -estimate_complete 2026-04-30T17:00:00Z "This is a Task"
+ticket create -t task -p 1 -a alice -d "This is a Task" -ac "Has a title and description" -estimate_effort 5 -estimate_complete 2026-04-30T17:00:00Z "This is a Task"
 ```
 
 Creation defaults:
@@ -312,9 +312,9 @@ Creation defaults:
 
 Command aliases:
 
-- `task add`, `task create`, and `task new` are the same command
-- `task list` and `task ls` are the same command
-- `task list -n <limit>` applies a server-side limit, where `0` means all results
+- `ticket add`, `ticket create`, and `ticket new` are the same command
+- `ticket list` and `ticket ls` are the same command
+- `ticket list -n <limit>` applies a server-side limit, where `0` means all results
 
 Each captured item records:
 
@@ -331,110 +331,113 @@ In the web app, use the capture panel at the top of the project page to create t
 List all items in the active project:
 
 ```bash
-task list
-task ls
-task list -n 20
+ticket list
+ticket ls
+ticket list -n 20
 ```
 
 Filter by item kind:
 
 ```bash
-task list --type task
-task list --type bug
-task list --type epic
+ticket list --type task
+ticket list --type bug
+ticket list --type epic
 ```
 
 Filter by status:
 
 ```bash
-task list --status open
-task list --status notready
-task list --status inprogress
-task list --status complete
-task list --status fail
+ticket list --status open
+ticket list --status notready
+ticket list --status inprogress
+ticket list --status complete
+ticket list --status fail
 ```
 
 Filter by assignee:
 
 ```bash
-task list -u alice
-task ls -u alice
+ticket list -u alice
+ticket ls -u alice
 ```
 
-`task list` prints a table with the task id, type, status, assignee, priority, and title.
+`ticket list` prints a table with the task id, type, status, assignee, priority, and title.
 
 Search within the active project:
 
 ```bash
-task search "password reset"
-task search password reset -status open -owner alice
+ticket search "password reset"
+ticket search password reset -status open -owner alice
 ```
 
 Search across all projects:
 
 ```bash
-task search password reset -allprojects
+ticket search password reset -allprojects
 ```
 
 Show a single item:
 
 ```bash
-task get 42
-task get -json 42
+ticket get 42
+ticket get -json 42
 ```
 
-`task get` prints the task fields directly, including `DependsOn`, the acceptance criteria, `EstimateEffort`, `EstimateComplete`, `CloneOf` when the task is a clone, and comments ordered most recent first.
+`ticket get` prints the task fields directly, including `DependsOn`, the acceptance criteria, `EstimateEffort`, `EstimateComplete`, `CloneOf` when the task is a clone, and comments ordered most recent first.
 
 Show orphaned items with no parent:
 
 ```bash
-task orphans
+ticket orphans
 ```
 
 Assignment commands:
 
 ```bash
-task assign 42 alice
-task unassign 42 alice
-task dependency add 4 1,2,3
-task dependency remove 4 2
-task claim 42
-task unclaim 42
-task request
-task request 42
-task set-parent 17 9
-task unset-parent 17
+ticket assign 42 alice
+ticket unassign 42 alice
+ticket dependency add 4 1,2,3
+ticket dependency remove 4 2
+ticket claim 42
+ticket unclaim 42
+ticket request
+ticket request 42
+ticket set-parent 17 9
+ticket unset-parent 17
+ticket delete 17
 ```
 
-`task assign` and `task unassign` are admin-only.
+`ticket assign` and `ticket unassign` are admin-only.
 
 They also fail if the named user does not exist or is disabled.
 
-`task claim` fails if another user is already assigned. `task unclaim` fails unless you are the current assignee.
+`ticket claim` fails if another user is already assigned. `ticket unclaim` fails unless you are the current assignee.
 
-`task request` asks the server to assign work to the current user. If the user already has an `inprogress` task, that task is returned. Otherwise, if the user has assigned `open` work, the oldest assigned `open` task is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific task is requested and cannot be assigned, the JSON response status is `REJECTED`.
+`ticket rm` and `ticket delete` remove a task permanently. They fail if the task still has child tasks.
+
+`ticket request` asks the server to assign work to the current user. If the user already has an `inprogress` task, that task is returned. Otherwise, if the user has assigned `open` work, the oldest assigned `open` task is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific task is requested and cannot be assigned, the JSON response status is `REJECTED`.
 
 Status commands:
 
 ```bash
-task open 42
-task ready 42
-task inprogress 42
-task complete 42
-task fail 42
+ticket open 42
+ticket ready 42
+ticket inprogress 42
+ticket complete 42
+ticket fail 42
 ```
 
-`task ready` is an alias for `task open`.
+`ticket ready` is an alias for `ticket open`.
 
 Most client-facing commands also support `-json` to pretty-print the JSON response.
 
 Show the history of any item:
 
 ```bash
-task history 17
+ticket history 17
 ```
 
-`task history` prints the stored history events for that item.
+`ticket history` prints the stored history events for that item.
 
 In the web app, the item detail pane shows:
 
@@ -458,78 +461,80 @@ Because the CLI and web app use the same server API, edits made in one interface
 ## Command Reference
 
 ```bash
-task initdb
-task server -v
-task version
+ticket initdb
+ticket server -v
+ticket version
 
-task register --username <name> --password <password>
-task login --username <name> --password <password>
-task status
-task logout
+ticket register --username <name> --password <password>
+ticket login --username <name> --password <password>
+ticket status
+ticket logout
 
-task user create --username <name> --password <password>
-task user ls
-task user delete --username <name>
-task user enable --username <name>
-task user disable --username <name>
+ticket user create --username <name> --password <password>
+ticket user ls
+ticket user delete --username <name>
+ticket user enable --username <name>
+ticket user disable --username <name>
 
-task project create "..."
-task project list
-task project ls
-task project use <id>
-task project
-task project get <id>
-task project <id>
-task project <id> update -title "..."
-task project <id> update -description "..."
-task project <id> update -ac "..."
-task project <id> enable
-task project <id> disable
+ticket project create "..."
+ticket project list
+ticket project ls
+ticket project use <id>
+ticket project
+ticket project get <id>
+ticket project <id>
+ticket project <id> update -title "..."
+ticket project <id> update -description "..."
+ticket project <id> update -ac "..."
+ticket project <id> enable
+ticket project <id> disable
 
-task add "..."
-task bug "..."
-task epic "..."
+ticket add "..."
+ticket bug "..."
+ticket epic "..."
 
-task list
-task ls
-task list --type task
-task list --status open
-task list -u <name>
-task search "..."
-task search "..." -allprojects
-task get <id>
-task history <id>
-task comment add <id> "..."
-task orphans
+ticket list
+ticket ls
+ticket list --type task
+ticket list --status open
+ticket list -u <name>
+ticket search "..."
+ticket search "..." -allprojects
+ticket get <id>
+ticket history <id>
+ticket comment add <id> "..."
+ticket orphans
 
-task dependency add <id> <id[,id...]>
-task dependency remove <id> <id[,id...]>
-task assign <id> <name>
-task unassign <id> <name>
-task claim <id>
-task unclaim <id>
-task request [<id>]
-task set-parent <id> <parent-id>
-task unset-parent <id>
-task open <id>
-task ready <id>
-task inprogress <id>
-task complete <id>
-task fail <id>
-task update <id> -status <status>
-task count
-task count -project_id <id>
+ticket dependency add <id> <id[,id...]>
+ticket dependency remove <id> <id[,id...]>
+ticket assign <id> <name>
+ticket unassign <id> <name>
+ticket claim <id>
+ticket unclaim <id>
+ticket request [<id>]
+ticket set-parent <id> <parent-id>
+ticket unset-parent <id>
+ticket rm <id>
+ticket delete <id>
+ticket open <id>
+ticket ready <id>
+ticket inprogress <id>
+ticket complete <id>
+ticket fail <id>
+ticket update <id> -status <status>
+ticket count
+ticket count -project_id <id>
 
-task update <id> -status open
-task update <id> -title "new title"
-task update <id> -description "new description"
-task update <id> -ac "new acceptance criteria"
-task update <id> -priority 4
-task update <id> -order 7
-task update <id> -parent_id 12
-task update <id> -estimate_effort 5
-task update <id> -estimate_complete 2026-04-30T17:00:00Z
-task update <id> -status open -priority 2 -title "new title"
-task update <id> -status closed
+ticket update <id> -status open
+ticket update <id> -title "new title"
+ticket update <id> -description "new description"
+ticket update <id> -ac "new acceptance criteria"
+ticket update <id> -priority 4
+ticket update <id> -order 7
+ticket update <id> -parent_id 12
+ticket update <id> -estimate_effort 5
+ticket update <id> -estimate_complete 2026-04-30T17:00:00Z
+ticket update <id> -status open -priority 2 -title "new title"
+ticket update <id> -status closed
 
 ```

@@ -27,6 +27,10 @@ type Credentials struct {
 	Token string `json:"token"`
 }
 
+func envValue(name string) string {
+	return strings.TrimSpace(os.Getenv(name))
+}
+
 func Load() (Config, error) {
 	path, err := Path()
 	if err != nil {
@@ -120,10 +124,10 @@ func ClearCredentials() error {
 }
 
 func ResolveServerURL(cfg Config) string {
-	if env := os.Getenv("TASK_SERVER"); env != "" {
+	if env := envValue("TICKET_SERVER"); env != "" {
 		return env
 	}
-	if env := os.Getenv("TASK_URL"); env != "" {
+	if env := envValue("TICKET_URL"); env != "" {
 		return env
 	}
 	if cfg.ServerURL != "" {
@@ -133,7 +137,7 @@ func ResolveServerURL(cfg Config) string {
 }
 
 func ResolveMode() (string, error) {
-	mode := strings.TrimSpace(strings.ToLower(os.Getenv("TASK_MODE")))
+	mode := strings.ToLower(envValue("TICKET_MODE"))
 	if mode == "" {
 		return ModeLocal, nil
 	}
@@ -141,22 +145,22 @@ func ResolveMode() (string, error) {
 	case ModeLocal, ModeRemote:
 		return mode, nil
 	default:
-		return "", errors.New("TASK_MODE must be local or remote")
+		return "", errors.New("TICKET_MODE must be local or remote")
 	}
 }
 
 func ResolveDatabasePath() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("TASK_DB_OVERRIDE")); override != "" {
+	if override := envValue("TICKET_DB_OVERRIDE"); override != "" {
 		return override, nil
 	}
-	if home := strings.TrimSpace(os.Getenv("TASK_HOME")); home != "" {
-		return filepath.Join(home, "task.db"), nil
+	if home := envValue("TICKET_HOME"); home != "" {
+		return filepath.Join(home, "ticket.db"), nil
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cwd, "task.db"), nil
+	return filepath.Join(cwd, "ticket.db"), nil
 }
 
 func Path() (string, error) {
@@ -176,10 +180,10 @@ func CredentialsPath() (string, error) {
 }
 
 func Home() (string, error) {
-	if dir := os.Getenv("TASK_HOME"); dir != "" {
+	if dir := envValue("TICKET_HOME"); dir != "" {
 		return dir, nil
 	}
-	if dir := os.Getenv("TASK_CONFIG_DIR"); dir != "" {
+	if dir := envValue("TICKET_CONFIG_DIR"); dir != "" {
 		return dir, nil
 	}
 

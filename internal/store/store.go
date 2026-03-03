@@ -9,7 +9,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/simonski/task/internal/password"
+	"github.com/simonski/ticket/internal/password"
 )
 
 func Open(path string) (*sql.DB, error) {

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/store"
 )
 
 func TestAuthAndAdminAPI(t *testing.T) {
@@ -316,7 +316,7 @@ func TestTaskAPI(t *testing.T) {
 	}
 	var comments []store.Comment
 	decodeResponse(t, commentsResp, &comments)
-	if len(comments) != 1 || comments[0].Comment != "Waiting on API changes." {
+	if len(comments) != 1 || comments[0].Text != "Waiting on API changes." || comments[0].Author != "admin" {
 		t.Fatalf("comments = %#v", comments)
 	}
 
@@ -713,6 +713,75 @@ func TestCloneTaskAPI(t *testing.T) {
 	}
 }
 
+func TestDeleteTaskAPI(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	loginResp := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	var auth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, loginResp, &auth)
+
+	taskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": 1,
+		"type":       "task",
+		"title":      "Delete me",
+	}, auth.Token)
+	var task store.Task
+	decodeResponse(t, taskResp, &task)
+
+	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
+	if deleteResp.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
+	}
+
+	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
+	if getResp.Code != http.StatusNotFound {
+		t.Fatalf("get deleted status = %d, want %d body=%s", getResp.Code, http.StatusNotFound, getResp.Body.String())
+	}
+}
+
+func TestDeleteTaskAPIFailsWhenTaskHasChildren(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	loginResp := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	var auth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, loginResp, &auth)
+
+	parentResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": 1,
+		"type":       "epic",
+		"title":      "Parent",
+	}, auth.Token)
+	var parent store.Task
+	decodeResponse(t, parentResp, &parent)
+
+	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+		"project_id": 1,
+		"parent_id":  parent.ID,
+		"type":       "task",
+		"title":      "Child",
+	}, auth.Token)
+	if childResp.Code != http.StatusCreated {
+		t.Fatalf("child create status = %d body=%s", childResp.Code, childResp.Body.String())
+	}
+
+	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tasks/"+strconv.FormatInt(parent.ID, 10), nil, auth.Token)
+	if deleteResp.Code != http.StatusBadRequest {
+		t.Fatalf("delete parent status = %d, want %d body=%s", deleteResp.Code, http.StatusBadRequest, deleteResp.Body.String())
+	}
+}
+
 func TestAPIMethodValidation(t *testing.T) {
 	handler, db := testHandler(t)
 	defer db.Close()
@@ -773,7 +842,7 @@ func TestAPIMissingAuth(t *testing.T) {
 func testHandler(t *testing.T) (http.Handler, *sql.DB) {
 	t.Helper()
 
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 	if err := store.Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("Init() error = %v", err)
 	}

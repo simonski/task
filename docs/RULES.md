@@ -4,3 +4,5 @@
 - ensure there are integration tests for all code writte (make test-integration)
 - ensure there are playright tests for all endpoints (make test-playwright)
 - do not drift documentation against code; as you code, you must update the DESIGN and USER_GUIDE to be consistent
+- 'review' means re-read TODO, DESIGN and USER_GUIDE against the code and and propose the next steps
+- 'continue' means re-read TODO, DESIGN and USER_GUIDE against the continue the implementation

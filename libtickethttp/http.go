@@ -1,10 +1,10 @@
-package libtaskhttp
+package libtickethttp
 
 import (
-	"github.com/simonski/task/internal/client"
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
-	"github.com/simonski/task/libtask"
+	"github.com/simonski/ticket/internal/client"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
+	"github.com/simonski/ticket/libticket"
 )
 
 type Service struct {
@@ -15,12 +15,12 @@ func New(cfg config.Config) *Service {
 	return &Service{client: client.New(cfg)}
 }
 
-func (s *Service) Status() (libtask.StatusResponse, error) {
+func (s *Service) Status() (libticket.StatusResponse, error) {
 	status, err := s.client.Status()
 	if err != nil {
-		return libtask.StatusResponse{}, err
+		return libticket.StatusResponse{}, err
 	}
-	return libtask.StatusResponse(status), nil
+	return libticket.StatusResponse(status), nil
 }
 
 func (s *Service) Register(username, password string) (store.User, error) {
@@ -39,7 +39,7 @@ func (s *Service) Logout() error {
 	return s.client.Logout()
 }
 
-func (s *Service) Count(projectID *int64) (libtask.CountSummary, error) {
+func (s *Service) Count(projectID *int64) (libticket.CountSummary, error) {
 	return s.client.Count(projectID)
 }
 
@@ -59,7 +59,7 @@ func (s *Service) DeleteUser(username string) error {
 	return s.client.DeleteUser(username)
 }
 
-func (s *Service) CreateProject(req libtask.ProjectCreateRequest) (store.Project, error) {
+func (s *Service) CreateProject(req libticket.ProjectCreateRequest) (store.Project, error) {
 	return s.client.CreateProject(req.Title, req.Description, req.AcceptanceCriteria)
 }
 
@@ -71,7 +71,7 @@ func (s *Service) GetProject(id string) (store.Project, error) {
 	return s.client.GetProject(id)
 }
 
-func (s *Service) UpdateProject(id int64, req libtask.ProjectUpdateRequest) (store.Project, error) {
+func (s *Service) UpdateProject(id int64, req libticket.ProjectUpdateRequest) (store.Project, error) {
 	return s.client.UpdateProject(id, client.ProjectUpdateRequest(req))
 }
 
@@ -79,7 +79,7 @@ func (s *Service) SetProjectEnabled(id int64, enabled bool) (store.Project, erro
 	return s.client.SetProjectEnabled(id, enabled)
 }
 
-func (s *Service) CreateTask(req libtask.TaskCreateRequest) (store.Task, error) {
+func (s *Service) CreateTask(req libticket.TaskCreateRequest) (store.Task, error) {
 	return s.client.CreateTask(client.TaskCreateRequest(req))
 }
 
@@ -91,8 +91,12 @@ func (s *Service) ListTasksFiltered(projectID int64, taskType, status, search, a
 	return s.client.ListTasksFiltered(projectID, taskType, status, search, assignee, limit)
 }
 
-func (s *Service) UpdateTask(id int64, req libtask.TaskUpdateRequest) (store.Task, error) {
+func (s *Service) UpdateTask(id int64, req libticket.TaskUpdateRequest) (store.Task, error) {
 	return s.client.UpdateTask(id, client.TaskUpdateRequest(req))
+}
+
+func (s *Service) DeleteTask(id int64) error {
+	return s.client.DeleteTask(id)
 }
 
 func (s *Service) SetTaskParent(id, parentID int64) (store.Task, error) {
@@ -123,11 +127,11 @@ func (s *Service) ListComments(id int64) ([]store.Comment, error) {
 	return s.client.ListComments(id)
 }
 
-func (s *Service) AddDependency(req libtask.DependencyRequest) (store.Dependency, error) {
+func (s *Service) AddDependency(req libticket.DependencyRequest) (store.Dependency, error) {
 	return s.client.AddDependency(client.DependencyRequest(req))
 }
 
-func (s *Service) RemoveDependency(req libtask.DependencyRequest) error {
+func (s *Service) RemoveDependency(req libticket.DependencyRequest) error {
 	return s.client.RemoveDependency(client.DependencyRequest(req))
 }
 
@@ -135,10 +139,10 @@ func (s *Service) ListDependencies(id int64) ([]store.Dependency, error) {
 	return s.client.ListDependencies(id)
 }
 
-func (s *Service) RequestTask(req libtask.TaskRequest) (libtask.TaskRequestResponse, error) {
+func (s *Service) RequestTask(req libticket.TaskRequest) (libticket.TaskRequestResponse, error) {
 	response, err := s.client.RequestTask(client.TaskRequest(req))
 	if err != nil {
-		return libtask.TaskRequestResponse{}, err
+		return libticket.TaskRequestResponse{}, err
 	}
-	return libtask.TaskRequestResponse(response), nil
+	return libticket.TaskRequestResponse(response), nil
 }

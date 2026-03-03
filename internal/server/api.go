@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/store"
 )
 
 func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
@@ -583,6 +583,20 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				return
 			}
 			writeJSON(w, http.StatusOK, task)
+		case http.MethodDelete:
+			if err := store.DeleteTask(db, id); err != nil {
+				if errors.Is(err, store.ErrTaskNotFound) {
+					writeError(w, http.StatusNotFound, err.Error())
+					return
+				}
+				if errors.Is(err, store.ErrTaskHasChildren) {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 		default:
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}

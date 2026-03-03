@@ -1,12 +1,12 @@
 .PHONY: help default build tools bump-version test test-go test-go-cover test-playwright clean
 
-VERSION_FILE := cmd/task/VERSION
+VERSION_FILE := cmd/ticket/VERSION
 
 default: help
 
 help:
 	@printf "Available targets:\n\n"
-	@printf "  make build           Build the task binary into ./bin.\n"
+	@printf "  make build           Build the ticket binary into ./bin.\n"
 	@printf "                       Also increments the patch version in ./VERSION.\n"
 	@printf "  make tools           Build helper binaries in the repo root.\n"
 	@printf "  make test            Run all tests.\n"
@@ -19,7 +19,7 @@ help:
 build:
 	@$(MAKE) bump-version
 	@mkdir -p bin
-	go build -o ./bin/task ./cmd/task
+	go build -o ./bin/ticket ./cmd/ticket
 
 tools:
 	@mkdir -p bin
@@ -51,9 +51,9 @@ test-go:
 test-go-cover:
 	@set -e; \
 	for entry in \
-		"./cmd/task 55" \
-		"./libtask 65" \
-		"./libtaskhttp 75" \
+		"./cmd/ticket 55" \
+		"./libticket 65" \
+		"./libtickethttp 75" \
 		"./internal/client 55" \
 		"./internal/store 70" \
 		"./internal/config 70" \

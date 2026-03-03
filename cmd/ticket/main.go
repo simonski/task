@@ -17,11 +17,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/server"
-	"github.com/simonski/task/internal/store"
-	"github.com/simonski/task/libtask"
-	"github.com/simonski/task/libtaskhttp"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/server"
+	"github.com/simonski/ticket/internal/store"
+	"github.com/simonski/ticket/libticket"
+	"github.com/simonski/ticket/libtickethttp"
 	"golang.org/x/term"
 )
 
@@ -36,8 +36,12 @@ var (
 	loginPromptOutput io.Writer = os.Stdout
 	outputJSON        bool
 	noColorOutput     bool
-	runAgentCommand   = defaultRunAgentCommand
+	runAgentCommand   = defaultRunTicketAgentCommand
 )
+
+func envValue(name string) string {
+	return strings.TrimSpace(os.Getenv(name))
+}
 
 var bannerLines = []string{
 	"████████╗ █████╗ ███████╗██╗  ██╗",
@@ -65,189 +69,199 @@ var embeddedAgents string
 
 var helpIndex = map[string]commandHelp{
 	"onboard": {
-		usage:   "task onboard",
+		usage:   "ticket onboard",
 		details: []string{"Appends the embedded onboarding template to `${CWD}/AGENTS.md`.", "Creates `${CWD}/AGENTS.md` if it does not already exist."},
-		example: "task onboard",
+		example: "ticket onboard",
 	},
 	"initdb": {
-		usage:   "task initdb [-f <db-path>] [--force] [-password <password>]",
-		details: []string{"Creates a new SQLite database, bootstraps the fixed `admin` account, and creates the default project.", "If `-f` is omitted, the database is created at `$TASK_HOME/task.db`.", "If `-password` is omitted, a random admin password is generated and printed to stdout.", "If `--force` is supplied, any existing database file is overwritten."},
-		example: "task initdb -f $TASK_HOME/task.db --force -password secret",
+		usage:   "ticket initdb [-f <db-path>] [--force] [-password <password>]",
+		details: []string{"Creates a new SQLite database, bootstraps the fixed `admin` account, and creates the default project.", "If `-f` is omitted, the database is created at `$TICKET_HOME/ticket.db`.", "If `-password` is omitted, a random admin password is generated and printed to stdout.", "If `--force` is supplied, any existing database file is overwritten."},
+		example: "ticket initdb -f $TICKET_HOME/ticket.db --force -password secret",
 	},
 	"server": {
-		usage:   "task server [-f <db-path>] [-addr :8080] [-v]",
-		details: []string{"Starts the HTTP API server and the embedded web UI.", "If `-f` is omitted, the server uses `$TASK_HOME/task.db`.", "If `-v` is supplied, requests and responses are printed verbosely to stdout."},
-		example: "task server -f $TASK_HOME/task.db -addr :8080 -v",
+		usage:   "ticket server [-f <db-path>] [-addr :8080] [-v]",
+		details: []string{"Starts the HTTP API server and the embedded web UI.", "If `-f` is omitted, the server uses `$TICKET_HOME/ticket.db`.", "If `-v` is supplied, requests and responses are printed verbosely to stdout."},
+		example: "ticket server -f $TICKET_HOME/ticket.db -addr :8080 -v",
 	},
 	"version": {
-		usage:   "task version",
+		usage:   "ticket version",
 		details: []string{"Prints the semantic version embedded into the binary from the build-time `VERSION` file."},
-		example: "task version",
+		example: "ticket version",
 	},
 	"login": {
-		usage:   "task login [-username <name>] [-password <password>] [-url <server-url>]",
-		details: []string{"REMOTE mode only. Logs into the configured server and stores the session token in `$TASK_HOME/credentials.json`.", "Login resolution order: valid `$TASK_HOME/credentials.json`, then `username` in `$TASK_HOME/config.json`, then `-username` / `-password`, then `TASK_USERNAME` / `TASK_PASSWORD`, then prompts.", "If prompting is needed, discovered values are used as editable defaults.", "Server resolution: `-url`, then `TASK_SERVER`, then `TASK_URL`, then configured URL, then `http://localhost:8080`."},
-		example: "task login -username simon -password secret -url http://localhost:8080",
+		usage:   "ticket login [-username <name>] [-password <password>] [-url <server-url>]",
+		details: []string{"REMOTE mode only. Logs into the configured server and stores the session token in `$TICKET_HOME/credentials.json`.", "Login resolution order: valid `$TICKET_HOME/credentials.json`, then `username` in `$TICKET_HOME/config.json`, then `-username` / `-password`, then `TICKET_USERNAME` / `TICKET_PASSWORD`, then prompts.", "If prompting is needed, discovered values are used as editable defaults.", "Server resolution: `-url`, then `TICKET_SERVER`, then `TICKET_URL`, then configured URL, then `http://localhost:8080`."},
+		example: "ticket login -username simon -password secret -url http://localhost:8080",
 	},
 	"register": {
-		usage:   "task register [-username <name>] [-password <password>] [-url <server-url>]",
-		details: []string{"REMOTE mode only. Creates a user account on the configured server but does not log the user in.", "Credential resolution: `-username`, then `TASK_USERNAME`, then OS `whoami`; `-password`, then `TASK_PASSWORD`, then `password`."},
-		example: "task register -username simon -password secret",
+		usage:   "ticket register [-username <name>] [-password <password>] [-url <server-url>]",
+		details: []string{"REMOTE mode only. Creates a user account on the configured server but does not log the user in.", "Credential resolution: `-username`, then `TICKET_USERNAME`, then OS `whoami`; `-password`, then `TICKET_PASSWORD`, then `password`."},
+		example: "ticket register -username simon -password secret",
 	},
 	"logout": {
-		usage:   "task logout [-url <server-url>]",
-		details: []string{"REMOTE mode only. Logs out from the configured server and removes `$TASK_HOME/credentials.json`."},
-		example: "task logout",
+		usage:   "ticket logout [-url <server-url>]",
+		details: []string{"REMOTE mode only. Logs out from the configured server and removes `$TICKET_HOME/credentials.json`."},
+		example: "ticket logout",
 	},
 	"status": {
-		usage:   "task status [-url <server-url>] [-f <db-path>] [-nocolor]",
+		usage:   "ticket status [-url <server-url>] [-f <db-path>] [-nocolor]",
 		details: []string{"Prints the current effective configuration first, then performs a mode-specific connectivity check.", "REMOTE mode prints `mode`, `server`, `username`, `authenticated`, then calls the remote status endpoint.", "LOCAL mode prints `mode`, `db_path`, `db_exists`, then opens the database and verifies the schema is usable."},
-		example: "task status",
+		example: "ticket status",
 	},
 	"help": {
-		usage:   "task help <command>",
+		usage:   "ticket help <command>",
 		details: []string{"Shows command-specific help when available.", "Without a command, prints the root usage summary."},
-		example: "task help dependency",
+		example: "ticket help dependency",
 	},
 	"count": {
-		usage:   "task count [-project_id <id>] [-url <server-url>]",
+		usage:   "ticket count [-project_id <id>] [-url <server-url>]",
 		details: []string{"Counts users and work items by type.", "With `-project_id`, counts work items within that project and omits the global project total."},
-		example: "task count -project_id 1",
+		example: "ticket count -project_id 1",
 	},
-	"req": {
-		usage:   "task req -f <file1,file2,...> -o <output-file> [-agent <agent>]",
+	"ticket": {
+		usage:   "ticket ticket -f <file1,file2,...> -o <output-file> [-agent <agent>]",
 		details: []string{"Reads the listed input files, sends a requirements-breakdown prompt to an agent, and writes the agent output to the requested output file.", "Default agent is `codex`, which is invoked as `codex exec <prompt>`. Other agents are invoked as `<agent> -p <prompt>`."},
-		example: "task req -f README.md,docs/DESIGN.md -o requirements.md",
+		example: "ticket ticket -f README.md,docs/DESIGN.md -o requirements.md",
 	},
 	"project": {
-		usage:   "task project <create|list|get|use>|<id> <update|enable|disable>",
+		usage:   "ticket project <create|list|get|use>|<id> <update|enable|disable>",
 		details: []string{"Manages projects and the active project context used by subsequent commands.", "Projects are addressed by numeric id."},
-		example: "task project 3 update -title \"Customer Portal\"",
+		example: "ticket project 3 update -title \"Customer Portal\"",
 	},
 	"list": {
-		usage:   "task list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>] [-url <server-url>]",
+		usage:   "ticket list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>] [--unicode] [--plain]",
 		details: []string{"Lists tasks in the active project with optional type, status, assignee, and limit filters.", "`-n` is applied server-side. `0` means no limit."},
-		example: "task list --type bug --status open -u alice -n 20",
+		example: "ticket list --type bug --status open -u alice -n 20",
 	},
 	"orphans": {
-		usage:   "task orphans [-url <server-url>]",
-		details: []string{"Lists tasks in the active project that do not have a parent task or epic."},
-		example: "task orphans",
+		usage:   "ticket orphans [-url <server-url>]",
+		details: []string{"Lists unparented non-epic tasks in the active project."},
+		example: "ticket orphans",
 	},
 	"get": {
-		usage:   "task get <id> [-url <server-url>]",
+		usage:   "ticket get <id> [-url <server-url>]",
 		details: []string{"Shows a single task with comments and history.", "Output uses subtle color unless `-nocolor` is supplied."},
-		example: "task get 42",
+		example: "ticket get 42",
 	},
 	"show": {
-		usage:   "task show <id> [-url <server-url>]",
-		details: []string{"Alias for `task get`."},
-		example: "task show 42",
+		usage:   "ticket show <id> [-url <server-url>]",
+		details: []string{"Alias for `ticket get`."},
+		example: "ticket show 42",
 	},
 	"search": {
-		usage:   "task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>] [-allprojects]",
+		usage:   "ticket search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>] [-allprojects]",
 		details: []string{"Searches tasks in the active project by default.", "Use `-allprojects` to search across every project. Optional filters narrow by status, title text, description text, priority, and owner."},
-		example: "task search password reset -status open -owner alice -allprojects",
+		example: "ticket search password reset -status open -owner alice -allprojects",
 	},
 	"update": {
-		usage:   "task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
+		usage:   "ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
 		details: []string{"Updates one or more task fields in a single command.", "Accepted status values are `notready`, `open`, `inprogress`, `complete`, and `fail`. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
-		example: "task update 42 -title \"Customer Portal\" -status inprogress -priority 2 -estimate_effort 5",
+		example: "ticket update 42 -title \"Customer Portal\" -status inprogress -priority 2 -estimate_effort 5",
 	},
 	"set-parent": {
-		usage:   "task set-parent <id> <parent-id>",
-		details: []string{"Sets the parent of a task or story.", "Both ids must be numeric task ids in the active project."},
-		example: "task set-parent 1 2",
+		usage:   "ticket set-parent <id> <parent-id>",
+		details: []string{"Sets the parent of a task or epic.", "Both ids must be numeric task ids in the active project.", "If the child is an epic, the parent must also be an epic."},
+		example: "ticket set-parent 1 2",
 	},
 	"unset-parent": {
-		usage:   "task unset-parent <id>",
+		usage:   "ticket unset-parent <id>",
 		details: []string{"Clears the parent of a task or story.", "After this, the task becomes an orphan."},
-		example: "task unset-parent 1",
+		example: "ticket unset-parent 1",
 	},
 	"open": {
-		usage:   "task open <id>",
+		usage:   "ticket open <id>",
 		details: []string{"Sets the task status to `open`."},
-		example: "task open 42",
+		example: "ticket open 42",
 	},
 	"ready": {
-		usage:   "task ready <id>",
-		details: []string{"Alias for `task open <id>`.", "Use this when marking a task as ready for work."},
-		example: "task ready 42",
+		usage:   "ticket ready <id>",
+		details: []string{"Alias for `ticket open <id>`.", "Use this when marking a task as ready for work."},
+		example: "ticket ready 42",
 	},
 	"inprogress": {
-		usage:   "task inprogress <id>",
+		usage:   "ticket inprogress <id>",
 		details: []string{"Sets the task status to `inprogress`."},
-		example: "task inprogress 42",
+		example: "ticket inprogress 42",
 	},
 	"complete": {
-		usage:   "task complete <id>",
+		usage:   "ticket complete <id>",
 		details: []string{"Sets the task status to `complete`."},
-		example: "task complete 42",
+		example: "ticket complete 42",
 	},
 	"fail": {
-		usage:   "task fail <id>",
+		usage:   "ticket fail <id>",
 		details: []string{"Sets the task status to `fail`."},
-		example: "task fail 42",
+		example: "ticket fail 42",
 	},
 	"add": {
-		usage:   "task add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [-estimate_effort <n>] [-estimate_complete <rfc3339>] [title words]",
+		usage:   "ticket add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [-estimate_effort <n>] [-estimate_complete <rfc3339>] [title words]",
 		details: []string{"Creates a task-like entity in the active project.", "Positional title words and `-title` are equivalent ways to set the title.", "Defaults: `type=task`, `priority=1`, blank assignee, blank description, blank acceptance criteria, blank parent, current project, `estimate_effort=0`, blank `estimate_complete`."},
-		example: "task add \"Customers can reset their password.\"",
+		example: "ticket add \"Customers can reset their password.\"",
 	},
 	"comment": {
-		usage:   "task comment add <id> \"comment\" [-url <server-url>]",
+		usage:   "ticket comment add <id> \"comment\" [-url <server-url>]",
 		details: []string{"Adds a comment to a task and records a corresponding history event."},
-		example: "task comment add 42 \"Need product sign-off.\"",
+		example: "ticket comment add 42 \"Need product sign-off.\"",
 	},
 	"clone": {
-		usage:   "task clone|cp <id>",
+		usage:   "ticket clone|cp <id>",
 		details: []string{"Clones a task or epic.", "Cloned items are unassigned, set to `notready`, and keep a `clone_of` reference to the source item. Cloning an epic also clones its child tasks."},
-		example: "task clone 42",
+		example: "ticket clone 42",
+	},
+	"delete": {
+		usage:   "ticket rm|delete <id>",
+		details: []string{"Deletes a task permanently.", "Fails if the task still has child tasks."},
+		example: "ticket delete 42",
 	},
 	"assign": {
-		usage:   "task assign <id> <name>",
+		usage:   "ticket assign <id> <name>",
 		details: []string{"Admin-only command that assigns a task to a user.", "The target user must exist and be enabled."},
-		example: "task assign 42 alice",
+		example: "ticket assign 42 alice",
 	},
 	"unassign": {
-		usage:   "task unassign <id> <name>",
+		usage:   "ticket unassign <id> <name>",
 		details: []string{"Admin-only command that clears a task assignment from the named user.", "The named user must exist and be enabled."},
-		example: "task unassign 42 alice",
+		example: "ticket unassign 42 alice",
 	},
 	"claim": {
-		usage:   "task claim <id>",
+		usage:   "ticket claim <id>",
 		details: []string{"Assigns the caller to the task.", "Fails if the task is already assigned to another user."},
-		example: "task claim 42",
+		example: "ticket claim 42",
 	},
 	"unclaim": {
-		usage:   "task unclaim <id>",
+		usage:   "ticket unclaim <id>",
 		details: []string{"Clears the caller's assignment from the task.", "Fails unless the caller is the current assignee."},
-		example: "task unclaim 42",
+		example: "ticket unclaim 42",
 	},
 	"add-dependency": {
-		usage:   "task add-dependency <id> <dependency-id[,dependency-id...]>",
+		usage:   "ticket add-dependency <id> <dependency-id[,dependency-id...]>",
 		details: []string{"Adds one or more `depends_on` links from the task to the listed task IDs.", "Comma-separated dependency IDs are supported."},
-		example: "task add-dependency 4 1,2,3",
+		example: "ticket add-dependency 4 1,2,3",
 	},
 	"remove-dependency": {
-		usage:   "task remove-dependency <id> <dependency-id[,dependency-id...]>",
+		usage:   "ticket remove-dependency <id> <dependency-id[,dependency-id...]>",
 		details: []string{"Removes one or more `depends_on` links from the task to the listed task IDs.", "Comma-separated dependency IDs are supported."},
-		example: "task remove-dependency 4 2",
+		example: "ticket remove-dependency 4 2",
 	},
 	"dependency": {
-		usage:   "task dependency <add|remove> <id> <dependency-id[,dependency-id...]>",
+		usage:   "ticket dependency <add|remove> <id> <dependency-id[,dependency-id...]>",
 		details: []string{"Manages `depends_on` links for a task.", "`add` creates dependency links; `remove` deletes them."},
-		example: "task dependency add 4 1,2,3",
+		example: "ticket dependency add 4 1,2,3",
 	},
 	"request": {
-		usage:   "task request [<id>]",
+		usage:   "ticket request [--dryrun] [<id>]",
 		details: []string{"Requests work for the current user.", "With an id, the server attempts to assign that specific task. Without an id, it assigns the oldest unassigned `open` task in the active project, unless the user already has assigned work to resume."},
-		example: "task request 42",
+		example: "ticket request 42",
+	},
+	"request-dryrun": {
+		usage:   "ticket request-dryrun [<id>]",
+		details: []string{"Simulates a request assignment without mutating state and shows what task would be assigned."},
+		example: "ticket request-dryrun 42",
 	},
 	"user": {
-		usage:   "task user <create|ls|list|rm|delete|enable|disable>",
+		usage:   "ticket user <create|ls|list|rm|delete|enable|disable>",
 		details: []string{"Admin-only user management commands.", "If a non-admin user calls these commands, the server returns 403 with `user is not an admin`."},
-		example: "task user create --username alice --password secret",
+		example: "ticket user create --username alice --password secret",
 	},
 }
 
@@ -280,15 +294,15 @@ func run(args []string) error {
 		return err
 	}
 	if urlOverride != "" {
-		if err := os.Setenv("TASK_SERVER", urlOverride); err != nil {
+		if err := os.Setenv("TICKET_SERVER", urlOverride); err != nil {
 			return err
 		}
-		if err := os.Setenv("TASK_URL", urlOverride); err != nil {
+		if err := os.Setenv("TICKET_URL", urlOverride); err != nil {
 			return err
 		}
 	}
 	if dbOverride != "" {
-		if err := os.Setenv("TASK_DB_OVERRIDE", dbOverride); err != nil {
+		if err := os.Setenv("TICKET_DB_OVERRIDE", dbOverride); err != nil {
 			return err
 		}
 	}
@@ -303,7 +317,7 @@ func run(args []string) error {
 	case "onboard":
 		return runOnboard(trimmedArgs[1:])
 	case "init":
-		return errors.New("use `task initdb`")
+		return errors.New("use `ticket initdb`")
 	case "initdb":
 		return runInitDB(trimmedArgs[1:])
 	case "server":
@@ -312,25 +326,25 @@ func run(args []string) error {
 		return runVersion(trimmedArgs[1:])
 	case "register":
 		if mode != config.ModeRemote {
-			return errors.New("task register requires TASK_MODE=remote")
+			return errors.New("ticket register requires TICKET_MODE=remote")
 		}
 		return runRegister(trimmedArgs[1:])
 	case "login":
 		if mode != config.ModeRemote {
-			return errors.New("task login requires TASK_MODE=remote")
+			return errors.New("ticket login requires TICKET_MODE=remote")
 		}
 		return runLogin(trimmedArgs[1:])
 	case "logout":
 		if mode != config.ModeRemote {
-			return errors.New("task logout requires TASK_MODE=remote")
+			return errors.New("ticket logout requires TICKET_MODE=remote")
 		}
 		return runLogout(trimmedArgs[1:])
 	case "status":
 		return runStatus(trimmedArgs[1:])
 	case "count":
 		return runCount(trimmedArgs[1:])
-	case "req":
-		return runReq(trimmedArgs[1:])
+	case "ticket":
+		return runTicket(trimmedArgs[1:])
 	case "user":
 		return runUser(trimmedArgs[1:])
 	case "project":
@@ -379,12 +393,16 @@ func run(args []string) error {
 		return runDependency(trimmedArgs[1:])
 	case "request":
 		return runRequest(trimmedArgs[1:])
+	case "request-dryrun":
+		return runRequestDryRun(trimmedArgs[1:])
 	case "history":
 		return runHistory(trimmedArgs[1:])
 	case "comment":
 		return runComment(trimmedArgs[1:])
 	case "clone", "cp":
 		return runClone(trimmedArgs[1:])
+	case "rm", "delete":
+		return runDeleteTask(trimmedArgs[1:])
 	case "curate":
 		return runCurate(trimmedArgs[1:])
 	case "review":
@@ -430,7 +448,7 @@ func runHelp(args []string) error {
 
 func runOnboard(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: task onboard")
+		return errors.New("usage: ticket onboard")
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -562,15 +580,15 @@ func runServer(args []string) error {
 	}
 
 	fmt.Print(renderBanner())
-	fmt.Printf("VERSION  %s\n", strings.TrimSpace(embeddedVersion))
-	fmt.Printf("TASKDB   %s\n\n", *dbPath)
-	fmt.Printf("serving task on http://localhost%s\n", *addr)
+	fmt.Printf("VERSION    %s\n", strings.TrimSpace(embeddedVersion))
+	fmt.Printf("TICKETDB   %s\n\n", *dbPath)
+	fmt.Printf("serving ticket on http://localhost%s\n", *addr)
 	return srv.ListenAndServe()
 }
 
 func runVersion(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: task version")
+		return errors.New("usage: ticket version")
 	}
 	fmt.Println(strings.TrimSpace(embeddedVersion))
 	return nil
@@ -695,7 +713,7 @@ func finishLogin(cfg config.Config, user store.User, token string) error {
 
 func runLogout(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: task logout")
+		return errors.New("usage: ticket logout")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -727,7 +745,7 @@ func runLogout(args []string) error {
 
 func runStatus(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: task status")
+		return errors.New("usage: ticket status")
 	}
 	mode, err := config.ResolveMode()
 	if err != nil {
@@ -743,7 +761,7 @@ func runStatus(args []string) error {
 	case config.ModeLocal:
 		return runLocalStatus()
 	default:
-		return fmt.Errorf("unsupported TASK_MODE %q", mode)
+		return fmt.Errorf("unsupported TICKET_MODE %q", mode)
 	}
 }
 
@@ -755,7 +773,7 @@ func runCount(args []string) error {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: task count [-project_id <id>]")
+		return errors.New("usage: ticket count [-project_id <id>]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -785,7 +803,7 @@ func runCount(args []string) error {
 
 func runUser(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: task user <create|ls|list|rm|delete|enable|disable>")
+		return errors.New("usage: ticket user <create|ls|list|rm|delete|enable|disable>")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -862,13 +880,24 @@ func runUser(args []string) error {
 		if outputJSON {
 			return printJSON(users)
 		}
-		for _, user := range users {
-			fmt.Printf("%s\t%s\tenabled=%t\n", user.Username, user.Role, user.Enabled)
-		}
+		printUserTable(users)
 		return nil
 	default:
 		return fmt.Errorf("unknown user command %q", args[0])
 	}
+}
+
+func printUserTable(users []store.User) {
+	if len(users) == 0 {
+		fmt.Println("no users")
+		return
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "USERNAME\tROLE\tENABLED")
+	for _, user := range users {
+		fmt.Fprintf(w, "%s\t%s\t%t\n", user.Username, user.Role, user.Enabled)
+	}
+	_ = w.Flush()
 }
 
 func runProject(args []string) error {
@@ -911,9 +940,9 @@ func runProject(args []string) error {
 			return err
 		}
 		if fs.NArg() != 1 {
-			return errors.New("usage: task project create [-description text] [-ac text] \"Project Title\"")
+			return errors.New("usage: ticket project create [-description text] [-ac text] \"Project Title\"")
 		}
-		project, err := svc.CreateProject(libtask.ProjectCreateRequest{
+		project, err := svc.CreateProject(libticket.ProjectCreateRequest{
 			Title:              fs.Arg(0),
 			Description:        *description,
 			AcceptanceCriteria: *acceptanceCriteria,
@@ -939,17 +968,11 @@ func runProject(args []string) error {
 		if outputJSON {
 			return printJSON(projects)
 		}
-		for _, project := range projects {
-			current := ""
-			if strconv.FormatInt(project.ID, 10) == cfg.CurrentProject {
-				current = "\t(current)"
-			}
-			fmt.Printf("%d\t%s\t%s%s\n", project.ID, project.Title, project.Status, current)
-		}
+		printProjectTable(projects, cfg.CurrentProject)
 		return nil
 	case "get":
 		if len(args) != 2 {
-			return errors.New("usage: task project get <id>")
+			return errors.New("usage: ticket project get <id>")
 		}
 		project, err := svc.GetProject(args[1])
 		if err != nil {
@@ -962,7 +985,7 @@ func runProject(args []string) error {
 		return nil
 	case "use":
 		if len(args) != 2 {
-			return errors.New("usage: task project use <id>")
+			return errors.New("usage: ticket project use <id>")
 		}
 		project, err := svc.GetProject(args[1])
 		if err != nil {
@@ -980,8 +1003,8 @@ func runProject(args []string) error {
 	}
 }
 
-func runReq(args []string) error {
-	fs := flag.NewFlagSet("req", flag.ContinueOnError)
+func runTicket(args []string) error {
+	fs := flag.NewFlagSet("ticket", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	filesArg := fs.String("f", "", "comma-separated input files")
 	outputFile := fs.String("o", "", "output file")
@@ -990,14 +1013,14 @@ func runReq(args []string) error {
 		return err
 	}
 	if strings.TrimSpace(*filesArg) == "" || strings.TrimSpace(*outputFile) == "" {
-		return errors.New("usage: task req -f <file1,file2,...> -o <output-file> [-agent <agent>]")
+		return errors.New("usage: ticket ticket -f <file1,file2,...> -o <output-file> [-agent <agent>]")
 	}
 
 	files := splitCSV(*filesArg)
 	if len(files) == 0 {
 		return errors.New("at least one input file is required")
 	}
-	prompt, err := buildReqPrompt(files, *outputFile)
+	prompt, err := buildTicketPrompt(files, *outputFile)
 	if err != nil {
 		return err
 	}
@@ -1034,7 +1057,7 @@ func splitCSV(raw string) []string {
 	return values
 }
 
-func buildReqPrompt(files []string, outputFile string) (string, error) {
+func buildTicketPrompt(files []string, outputFile string) (string, error) {
 	var b strings.Builder
 	b.WriteString("Write an example breakdown of implementation requirements as ")
 	b.WriteString(outputFile)
@@ -1071,7 +1094,7 @@ func buildReqPrompt(files []string, outputFile string) (string, error) {
 	return b.String(), nil
 }
 
-func defaultRunAgentCommand(agent, prompt string) (string, error) {
+func defaultRunTicketAgentCommand(agent, prompt string) (string, error) {
 	if agent == "" {
 		return "", errors.New("agent is required")
 	}
@@ -1100,7 +1123,7 @@ func parseProjectCommandID(raw string) (int64, bool) {
 	return id, true
 }
 
-func runProjectByID(svc libtask.Service, projectID int64, args []string) error {
+func runProjectByID(svc libticket.Service, projectID int64, args []string) error {
 	if len(args) == 0 {
 		project, err := svc.GetProject(strconv.FormatInt(projectID, 10))
 		if err != nil {
@@ -1134,7 +1157,7 @@ func runProjectByID(svc libtask.Service, projectID int64, args []string) error {
 		if containsFlag(args[1:], "-ac") {
 			nextAC = *acceptanceCriteria
 		}
-		project, err := svc.UpdateProject(projectID, libtask.ProjectUpdateRequest{
+		project, err := svc.UpdateProject(projectID, libticket.ProjectUpdateRequest{
 			Title:              *title,
 			Description:        nextDescription,
 			AcceptanceCriteria: nextAC,
@@ -1189,12 +1212,15 @@ func runList(args []string) error {
 	assignee := fs.String("user", "", "filter by assignee")
 	fs.StringVar(assignee, "u", "", "filter by assignee")
 	limit := fs.Int("n", 0, "maximum number of tasks to return; 0 means all")
+	useUnicode := fs.Bool("unicode", true, "render status symbols as unicode")
+	plain := fs.Bool("plain", false, "render status as plain text")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *limit < 0 {
-		return errors.New("usage: task list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>]")
+		return errors.New("usage: ticket list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>]")
 	}
+	statusUnicode := *useUnicode && !*plain
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
@@ -1203,16 +1229,24 @@ func runList(args []string) error {
 	if err != nil {
 		return err
 	}
+	dependenciesByTask := make(map[int64]string, len(tasks))
+	for _, task := range tasks {
+		dependencies, err := api.ListDependencies(task.ID)
+		if err != nil {
+			return err
+		}
+		dependenciesByTask[task.ID] = formatDependsOn(dependencies)
+	}
 	if outputJSON {
 		return printJSON(tasks)
 	}
-	printTaskTable(tasks)
+	printTaskTable(tasks, dependenciesByTask, statusUnicode)
 	return nil
 }
 
 func runOrphans(args []string) error {
 	if len(args) != 0 {
-		return errors.New("usage: task orphans")
+		return errors.New("usage: ticket orphans")
 	}
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
@@ -1224,7 +1258,7 @@ func runOrphans(args []string) error {
 	}
 	var orphans []store.Task
 	for _, task := range tasks {
-		if task.ParentID == nil {
+		if task.ParentID == nil && strings.TrimSpace(task.Type) != "epic" {
 			orphans = append(orphans, task)
 		}
 	}
@@ -1239,11 +1273,11 @@ func runOrphans(args []string) error {
 
 func runGet(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task get <id>")
+		return errors.New("usage: ticket get <id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1271,7 +1305,7 @@ func runSearch(args []string) error {
 		return err
 	}
 	if query == "" {
-		return errors.New("usage: task search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>]")
+		return errors.New("usage: ticket search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1411,18 +1445,18 @@ func taskMatchesSearch(task store.Task, query, status, title, description string
 
 func runSetStatus(args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: task set-status <id> <status>")
+		return errors.New("usage: ticket set-status <id> <status>")
 	}
 	return updateTaskStatus(args[0], args[1])
 }
 
 func runSetParent(args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: task set-parent <id> <parent-id>")
+		return errors.New("usage: ticket set-parent <id> <parent-id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	var parentID int64
 	if _, err := fmt.Sscan(args[1], &parentID); err != nil {
@@ -1449,11 +1483,11 @@ func runSetParent(args []string) error {
 
 func runUnsetParent(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task unset-parent <id>")
+		return errors.New("usage: ticket unset-parent <id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1476,7 +1510,7 @@ func runUnsetParent(args []string) error {
 
 func runTaskStatusAlias(args []string, status, command string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: task %s <id>", command)
+		return fmt.Errorf("usage: ticket %s <id>", command)
 	}
 	return updateTaskStatus(args[0], status)
 }
@@ -1484,7 +1518,7 @@ func runTaskStatusAlias(args []string, status, command string) error {
 func updateTaskStatus(idArg, status string) error {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1498,7 +1532,7 @@ func updateTaskStatus(idArg, status string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1534,17 +1568,17 @@ func runUpdate(args []string) error {
 	status := fs.String("status", "", "task status")
 	parentIDRaw := fs.String("parent_id", "", "task parent id")
 	if len(args) == 0 {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	hasTitle := containsFlag(args[1:], "-title")
 	hasDescription := containsFlag(args[1:], "-description")
@@ -1557,7 +1591,7 @@ func runUpdate(args []string) error {
 	hasStatus := containsFlag(args[1:], "-status")
 	hasParentID := containsFlag(args[1:], "-parent_id")
 	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasEstimateEffort && !hasEstimateComplete && !hasStatus && !hasParentID {
-		return errors.New("usage: task update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1571,7 +1605,7 @@ func runUpdate(args []string) error {
 	if err != nil {
 		return err
 	}
-	next := libtask.TaskUpdateRequest{
+	next := libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1631,39 +1665,45 @@ func runUpdate(args []string) error {
 
 func runAssign(args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: task assign <id> <name>")
+		return errors.New("usage: ticket assign <id> <name>")
 	}
 	return assignTask(args[0], args[1], true)
 }
 
 func runUnassign(args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: task unassign <id> <name>")
+		return errors.New("usage: ticket unassign <id> <name>")
 	}
 	return unassignTask(args[0], args[1], true)
 }
 
 func runClaim(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task claim <id>")
+		return errors.New("usage: ticket claim <id>")
 	}
+	idArg := args[0]
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
+	mode, err := config.ResolveMode()
+	if err != nil {
+		return err
+	}
 	username := strings.TrimSpace(cfg.Username)
-	if mode, err := config.ResolveMode(); err == nil && mode == config.ModeLocal {
+	if mode == config.ModeLocal {
 		username = currentOSUser()
 	}
 	if strings.TrimSpace(username) == "" {
 		return errors.New("no current username; log in first")
 	}
-	return assignTask(args[0], username, false)
+	return assignTask(idArg, username, false)
 }
 
 func runUnclaim(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task unclaim <id>")
+		return errors.New("usage: ticket unclaim <id>")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1679,10 +1719,18 @@ func runUnclaim(args []string) error {
 	return unassignTask(args[0], username, false)
 }
 
-func assignTask(idArg, assignee string, requireAdmin bool) error {
+func parseTaskID(idArg string) (int64, error) {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("task id must be numeric")
+		return 0, errors.New("ticket id must be numeric")
+	}
+	return id, nil
+}
+
+func assignTask(idArg, assignee string, requireAdmin bool) error {
+	id, err := parseTaskID(idArg)
+	if err != nil {
+		return err
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1703,7 +1751,7 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1732,7 +1780,7 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1775,7 +1823,7 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 	if strings.TrimSpace(current.Assignee) != strings.TrimSpace(expectedAssignee) {
 		return fmt.Errorf("task is not assigned to %s", expectedAssignee)
 	}
-	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1799,11 +1847,11 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 
 func runHistory(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task history <id>")
+		return errors.New("usage: ticket history <id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1841,11 +1889,11 @@ func runDependencyCommand(args []string, add bool) error {
 		command = "remove-dependency"
 	}
 	if len(args) != 2 {
-		return fmt.Errorf("usage: task %s <id> <dependency-id[,dependency-id...]>", command)
+		return fmt.Errorf("usage: ticket %s <id> <dependency-id[,dependency-id...]>", command)
 	}
 	var taskID int64
 	if _, err := fmt.Sscan(args[0], &taskID); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	dependencyIDs, err := parseIDList(args[1])
 	if err != nil {
@@ -1856,7 +1904,7 @@ func runDependencyCommand(args []string, add bool) error {
 		return err
 	}
 	for _, depID := range dependencyIDs {
-		req := libtask.DependencyRequest{
+		req := libticket.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    taskID,
 			DependsOn: depID,
@@ -1888,7 +1936,7 @@ func runDependencyCommand(args []string, add bool) error {
 
 func runDependency(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: task dependency <add|remove> <id> <dependency-id[,dependency-id...]>")
+		return errors.New("usage: ticket dependency <add|remove> <id> <dependency-id[,dependency-id...]>")
 	}
 	switch args[0] {
 	case "add":
@@ -1901,18 +1949,50 @@ func runDependency(args []string) error {
 }
 
 func runRequest(args []string) error {
-	if len(args) > 1 {
-		return errors.New("usage: task request [<id>]")
+	if len(args) > 2 {
+		return errors.New("usage: ticket request [--dryrun] [<id>]")
 	}
+
+	dryRun := false
+	var requestedID *int64
+	for _, arg := range args {
+		switch arg {
+		case "--dryrun", "-dryrun":
+			dryRun = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("usage: ticket request [--dryrun] [<id>]")
+			}
+			var id int64
+			if _, err := fmt.Sscan(arg, &id); err != nil {
+				return errors.New("ticket id must be numeric")
+			}
+			requestedID = &id
+		}
+	}
+	if requestedID != nil && dryRun {
+		requestID := strconv.FormatInt(*requestedID, 10)
+		return runRequestDryRun([]string{requestID})
+	}
+	if dryRun {
+		return runRequestDryRun(nil)
+	}
+
+	if requestedID != nil {
+		args = []string{strconv.FormatInt(*requestedID, 10)}
+	} else {
+		args = nil
+	}
+
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
 	}
-	req := libtask.TaskRequest{ProjectID: project.ID}
+	req := libticket.TaskRequest{ProjectID: project.ID}
 	if len(args) == 1 {
 		var id int64
 		if _, err := fmt.Sscan(args[0], &id); err != nil {
-			return errors.New("task id must be numeric")
+			return errors.New("ticket id must be numeric")
 		}
 		req.TaskID = &id
 	}
@@ -1929,6 +2009,133 @@ func runRequest(args []string) error {
 	}
 	fmt.Println(response.Status)
 	return nil
+}
+
+func runRequestDryRun(args []string) error {
+	if len(args) > 1 {
+		return errors.New("usage: ticket request-dryrun [<id>]")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	mode, err := config.ResolveMode()
+	if err != nil {
+		return err
+	}
+
+	username, err := resolveCurrentRequestUser(cfg, mode)
+	if err != nil {
+		return err
+	}
+
+	_, api, project, err := resolveCurrentProjectClient()
+	if err != nil {
+		return err
+	}
+
+	var requestedID *int64
+	if len(args) == 1 {
+		var id int64
+		if _, err := fmt.Sscan(args[0], &id); err != nil {
+			return errors.New("ticket id must be numeric")
+		}
+		requestedID = &id
+	}
+
+	task, status, err := predictRequestedTask(api, project.ID, username, requestedID)
+	if err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(map[string]any{
+			"dryrun": true,
+			"status": status,
+			"task":   task,
+		})
+	}
+	fmt.Printf("dry run: %s\n", status)
+	if task == nil {
+		return nil
+	}
+	fmt.Printf("would assign task: %d\n", task.ID)
+	printTask(*task)
+	return nil
+}
+
+func resolveCurrentRequestUser(cfg config.Config, mode string) (string, error) {
+	username := strings.TrimSpace(cfg.Username)
+	if mode == config.ModeLocal {
+		username = currentOSUser()
+	}
+	if strings.TrimSpace(username) == "" {
+		return "", errors.New("no current username; log in first")
+	}
+
+	if mode == config.ModeLocal {
+		return username, nil
+	}
+
+	_, api, _, err := resolveCurrentProjectClient()
+	if err != nil {
+		return "", err
+	}
+	status, err := api.Status()
+	if err != nil {
+		return "", err
+	}
+	if status.User == nil {
+		return "", errors.New("no current username; log in first")
+	}
+	if status.User.Username != "" {
+		return status.User.Username, nil
+	}
+	return username, nil
+}
+
+func predictRequestedTask(api libticket.Service, projectID int64, username string, requestedID *int64) (*store.Task, string, error) {
+	tasks, err := api.ListTasksFiltered(projectID, "", "", "", "", 0)
+	if err != nil {
+		return nil, "", err
+	}
+	for _, task := range tasks {
+		if task.Status == "inprogress" && strings.TrimSpace(task.Assignee) == username {
+			return &task, "ASSIGNED", nil
+		}
+	}
+	for _, task := range tasks {
+		if task.Status == "open" && strings.TrimSpace(task.Assignee) == username {
+			return &task, "ASSIGNED", nil
+		}
+	}
+
+	if requestedID != nil {
+		task, err := api.GetTask(*requestedID)
+		if err != nil {
+			return nil, "", err
+		}
+		if task.ProjectID != projectID {
+			return nil, "REJECTED", nil
+		}
+		if strings.TrimSpace(task.Assignee) == username {
+			return &task, "ASSIGNED", nil
+		}
+		if strings.TrimSpace(task.Assignee) != "" {
+			return nil, "REJECTED", nil
+		}
+		if task.Status != "open" {
+			return nil, "REJECTED", nil
+		}
+		return &task, "ASSIGNED", nil
+	}
+
+	for _, task := range tasks {
+		if task.Status == "open" && strings.TrimSpace(task.Assignee) == "" {
+			return &task, "ASSIGNED", nil
+		}
+	}
+	return nil, "NO-WORK", nil
 }
 
 func parseIDList(raw string) ([]int64, error) {
@@ -1953,16 +2160,16 @@ func parseIDList(raw string) ([]int64, error) {
 
 func runComment(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: task comment add <id> \"comment\"")
+		return errors.New("usage: ticket comment add <id> \"comment\"")
 	}
 	switch args[0] {
 	case "add":
 		if len(args) != 3 {
-			return errors.New("usage: task comment add <id> \"comment\"")
+			return errors.New("usage: ticket comment add <id> \"comment\"")
 		}
 		var id int64
 		if _, err := fmt.Sscan(args[1], &id); err != nil {
-			return errors.New("task id must be numeric")
+			return errors.New("ticket id must be numeric")
 		}
 		cfg, err := config.Load()
 		if err != nil {
@@ -1988,11 +2195,11 @@ func runComment(args []string) error {
 
 func runClone(args []string) error {
 	if len(args) != 1 {
-		return errors.New("usage: task clone|cp <id>")
+		return errors.New("usage: ticket clone|cp <id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -2013,9 +2220,35 @@ func runClone(args []string) error {
 	return nil
 }
 
+func runDeleteTask(args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: ticket rm|delete <id>")
+	}
+	var id int64
+	if _, err := fmt.Sscan(args[0], &id); err != nil {
+		return errors.New("ticket id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	if err := svc.DeleteTask(id); err != nil {
+		return err
+	}
+	if outputJSON {
+		return printJSON(map[string]any{"status": "deleted", "task_id": id})
+	}
+	fmt.Printf("deleted task %d\n", id)
+	return nil
+}
+
 func runCurate(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: task curate <id> [id...]")
+		return errors.New("usage: ticket curate <id> [id...]")
 	}
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
@@ -2026,7 +2259,7 @@ func runCurate(args []string) error {
 	for _, arg := range args {
 		var id int64
 		if _, err := fmt.Sscan(arg, &id); err != nil {
-			return fmt.Errorf("invalid task id %q", arg)
+			return fmt.Errorf("invalid ticket id %q", arg)
 		}
 		task, err := api.GetTask(id)
 		if err != nil {
@@ -2039,7 +2272,7 @@ func runCurate(args []string) error {
 	if len(titles) > 0 {
 		title = titles[0]
 	}
-	requirement, err := api.CreateTask(libtask.TaskCreateRequest{
+	requirement, err := api.CreateTask(libticket.TaskCreateRequest{
 		ProjectID:   project.ID,
 		Type:        "requirement",
 		Title:       title,
@@ -2076,11 +2309,11 @@ func runReview(args []string) error {
 func runRequirementStatus(status string, args []string) error {
 	commandName := map[string]string{"accepted": "accept", "rejected": "reject"}[status]
 	if len(args) != 2 || args[0] != "requirement" {
-		return fmt.Errorf("usage: task %s requirement <id>", commandName)
+		return fmt.Errorf("usage: ticket %s requirement <id>", commandName)
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[1], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -2094,7 +2327,7 @@ func runRequirementStatus(status string, args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2115,11 +2348,11 @@ func runRequirementStatus(status string, args []string) error {
 
 func runRevise(args []string) error {
 	if len(args) != 2 || args[0] != "requirement" {
-		return errors.New("usage: task revise requirement <id>")
+		return errors.New("usage: ticket revise requirement <id>")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[1], &id); err != nil {
-		return errors.New("task id must be numeric")
+		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -2133,7 +2366,7 @@ func runRevise(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libtask.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title + " (revised)",
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2154,18 +2387,18 @@ func runRevise(args []string) error {
 
 func runDecision(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: task decision <add|list>")
+		return errors.New("usage: ticket decision <add|list>")
 	}
 	switch args[0] {
 	case "add":
 		if len(args) != 2 {
-			return errors.New("usage: task decision add \"text\"")
+			return errors.New("usage: ticket decision add \"text\"")
 		}
 		_, api, project, err := resolveCurrentProjectClient()
 		if err != nil {
 			return err
 		}
-		task, err := api.CreateTask(libtask.TaskCreateRequest{
+		task, err := api.CreateTask(libticket.TaskCreateRequest{
 			ProjectID:   project.ID,
 			Type:        "decision",
 			Title:       args[1],
@@ -2196,22 +2429,13 @@ func runDecision(args []string) error {
 
 func runConversation(args []string) error {
 	if len(args) != 2 || args[0] != "show" {
-		return errors.New("usage: task conversation show <id>")
+		return errors.New("usage: ticket conversation show <id>")
 	}
 	return runHistory(args[1:])
 }
 
 func runTypedTaskCreate(taskType string, args []string) error {
-	fs := flag.NewFlagSet(taskType, flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	description := fs.String("description", "", "task description")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	if fs.NArg() != 1 {
-		return fmt.Errorf("usage: task %s [-description text] \"Title\"", taskType)
-	}
-	return createTask(taskCreateOptions{TaskType: taskType, Title: fs.Arg(0), Description: *description})
+	return runTaskCreate(append([]string{"-type", taskType}, args...))
 }
 
 type taskCreateOptions struct {
@@ -2256,7 +2480,7 @@ func runTaskCreate(args []string) error {
 		title = strings.Join(fs.Args(), " ")
 	}
 	if title == "" {
-		return errors.New("usage: task add|create|new [-title title] [-t type] [-p priority] [-a assignee] [-d description] [-ac criteria] [-parent id] [-project project] [-estimate_effort n] [-estimate_complete rfc3339] [title words]")
+		return errors.New("usage: ticket add|create|new [-title title] [-t type] [-p priority] [-a assignee] [-d description] [-ac criteria] [-parent id] [-project project] [-estimate_effort n] [-estimate_complete rfc3339] [title words]")
 	}
 	opts := taskCreateOptions{
 		TaskType:           *taskType,
@@ -2321,7 +2545,7 @@ func createTask(opts taskCreateOptions) error {
 			return err
 		}
 	}
-	task, err := api.CreateTask(libtask.TaskCreateRequest{
+	task, err := api.CreateTask(libticket.TaskCreateRequest{
 		ProjectID:          project.ID,
 		ParentID:           opts.ParentID,
 		Type:               opts.TaskType,
@@ -2351,7 +2575,7 @@ func createTask(opts taskCreateOptions) error {
 
 func runConfig(args []string) error {
 	if len(args) < 2 {
-		return errors.New("usage: task config <set|get> <key> [value]")
+		return errors.New("usage: ticket config <set|get> <key> [value]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -2360,7 +2584,7 @@ func runConfig(args []string) error {
 	switch args[0] {
 	case "set":
 		if len(args) != 3 {
-			return errors.New("usage: task config set <key> <value>")
+			return errors.New("usage: ticket config set <key> <value>")
 		}
 		switch args[1] {
 		case "server":
@@ -2402,6 +2626,24 @@ func printProject(project store.Project) {
 	}
 }
 
+func printProjectTable(projects []store.Project, currentProjectID string) {
+	if len(projects) == 0 {
+		fmt.Println("no projects")
+		return
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tTITLE\tSTATUS\tCURRENT")
+	currentID := strings.TrimSpace(currentProjectID)
+	for _, project := range projects {
+		current := ""
+		if strconv.FormatInt(project.ID, 10) == currentID {
+			current = "(current)"
+		}
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", project.ID, project.Title, project.Status, current)
+	}
+	_ = w.Flush()
+}
+
 func printTask(task store.Task) {
 	if outputJSON {
 		_ = printJSON(task)
@@ -2420,6 +2662,12 @@ func printTask(task store.Task) {
 	}
 	if task.Description != "" {
 		fmt.Printf("description: %s\n", task.Description)
+	}
+	if task.EstimateEffort != 0 {
+		fmt.Printf("estimate_effort: %d\n", task.EstimateEffort)
+	}
+	if task.EstimateComplete != "" {
+		fmt.Printf("estimate_complete: %s\n", task.EstimateComplete)
 	}
 }
 
@@ -2475,7 +2723,7 @@ func heading(label string) {
 	fmt.Printf("\x1b[2;36m%s\x1b[0m\n", label)
 }
 
-func resolveCurrentProjectClient() (config.Config, libtask.Service, store.Project, error) {
+func resolveCurrentProjectClient() (config.Config, libticket.Service, store.Project, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return config.Config{}, nil, store.Project{}, err
@@ -2499,7 +2747,7 @@ func resolveCurrentProjectClient() (config.Config, libtask.Service, store.Projec
 	}
 	if err != nil {
 		if strings.TrimSpace(cfg.CurrentProject) == "" {
-			return config.Config{}, nil, store.Project{}, errors.New("no active project; use `task project create` or `task project use <id>` first")
+			return config.Config{}, nil, store.Project{}, errors.New("no active project; use `ticket project create` or `ticket project use <id>` first")
 		}
 		return config.Config{}, nil, store.Project{}, err
 	}
@@ -2513,22 +2761,22 @@ func resolveCurrentProjectClient() (config.Config, libtask.Service, store.Projec
 	return cfg, svc, project, nil
 }
 
-func resolveService(cfg config.Config) (libtask.Service, error) {
+func resolveService(cfg config.Config) (libticket.Service, error) {
 	mode, err := config.ResolveMode()
 	if err != nil {
 		return nil, err
 	}
 	switch mode {
 	case config.ModeLocal:
-		return libtask.NewLocal(cfg), nil
+		return libticket.NewLocal(cfg), nil
 	case config.ModeRemote:
 		serverURL := strings.TrimSpace(config.ResolveServerURL(cfg))
 		if serverURL == "" {
-			return nil, errors.New("TASK_SERVER is required in remote mode")
+			return nil, errors.New("TICKET_SERVER is required in remote mode")
 		}
-		return libtaskhttp.New(cfg), nil
+		return libtickethttp.New(cfg), nil
 	default:
-		return nil, fmt.Errorf("unsupported TASK_MODE %q", mode)
+		return nil, fmt.Errorf("unsupported TICKET_MODE %q", mode)
 	}
 }
 
@@ -2538,10 +2786,10 @@ func resolveCredentials(usernameFlag, passwordFlag string, useEnv bool) (string,
 
 	if useEnv {
 		if username == "" {
-			username = strings.TrimSpace(os.Getenv("TASK_USERNAME"))
+			username = envValue("TICKET_USERNAME")
 		}
 		if password == "" {
-			password = strings.TrimSpace(os.Getenv("TASK_PASSWORD"))
+			password = envValue("TICKET_PASSWORD")
 		}
 	}
 	if username == "" {
@@ -2670,7 +2918,7 @@ func defaultDatabasePath() (string, error) {
 func runRemoteStatus(cfg config.Config) error {
 	serverURL := strings.TrimSpace(config.ResolveServerURL(cfg))
 	if serverURL == "" {
-		return errors.New("TASK_SERVER is required in remote mode")
+		return errors.New("TICKET_SERVER is required in remote mode")
 	}
 	svc, err := resolveService(cfg)
 	if err != nil {
@@ -2720,7 +2968,7 @@ func runLocalStatus() error {
 	err = localStatusCheck(dbPath)
 	printConnectionLine(err == nil)
 	if !dbExists {
-		fmt.Println("hint: run task initdb")
+		fmt.Println("hint: run ticket initdb")
 	}
 	return err
 }
@@ -2838,62 +3086,81 @@ func resolveLoginUsername(configUsername, usernameFlag string) string {
 	if strings.TrimSpace(usernameFlag) != "" {
 		return strings.TrimSpace(usernameFlag)
 	}
-	return strings.TrimSpace(os.Getenv("TASK_USERNAME"))
+	return envValue("TICKET_USERNAME")
 }
 
 func resolveLoginPassword(passwordFlag string) string {
 	if strings.TrimSpace(passwordFlag) != "" {
 		return strings.TrimSpace(passwordFlag)
 	}
-	return strings.TrimSpace(os.Getenv("TASK_PASSWORD"))
+	return envValue("TICKET_PASSWORD")
 }
 
 func renderRootUsage() string {
-	return renderBanner() + strings.TrimSpace(`
+	var b strings.Builder
+	b.WriteString(renderBanner())
+	b.WriteString(`
 USAGE
-  task <command> [options]
+  ticket <command> [options]
 
 CLIENT COMMANDS
-  add         Create a task in the active project
-  claim       Assign yourself to a task
-  clone       Clone a task or epic
-  comment     Add comments to a task
-  complete    Set a task status to complete
-  count       Count users, projects, and work by type
-  dependency  Manage dependency links between tasks
-  fail        Set a task status to fail
-  get         Show a task with history and comments
-  help        Show command help
-  inprogress  Set a task status to inprogress
-  list        List tasks in the active project
-  login       Log into the server
-  logout      Clear the local session
-  onboard     Append the embedded AGENTS.md template in the current directory
-  open        Set a task status to open
-  orphans     List tasks with no parent
-  project     Manage projects and active project context
-  ready       Alias for open
-  req         Generate requirements via an external agent
-  register    Create a user account on the server
-  request     Request work for the current user
-  search      Search tasks in the active project or across all projects
-  set-parent  Set the parent of a task
-  status      Show server and authentication status
-  unset-parent Clear the parent of a task
-  unclaim     Remove yourself from a task
-  update      Update a task
-  version     Print the current version from VERSION
+`)
+	printCommandUsageRows(&b, [][2]string{
+		{"add", "Create a task in the active project"},
+		{"claim", "Assign yourself to a task"},
+		{"clone", "Clone a task or epic"},
+		{"comment", "Add comments to a task"},
+		{"complete", "Set a task status to complete"},
+		{"count", "Count users, projects, and work by type"},
+		{"dependency", "Manage dependency links between tasks"},
+		{"delete", "Delete a task permanently"},
+		{"fail", "Set a task status to fail"},
+		{"get", "Show a task with history and comments"},
+		{"help", "Show command help"},
+		{"inprogress", "Set a task status to inprogress"},
+		{"list", "List tasks in the active project"},
+		{"login", "Log into the server"},
+		{"logout", "Clear the local session"},
+		{"onboard", "Append the embedded AGENTS.md template in the current directory"},
+		{"open", "Set a task status to open"},
+		{"orphans", "List tasks with no parent"},
+		{"project", "Manage projects and active project context"},
+		{"ready", "Alias for open"},
+		{"register", "Create a user account on the server"},
+		{"ticket", "Generate requirements via an external agent"},
+		{"request", "Request work for the current user"},
+		{"request-dryrun", "Simulate a request assignment without mutation"},
+		{"search", "Search tasks in the active project or across all projects"},
+		{"set-parent", "Set the parent of a task"},
+		{"status", "Show server and authentication status"},
+		{"unset-parent", "Clear the parent of a task"},
+		{"unclaim", "Remove yourself from a task"},
+		{"update", "Update a task"},
+		{"version", "Print the current version from VERSION"},
+	})
+	b.WriteString(`
+`)
+	b.WriteString("ADMIN COMMANDS\n")
+	printCommandUsageRows(&b, [][2]string{
+		{"assign", "Admin-only task assignment"},
+		{"initdb", "Initialize the database, bootstrap admin, and create the default project"},
+		{"server", "Start the API server and embedded web UI"},
+		{"unassign", "Admin-only task unassignment"},
+		{"user", "Admin-only user management"},
+	})
+	b.WriteString(`
+	HELP
+	  ticket help <command>
+`)
+	return strings.TrimSpace(b.String()) + "\n"
+}
 
-ADMIN COMMANDS
-  assign      Admin-only task assignment
-  initdb      Initialize the database, bootstrap admin, and create the default project
-  server      Start the API server and embedded web UI
-  unassign    Admin-only task unassignment
-  user        Admin-only user management
-
-HELP
-  task help <command>
-`) + "\n"
+func printCommandUsageRows(b *strings.Builder, rows [][2]string) {
+	w := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
+	for _, row := range rows {
+		fmt.Fprintf(w, "  %s\t%s\n", row[0], row[1])
+	}
+	_ = w.Flush()
 }
 
 func printCountSummary(summary store.CountSummary, scopedToProject bool) {
@@ -2910,21 +3177,48 @@ func printCountSummary(summary store.CountSummary, scopedToProject bool) {
 	}
 }
 
-func printTaskTable(tasks []store.Task) {
+func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUnicode bool) {
 	if len(tasks) == 0 {
 		fmt.Println("no tasks")
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTYPE\tSTATUS\tASSIGNEE\tPRIORITY\tTITLE")
+	fmt.Fprintln(w, "MOON\tID\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tTITLE")
 	for _, task := range tasks {
+		symbol := formatTaskStatusSymbol(task.Status, statusUnicode)
 		assignee := task.Assignee
 		if strings.TrimSpace(assignee) == "" {
 			assignee = "-"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%d\t%s\n", task.ID, task.Type, task.Status, assignee, task.Priority, task.Title)
+		dependsOn := dependencies[task.ID]
+		if dependsOn == "[]" {
+			dependsOn = ""
+		}
+		parentID := ""
+		if task.ParentID != nil {
+			parentID = strconv.FormatInt(*task.ParentID, 10)
+		}
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", symbol, task.ID, task.Type, task.Status, parentID, assignee, task.Priority, dependsOn, task.Title)
 	}
 	_ = w.Flush()
+}
+
+func formatTaskStatusSymbol(status string, useUnicode bool) string {
+	if !useUnicode {
+		return ""
+	}
+	switch status {
+	case "open":
+		return "○"
+	case "notready":
+		return "○"
+	case "inprogress":
+		return "◑"
+	case "complete":
+		return "◉"
+	default:
+		return ""
+	}
 }
 
 func formatStatusCounts(statuses map[string]int) string {
@@ -2997,6 +3291,8 @@ func normalizeHelpCommand(command string) string {
 		return "list"
 	case "cp":
 		return "clone"
+	case "rm":
+		return "delete"
 	default:
 		return command
 	}

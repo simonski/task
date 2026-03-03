@@ -114,6 +114,62 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	}
 }
 
+func TestCreateOrUpdateTaskEnforcesEpicParentRules(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+
+	taskParent, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Regular task",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(task) error = %v", err)
+	}
+	if _, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &taskParent.ID,
+		Type:      "epic",
+		Title:     "Invalid epic",
+		CreatedBy: 1,
+	}); err == nil || err.Error() != "epic parent must be an epic" {
+		t.Fatalf("CreateTask(epic with non-epic parent) error = %v, want epic parent must be an epic", err)
+	}
+
+	epicParent, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "epic",
+		Title:     "Valid epic",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(epic) error = %v", err)
+	}
+
+	taskChild, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &epicParent.ID,
+		Type:      "task",
+		Title:     "Task child",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(task child) error = %v", err)
+	}
+
+	_, err = UpdateTask(db, epicParent.ID, TaskUpdateParams{
+		Title:    "Valid epic",
+		ParentID: &taskChild.ID,
+	})
+	if err == nil || err.Error() != "epic parent must be an epic" {
+		t.Fatalf("UpdateTask(epic parented by task) error = %v, want epic parent must be an epic", err)
+	}
+}
+
 func TestRequestTask(t *testing.T) {
 	db := testDB(t)
 	project, err := CreateProject(db, "Customer Portal", "", "", 1)
@@ -361,6 +417,39 @@ func TestUpdateTaskStatusRequiresAssignee(t *testing.T) {
 	}
 }
 
+func TestUpdateTaskStatusAllowsAdminBypass(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	task, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Admin-bypass task",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	updated, err := UpdateTask(db, task.ID, TaskUpdateParams{
+		Title:         task.Title,
+		Description:   task.Description,
+		ParentID:      task.ParentID,
+		Assignee:      "",
+		Status:        "inprogress",
+		UpdatedBy:     1,
+		ActorUsername: "admin",
+		ActorRole:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask(admin status bypass) error = %v", err)
+	}
+	if updated.Status != "inprogress" {
+		t.Fatalf("UpdateTask(admin status bypass).Status = %q, want inprogress", updated.Status)
+	}
+}
+
 func TestClosedTaskCannotBeReopened(t *testing.T) {
 	db := testDB(t)
 	project, err := CreateProject(db, "Customer Portal", "", "", 1)
@@ -424,6 +513,105 @@ func TestCloneTaskClonesSingleTask(t *testing.T) {
 	}
 	if cloned.CloneOf == nil || *cloned.CloneOf != task.ID {
 		t.Fatalf("CloneTask().CloneOf = %#v, want %d", cloned.CloneOf, task.ID)
+	}
+}
+
+func TestDeleteTaskDeletesTaskAndRelatedRows(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	task, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Delete me",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+	clone, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		CloneOf:   &task.ID,
+		Type:      "task",
+		Title:     "Clone stays",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(clone) error = %v", err)
+	}
+	if _, err := AddComment(db, task.ID, 1, "hello"); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	if err := AddHistoryEvent(db, project.ID, task.ID, "task_updated", map[string]any{"title": task.Title}, 1); err != nil {
+		t.Fatalf("AddHistoryEvent() error = %v", err)
+	}
+	dependency, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Dependency",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(dependency) error = %v", err)
+	}
+	if _, err := AddDependency(db, project.ID, task.ID, dependency.ID, 1); err != nil {
+		t.Fatalf("AddDependency() error = %v", err)
+	}
+
+	if err := DeleteTask(db, task.ID); err != nil {
+		t.Fatalf("DeleteTask() error = %v", err)
+	}
+	if _, err := GetTask(db, task.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("GetTask(deleted) error = %v, want ErrTaskNotFound", err)
+	}
+
+	clonedTask, err := GetTask(db, clone.ID)
+	if err != nil {
+		t.Fatalf("GetTask(clone) error = %v", err)
+	}
+	if clonedTask.CloneOf != nil {
+		t.Fatalf("CloneOf = %#v, want nil after source delete", clonedTask.CloneOf)
+	}
+	if comments, err := ListComments(db, task.ID); err != nil || len(comments) != 0 {
+		t.Fatalf("ListComments(deleted) = %#v, %v", comments, err)
+	}
+	if history, err := ListHistoryEvents(db, task.ID); err != nil || len(history) != 0 {
+		t.Fatalf("ListHistoryEvents(deleted) = %#v, %v", history, err)
+	}
+	if deps, err := ListDependencies(db, task.ID); err != nil || len(deps) != 0 {
+		t.Fatalf("ListDependencies(deleted) = %#v, %v", deps, err)
+	}
+}
+
+func TestDeleteTaskFailsWhenTaskHasChildren(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	parent, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "epic",
+		Title:     "Parent",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(parent) error = %v", err)
+	}
+	if _, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &parent.ID,
+		Type:      "task",
+		Title:     "Child",
+		CreatedBy: 1,
+	}); err != nil {
+		t.Fatalf("CreateTask(child) error = %v", err)
+	}
+
+	if err := DeleteTask(db, parent.ID); !errors.Is(err, ErrTaskHasChildren) {
+		t.Fatalf("DeleteTask(parent) error = %v, want ErrTaskHasChildren", err)
 	}
 }
 

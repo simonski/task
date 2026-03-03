@@ -1,14 +1,14 @@
 # Agent Instructions
 
-This project uses **task** for issue tracking. Run `task onboard` to get started.
+This project uses **ticket** for issue tracking. Run `ticket onboard` to get started.
 
 ## Quick Reference
 
 ```bash
-task ready              # Find available work
-task get <id>           # View issue details
-task update <id> --status in_progress  # Claim work
-task close <id>         # Complete work
+ticket ready              # Find available work
+ticket get <id>           # View issue details
+ticket update <id> --status in_progress  # Claim work
+ticket close <id>         # Complete work
 ```
 
 ## Landing the Plane (Session Completion)

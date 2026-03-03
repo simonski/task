@@ -1,4 +1,4 @@
-package libtask
+package libticket
 
 import (
 	"database/sql"
@@ -7,8 +7,8 @@ import (
 	osuser "os/user"
 	"strings"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
 )
 
 type LocalService struct {
@@ -37,15 +37,15 @@ func (s *LocalService) Status() (StatusResponse, error) {
 }
 
 func (s *LocalService) Register(username, password string) (store.User, error) {
-	return store.User{}, errors.New("task register requires TASK_MODE=remote")
+	return store.User{}, errors.New("ticket register requires TICKET_MODE=remote")
 }
 
 func (s *LocalService) Login(username, password string) (store.User, string, error) {
-	return store.User{}, "", errors.New("task login requires TASK_MODE=remote")
+	return store.User{}, "", errors.New("ticket login requires TICKET_MODE=remote")
 }
 
 func (s *LocalService) Logout() error {
-	return errors.New("task logout requires TASK_MODE=remote")
+	return errors.New("ticket logout requires TICKET_MODE=remote")
 }
 
 func (s *LocalService) Count(projectID *int64) (CountSummary, error) {
@@ -211,8 +211,18 @@ func (s *LocalService) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, 
 		EstimateComplete:   req.EstimateComplete,
 		UpdatedBy:          user.ID,
 		ActorUsername:      user.Username,
-		ActorRole:          user.Role,
+		// Local mode bypasses server-side ownership restrictions.
+		ActorRole: "admin",
 	})
+}
+
+func (s *LocalService) DeleteTask(id int64) error {
+	db, err := s.openDB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return store.DeleteTask(db, id)
 }
 
 func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {

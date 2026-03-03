@@ -1,4 +1,4 @@
-module github.com/simonski/task
+module github.com/simonski/ticket
 
 go 1.26.0
 

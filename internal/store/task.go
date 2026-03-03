@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-var ErrTaskNotFound = errors.New("task not found")
+var (
+	ErrTaskNotFound    = errors.New("task not found")
+	ErrTaskHasChildren = errors.New("task has child tasks")
+)
 
 type Task struct {
 	ID                 int64     `json:"task_id"`
@@ -101,6 +104,18 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	if !validTaskType(params.Type) {
 		return Task{}, fmt.Errorf("invalid task type %q", params.Type)
 	}
+	if params.ParentID != nil {
+		parent, err := GetTask(db, *params.ParentID)
+		if err != nil {
+			return Task{}, err
+		}
+		if parent.Type == "task" && params.Type == "epic" {
+			return Task{}, errors.New("epic parent must be an epic")
+		}
+		if parent.ProjectID != params.ProjectID {
+			return Task{}, errors.New("parent task must be in the same project")
+		}
+	}
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
 		return Task{}, err
 	}
@@ -150,6 +165,21 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
+	if params.ParentID != nil {
+		parent, err := GetTask(db, *params.ParentID)
+		if err != nil {
+			return Task{}, err
+		}
+		if parent.ID == current.ID {
+			return Task{}, errors.New("cannot set task as its own parent")
+		}
+		if parent.ProjectID != current.ProjectID {
+			return Task{}, errors.New("parent task must be in the same project")
+		}
+		if current.Type == "epic" && parent.Type != "epic" {
+			return Task{}, errors.New("epic parent must be an epic")
+		}
+	}
 	assignee := strings.TrimSpace(params.Assignee)
 	if err := validateTaskAssignmentChange(current.Assignee, assignee, params.ActorUsername, params.ActorRole); err != nil {
 		return Task{}, err
@@ -174,7 +204,7 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 			return Task{}, fmt.Errorf("invalid status %q", params.Status)
 		}
 		if status != current.Status {
-			if strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
+			if params.ActorRole != "admin" && strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
 				return Task{}, ErrForbidden
 			}
 			if isClosedStatus(current.Status) {
@@ -641,4 +671,52 @@ func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy in
 		}
 	}
 	return cloned, nil
+}
+
+func DeleteTask(db *sql.DB, id int64) error {
+	task, err := GetTask(db, id)
+	if err != nil {
+		return err
+	}
+
+	children, err := ListTasks(db, TaskListParams{ProjectID: task.ProjectID})
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		if child.ParentID != nil && *child.ParentID == id {
+			return ErrTaskHasChildren
+		}
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`UPDATE tasks SET clone_of = NULL WHERE clone_of = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM dependencies WHERE task_id = ? OR depends_on = ?`, id, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM comments WHERE item_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM history_events WHERE task_id = ?`, id); err != nil {
+		return err
+	}
+	result, err := tx.Exec(`DELETE FROM tasks WHERE task_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrTaskNotFound
+	}
+	return tx.Commit()
 }

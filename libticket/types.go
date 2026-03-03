@@ -1,6 +1,6 @@
-package libtask
+package libticket
 
-import "github.com/simonski/task/internal/store"
+import "github.com/simonski/ticket/internal/store"
 
 type StatusResponse struct {
 	Status        string      `json:"status"`

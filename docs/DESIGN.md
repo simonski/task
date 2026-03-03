@@ -2,9 +2,9 @@
 
 ## Product Summary
 
-`task` is a lightweight ticket and project management system delivered as a single Go binary.
+`ticket` is a lightweight ticket and project management system delivered as a single Go binary.
 
-It is designed for small teams that want low-friction task tracking without separate infrastructure for the API, database, and web UI. The product combines a server, a terminal-first CLI, and an embedded web application around one shared data model.
+It is designed for small teams that want low-friction ticket tracking without separate infrastructure for the API, database, and web UI. The product combines a server, a terminal-first CLI, and an embedded web application around one shared data model.
 
 The system has three interfaces:
 
@@ -12,16 +12,16 @@ The system has three interfaces:
 2. A CLI for fast, explicit terminal workflows.
 3. An embedded web application for browsing, editing, and status management.
 
-The repository also contains a static `VERSION` file. `make build` increments the patch version before compiling the binary and copies that value into the embedded build asset used by `task version`.
+The repository also contains a static `VERSION` file. `make build` increments the patch version before compiling the binary and copies that value into the embedded build asset used by `ticket version`.
 
-Client-side files are stored under `$TASK_HOME`, which defaults to `~/.config/task`.
+Client-side files are stored under `$TICKET_HOME`, which defaults to `~/.config/ticket`.
 
 ## Product Principles
 
 1. The server defines the single system of record and the shared data model used by both remote and local workflows.
 2. The CLI and web app use the same API semantics and data model.
 3. Common operations should be fast and predictable from the terminal.
-4. Projects should support lightweight hierarchy through epics and child tasks.
+4. Projects should support lightweight hierarchy through epics and child tickets.
 5. Every meaningful change should be traceable through history and comments.
 
 ## Primary Users And Workflows
@@ -106,7 +106,7 @@ Supported `type` values in the first release:
 Model notes:
 
 - `parent_id` is nullable and supports hierarchical work
-- tasks are orphaned when `parent_id` is null
+- tickets are orphaned when `parent_id` is null
 - task creation accepts either a positional title or `-title`
 - `acceptance_criteria` is captured directly on the task record
 - `estimate_effort` is an integer assessment of task effort
@@ -115,8 +115,8 @@ Model notes:
 
 CLI creation defaults:
 
-- `task add`, `task create`, and `task new` are the same command
-- `task list` and `task ls` are the same command
+- `ticket add`, `ticket create`, and `ticket new` are the same command
+- `ticket list` and `ticket ls` are the same command
 - if `-type` / `-t` is omitted, the type defaults to `task`
 - if `-priority` / `-p` is omitted, the priority defaults to `1`
 - if `-assignee` / `-a` is omitted, the assignee is blank
@@ -154,9 +154,9 @@ Typical history events:
 
 The product must support local initialization of a SQLite database from the CLI.
 
-The bootstrap command is `task initdb`.
+The bootstrap command is `ticket initdb`.
 
-`task initdb` must:
+`ticket initdb` must:
 
 1. create the schema in a new SQLite database
 2. create an `admin` account
@@ -165,13 +165,13 @@ The bootstrap command is `task initdb`.
 Representative flow:
 
 ```bash
-task initdb -f task.db --force -password secret
+ticket initdb -f ticket.db --force -password secret
 ```
 
 Bootstrap defaults:
 
 - admin username is always `admin`
-- if `-f` is omitted, the SQLite database is created at `$TASK_HOME/task.db`
+- if `-f` is omitted, the SQLite database is created at `$TICKET_HOME/ticket.db`
 - admin password comes from `-password` when supplied
 - if `-password` is omitted, the CLI generates a random password and prints it to stdout
 - if `--force` is supplied, any existing SQLite database file is overwritten
@@ -192,9 +192,9 @@ Responsibilities:
 
 The default local server should listen on `http://localhost:8080`.
 
-If `task server` is run without `-f`, it must open the SQLite database at `$TASK_HOME/task.db`.
+If `ticket server` is run without `-f`, it must open the SQLite database at `$TICKET_HOME/ticket.db`.
 
-If `task server` is run with `-v`, it must print verbose request and response details to stdout.
+If `ticket server` is run with `-v`, it must print verbose request and response details to stdout.
 
 ### Authentication And User Management
 
@@ -211,28 +211,28 @@ The first release must support:
 Representative commands:
 
 ```bash
-task onboard
-task version
-task user create --username alice --password secret
-task user ls
-task user delete --username alice
-task user enable --username alice
-task user disable --username alice
+ticket onboard
+ticket version
+ticket user create --username alice --password secret
+ticket user ls
+ticket user delete --username alice
+ticket user enable --username alice
+ticket user disable --username alice
 
-task register
-task login
-task status
-task logout
+ticket register
+ticket login
+ticket status
+ticket logout
 ```
 
-`task onboard` must append the embedded `cmd/task/AGENTS.md` template into `${CWD}/AGENTS.md`, creating that file if it does not exist.
+`ticket onboard` must append the embedded `cmd/ticket/AGENTS.md` template into `${CWD}/AGENTS.md`, creating that file if it does not exist.
 
-`task status` must always print the current effective configuration first, then perform a mode-appropriate connectivity check.
+`ticket status` must always print the current effective configuration first, then perform a mode-appropriate connectivity check.
 
 In REMOTE mode it must print at least:
 
 - `mode: remote`
-- `server: <TASK_SERVER>`
+- `server: <TICKET_SERVER>`
 - `username: <configured username or blank>`
 - `authenticated: true|false`
 
@@ -264,47 +264,47 @@ The LOCAL result must then print:
 - `connection: success` in green if the database can be opened and the schema is valid
 - `connection: failure` in red if the database is missing, cannot be opened, or the schema is invalid
 
-If the database does not exist in LOCAL mode, `task status` must also print:
+If the database does not exist in LOCAL mode, `ticket status` must also print:
 
-- `hint: run task initdb`
+- `hint: run ticket initdb`
 
 If `-nocolor` is set, the same output must be printed without ANSI colors.
 
-`task count` must query the server and print aggregate counts for users and work item types. Without a project filter it must also print the project count. With `-project_id <id>` it must scope work item counts to that project.
+`ticket count` must query the server and print aggregate counts for users and work item types. Without a project filter it must also print the project count. With `-project_id <id>` it must scope work item counts to that project.
 
-The CLI must resolve credentials from `-username` and `-password` first, then `TASK_USERNAME` and `TASK_PASSWORD`, and finally default to OS `whoami` and `password`.
+The CLI must resolve credentials from `-username` and `-password` first, then `TICKET_USERNAME` and `TICKET_PASSWORD`, and finally default to OS `whoami` and `password`.
 
-The CLI must resolve the server URL from `-url` first, then `TASK_SERVER`, then saved config, and finally default to `http://localhost:8080`.
+The CLI must resolve the server URL from `-url` first, then `TICKET_SERVER`, then saved config, and finally default to `http://localhost:8080`.
 
-The CLI must expose `task version`, which prints the semantic version embedded into the binary at build time.
+The CLI must expose `ticket version`, which prints the semantic version embedded into the binary at build time.
 
-`task initdb` is separate from the login and registration flows: it only creates `admin`, does not consume `TASK_USERNAME`, and does not read `TASK_PASSWORD`.
+`ticket initdb` is separate from the login and registration flows: it only creates `admin`, does not consume `TICKET_USERNAME`, and does not read `TICKET_PASSWORD`.
 
 Admin-only user-management requests must be rejected by the server when the caller is authenticated but not an admin. Those requests must return HTTP 403 with an error explaining that the user is not an admin.
 
-When `task` is run without arguments, the CLI should print a colored ASCII-art `TASK` banner above the main usage text.
+When `ticket` is run without arguments, the CLI should print a colored ASCII-art `TICKET` banner above the main usage text.
 
-When `task server` starts, it should print the same colored ASCII-art `TASK` banner before the startup message.
+When `ticket server` starts, it should print the same colored ASCII-art `TICKET` banner before the startup message.
 
-Below that banner, `task server` must print the embedded version and the resolved task database path.
+Below that banner, `ticket server` must print the embedded version and the resolved task database path.
 
-The CLI stores non-sensitive client defaults in `$TASK_HOME/config.json` and session credentials in `$TASK_HOME/credentials.json`.
+The CLI stores non-sensitive client defaults in `$TICKET_HOME/config.json` and session credentials in `$TICKET_HOME/credentials.json`.
 
-`task login` must:
+`ticket login` must:
 
-1. check `$TASK_HOME/credentials.json` first and reuse that session if it is still valid
-2. check the `username` in `$TASK_HOME/config.json`
-3. check `-username` and `-password`, then `TASK_USERNAME` and `TASK_PASSWORD`
+1. check `$TICKET_HOME/credentials.json` first and reuse that session if it is still valid
+2. check the `username` in `$TICKET_HOME/config.json`
+3. check `-username` and `-password`, then `TICKET_USERNAME` and `TICKET_PASSWORD`
 4. prompt for any missing values
 5. when prompting, use the discovered values as editable defaults
 6. print `invalid credentials` on an invalid-login response before prompting for a retry
 7. when prompting for a password in an interactive terminal, echo `*` characters instead of the raw password
-8. on success, write the session token to `$TASK_HOME/credentials.json`
-9. on success, update the `username` and `server_url` keys in `$TASK_HOME/config.json`
+8. on success, write the session token to `$TICKET_HOME/credentials.json`
+9. on success, update the `username` and `server_url` keys in `$TICKET_HOME/config.json`
 
-`task register` must create the account but must not create or persist a logged-in session.
+`ticket register` must create the account but must not create or persist a logged-in session.
 
-`task logout` must remove `$TASK_HOME/credentials.json`.
+`ticket logout` must remove `$TICKET_HOME/credentials.json`.
 
 ### Project Management
 
@@ -318,22 +318,22 @@ Users must be able to:
 Representative commands:
 
 ```bash
-task project create -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
-task project list
-task project ls
-task project use 2
-task project get 2
-task project
-task project 2 update -title "Customer Portal"
-task project 2 update -description "Portal backlog"
-task project 2 update -ac "Launch criteria"
-task project 2 enable
-task project 2 disable
+ticket project create -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
+ticket project list
+ticket project ls
+ticket project use 2
+ticket project get 2
+ticket project
+ticket project 2 update -title "Customer Portal"
+ticket project 2 update -description "Portal backlog"
+ticket project 2 update -ac "Launch criteria"
+ticket project 2 enable
+ticket project 2 disable
 ```
 
-`task project list` should show at least the project id, title, and status, and indicate which project is current in the local CLI context.
+`ticket project list` should show at least the project id, title, and status, and indicate which project is current in the local CLI context.
 
-All `task <command> create` commands must return to STDOUT the newly created ID, if they succeed.
+All `ticket <command> create` commands must return to STDOUT the newly created ID, if they succeed.
 
 The selected project should be remembered locally by the CLI.
 
@@ -346,19 +346,19 @@ Users must be able to create tasks, bugs, and epics.
 Representative commands:
 
 ```bash
-task add "Customers can reset their password."
-task create "Customers can reset their password."
-task new "Customers can reset their password."
-task bug "Reset token fails after first use."
-task epic "Authentication"
-task create -t task -p 1 -a alice -d "Add audit event" "Add password reset audit event"
+ticket add "Customers can reset their password."
+ticket create "Customers can reset their password."
+ticket new "Customers can reset their password."
+ticket bug "Reset token fails after first use."
+ticket epic "Authentication"
+ticket create -t task -p 1 -a alice -d "Add audit event" "Add password reset audit event"
 ```
 
 Behavior notes:
 
-- `task add`, `task create`, and `task new` are aliases
-- `task list` and `task ls` are aliases
-- `task list -n <limit>` applies a server-side limit, with `0` meaning no limit
+- `ticket add`, `ticket create`, and `ticket new` are aliases
+- `ticket list` and `ticket ls` are aliases
+- `ticket list -n <limit>` applies a server-side limit, with `0` meaning no limit
 - task creation defaults are `type=task`, `priority=1`, blank assignee, blank description, blank parent, and current project
 - `-ac` stores acceptance criteria on the task
 - each item records project, creator, timestamps, status, and revision history
@@ -377,23 +377,23 @@ Users must be able to:
 Representative commands:
 
 ```bash
-task list
-task ls
-task list --type bug
-task list --status open
-task search "password reset"
-task search "password reset" -allprojects
-task get 42
-task orphans
+ticket list
+ticket ls
+ticket list --type bug
+ticket list --status open
+ticket search "password reset"
+ticket search "password reset" -allprojects
+ticket get 42
+ticket orphans
 ```
 
-`task search` should search the active project by default. If `-allprojects` is supplied, it should search across all projects.
+`ticket search` should search the active project by default. If `-allprojects` is supplied, it should search across all projects.
 
 The CLI should support `-json` on client-facing commands and pretty-print the response JSON.
 
-`task get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `CloneOf` when present, `ProjectID`, `Title`, `Assignee`, `Order`, `EstimateEffort`, `EstimateComplete`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Acceptance Criteria`, and a `Comments` section ordered most recent first.
+`ticket get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `CloneOf` when present, `ProjectID`, `Title`, `Assignee`, `Order`, `EstimateEffort`, `EstimateComplete`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Acceptance Criteria`, and a `Comments` section ordered most recent first.
 
-`task list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
+`ticket list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
 ### Workflow And Status Management
 
@@ -411,45 +411,49 @@ The CLI and web app must both support easy status changes.
 
 Assignment workflows must support:
 
-- `task assign <id> <name>` for admins
-- `task unassign <id> <name>` for admins
-- `task dependency add <id> <dependency-id[,dependency-id...]>`
-- `task dependency remove <id> <dependency-id[,dependency-id...]>`
-- `task request [<id>]` for the caller
-- `task claim <id>` for the caller
-- `task unclaim <id>` for the caller
-- `task set-parent <id> <parent-id>`
-- `task unset-parent <id>`
-- `task list -u <name>` / `task ls -u <name>` for assignee filtering
-- `task open <id>`
-- `task ready <id>` as an alias for `task open <id>`
-- `task inprogress <id>`
-- `task complete <id>`
-- `task fail <id>`
-- `task update <id> -status <status>`
-- `task update <id> -title <title>`
-- `task update <id> -description <description>`
-- `task update <id> -ac <acceptance-criteria>`
-- `task update <id> -priority <priority>`
-- `task update <id> -order <order>`
-- `task update <id> -parent_id <parent-id>`
-- `task update <id> -estimate_effort <effort>`
-- `task update <id> -estimate_complete <rfc3339-datetime>`
+- `ticket assign <id> <name>` for admins
+- `ticket unassign <id> <name>` for admins
+- `ticket dependency add <id> <dependency-id[,dependency-id...]>`
+- `ticket dependency remove <id> <dependency-id[,dependency-id...]>`
+- `ticket request [<id>]` for the caller
+- `ticket claim <id>` for the caller
+- `ticket unclaim <id>` for the caller
+- `ticket set-parent <id> <parent-id>`
+- `ticket unset-parent <id>`
+- `ticket rm <id>`
+- `ticket delete <id>`
+- `ticket list -u <name>` / `ticket ls -u <name>` for assignee filtering
+- `ticket open <id>`
+- `ticket ready <id>` as an alias for `ticket open <id>`
+- `ticket inprogress <id>`
+- `ticket complete <id>`
+- `ticket fail <id>`
+- `ticket update <id> -status <status>`
+- `ticket update <id> -title <title>`
+- `ticket update <id> -description <description>`
+- `ticket update <id> -ac <acceptance-criteria>`
+- `ticket update <id> -priority <priority>`
+- `ticket update <id> -order <order>`
+- `ticket update <id> -parent_id <parent-id>`
+- `ticket update <id> -estimate_effort <effort>`
+- `ticket update <id> -estimate_complete <rfc3339-datetime>`
 
 Assignment rules:
 
 - the server must reject admin-only assignment calls made by non-admin users
-- `task assign` and `task unassign` must fail if the named target user does not exist
-- `task assign` and `task unassign` must fail if the named target user is disabled
-- `task request <id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
-- `task request` must return `{"status":"NO-WORK"}` when no assignable work exists
+- `ticket assign` and `ticket unassign` must fail if the named target user does not exist
+- `ticket assign` and `ticket unassign` must fail if the named target user is disabled
+- `ticket request <id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
+- `ticket request` must return `{"status":"NO-WORK"}` when no assignable work exists
 - successful request responses must return `{"status":"ASSIGNED","task":...}`
 - if the caller already has an assigned `inprogress` task, that task is returned
 - otherwise, if the caller has assigned `open` work, the oldest assigned `open` task is returned
-- otherwise, `task request` assigns the oldest unassigned `open` task in the active project
-- `task claim` must fail if the task is already assigned to another user
-- `task unclaim` must fail if the caller is not the current assignee
+- otherwise, `ticket request` assigns the oldest unassigned `open` task in the active project
+- `ticket claim` must fail if the task is already assigned to another user
+- `ticket unclaim` must fail if the caller is not the current assignee
 - a non-admin user must not be able to override another user assignment through the generic task update API
+- `ticket rm` / `ticket delete` must remove a task permanently
+- `ticket rm` / `ticket delete` must fail if the task still has child tasks
 
 ### Hierarchy
 
@@ -470,14 +474,14 @@ The first release must include:
 
 1. append-only history events for important changes
 2. comments attached to items
-3. `task history <id>` in the CLI for event output
+3. `ticket history <id>` in the CLI for event output
 4. item detail pages in the web app that surface history and comments
 
 Representative commands:
 
 ```bash
-task history 17
-task comment add 17 "Waiting on API changes."
+ticket history 17
+ticket comment add 17 "Waiting on API changes."
 ```
 
 ## CLI Design
@@ -494,16 +498,16 @@ Requirements:
 Representative command set:
 
 ```bash
-task project create "Customer Portal"
-task project use 2
+ticket project create "Customer Portal"
+ticket project use 2
 
-task epic "Authentication"
-task add "Customers can reset their password."
-task bug "Reset token expires immediately."
-task list
-task get 42
-task search "password reset"
-task history 42
+ticket epic "Authentication"
+ticket add "Customers can reset their password."
+ticket bug "Reset token expires immediately."
+ticket list
+ticket get 42
+ticket search "password reset"
+ticket history 42
 ```
 
 The CLI should support only the aliases that are part of the documented command surface.
@@ -607,33 +611,33 @@ The status of a task is either
     fail
 
 This is set using 
-    `task open N`
-    `task ready N`
-    `task inprogress N`
-    `task complete N`
-    `task fail N`
+    `ticket open N`
+    `ticket ready N`
+    `ticket inprogress N`
+    `ticket complete N`
+    `ticket fail N`
 or
-    `task update N -status <status>`
-    `task update N -title <title>`
-    `task update N -description <description>`
-    `task update N -ac <acceptance-criteria>`
-    `task update N -priority <priority>`
-    `task update N -order <order>`
-    `task update N -parent_id <parent-id>`
-    `task update N -estimate_effort <effort>`
-    `task update N -estimate_complete <rfc3339-datetime>`
+    `ticket update N -status <status>`
+    `ticket update N -title <title>`
+    `ticket update N -description <description>`
+    `ticket update N -ac <acceptance-criteria>`
+    `ticket update N -priority <priority>`
+    `ticket update N -order <order>`
+    `ticket update N -parent_id <parent-id>`
+    `ticket update N -estimate_effort <effort>`
+    `ticket update N -estimate_complete <rfc3339-datetime>`
 
-## Requesting Tasks
+## Requesting Tickets
 
 A user can makes a request to work on a specific task
 
-    `task request N`
+    `ticket request N`
 
 It is either assigned the task it requested, or it is rejected. If assigned, the task is updated to have this user name and the response is `{"status":"ASSIGNED","task":...}`. If not, the response is `{"status":"REJECTED"}`.
 
 Or a user may request ANY task
 
-    task request
+    ticket request
 
 It is either assigned a task, or no work is available. If assigned, the task is updated to have this user name and the response is `{"status":"ASSIGNED","task":...}`. If not, the response is `{"status":"NO-WORK"}`.
 

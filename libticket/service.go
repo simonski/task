@@ -1,6 +1,6 @@
-package libtask
+package libticket
 
-import "github.com/simonski/task/internal/store"
+import "github.com/simonski/ticket/internal/store"
 
 type Service interface {
 	Status() (StatusResponse, error)
@@ -21,6 +21,7 @@ type Service interface {
 	ListTasks(projectID int64) ([]store.Task, error)
 	ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error)
 	UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
+	DeleteTask(id int64) error
 	SetTaskParent(id, parentID int64) (store.Task, error)
 	UnsetTaskParent(id int64) (store.Task, error)
 	GetTask(id int64) (store.Task, error)

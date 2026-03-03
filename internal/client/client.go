@@ -13,8 +13,8 @@ import (
 	osuser "os/user"
 	"strings"
 
-	"github.com/simonski/task/internal/config"
-	"github.com/simonski/task/internal/store"
+	"github.com/simonski/ticket/internal/config"
+	"github.com/simonski/ticket/internal/store"
 )
 
 type Client struct {
@@ -112,7 +112,7 @@ func New(cfg config.Config) *Client {
 
 func (c *Client) Register(username, password string) (store.User, error) {
 	if c.mode == config.ModeLocal {
-		return store.User{}, errors.New("task register requires TASK_MODE=remote")
+		return store.User{}, errors.New("ticket register requires TICKET_MODE=remote")
 	}
 	var user store.User
 	err := c.doJSON(http.MethodPost, "/api/register", map[string]string{
@@ -124,7 +124,7 @@ func (c *Client) Register(username, password string) (store.User, error) {
 
 func (c *Client) Login(username, password string) (AuthResponse, error) {
 	if c.mode == config.ModeLocal {
-		return AuthResponse{}, errors.New("task login requires TASK_MODE=remote")
+		return AuthResponse{}, errors.New("ticket login requires TICKET_MODE=remote")
 	}
 	var response AuthResponse
 	err := c.doJSON(http.MethodPost, "/api/login", map[string]string{
@@ -136,7 +136,7 @@ func (c *Client) Login(username, password string) (AuthResponse, error) {
 
 func (c *Client) Logout() error {
 	if c.mode == config.ModeLocal {
-		return errors.New("task logout requires TASK_MODE=remote")
+		return errors.New("ticket logout requires TICKET_MODE=remote")
 	}
 	return c.doJSON(http.MethodPost, "/api/logout", nil, nil)
 }
@@ -424,12 +424,25 @@ func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
 			EstimateComplete:   req.EstimateComplete,
 			UpdatedBy:          user.ID,
 			ActorUsername:      user.Username,
-			ActorRole:          user.Role,
+			// Local mode bypasses server-side ownership restrictions.
+			ActorRole: "admin",
 		})
 	}
 	var task store.Task
 	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tasks/%d", id), req, &task)
 	return task, err
+}
+
+func (c *Client) DeleteTask(id int64) error {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return store.DeleteTask(db, id)
+	}
+	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/tasks/%d", id), nil, nil)
 }
 
 func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {

@@ -37,9 +37,9 @@ Ensure the acceptance critera contains
     - work in a branch that contains the EPIC and TASK name for example feature/<epic>-<task>
 
 ------------------------------------------------------------------
-4. Write/rewrite a parser go program that translates a requirements.md into `task` commands (but do not call `task`). 
+4. Write/rewrite a parser go program that translates a requirements.md into `ticket` commands (but do not call `ticket`). 
 
-It should just be a single go file runnable as "parser -f REQUIREMENTS.md" which writes to stdout all the `task` commands with double- newlines between them.   It should read the whole requirements, validate they are correct and have referntial integrity where they refer to other EPICS or STORIES, call out the error-line if there is one, exit 1 if there is a problem, or just print the commands and exit 0.
+It should just be a single go file runnable as "parser -f REQUIREMENTS.md" which writes to stdout all the `ticket` commands with double- newlines between them.   It should read the whole requirements, validate they are correct and have referntial integrity where they refer to other EPICS or STORIES, call out the error-line if there is one, exit 1 if there is a problem, or just print the commands and exit 0.
 
 Each entry acceptance criteria should include a reference to look at RULES.md, DESIGN.md, USER_GUIDE.md as additional context.
 
@@ -52,7 +52,7 @@ Put this in tools/parser.go and update e the Makefile to have a `make tools` whi
 
 `-json` in client calls will pretty-print JSON as the response.
 
-`task create|new|add I am a new task` should create a new task called "I am a new task"
+`ticket create|new|add I am a new task` should create a new task called "I am a new task"
 Note: new,create,add are the same
 Note: list,ls are the same
 Note: rm,delete,del are the same
@@ -67,42 +67,42 @@ If -d[escription] is unspecified, leave blank
 If -parent is unspecifed, leave blank
 If -project is unspecifed, use the current project
 
-`task get <id>` should pretty print the entity by major headings.
+`ticket get <id>` should pretty print the entity by major headings.
 
 An entity is deemed `orphaned` if it does not have a parent_id.  Orphans can be found with
 
-`task orphans`
+`ticket orphans`
 
 If a task is created, print to stdout the task id
 If any client command fails, exit 1
 If any client command succeeds, exit 0
 
-`task count` should print the total number of everything by type
+`ticket count` should print the total number of everything by type
     users
     tasks 123 (50 completed, 75 in progress, 110)
     epics 10 (5 completed)
     projects (5)
 
-`task count -project_id` should print the total number of everything by type for a given project
+`ticket count -project_id` should print the total number of everything by type for a given project
     users
     tasks 123 (50 completed, 75 in progress, 110)
     epics 10 (5 completed)
 
-`task status` should print the effective configuration first, then perform the documented remote/local connectivity check.
+`ticket status` should print the effective configuration first, then perform the documented remote/local connectivity check.
 
-`task assign <id> <name>` is an admin only command that assigns a task ID to a user
-`task unassign <id> <name>` is an admin only command that un-assigns a task ID to a user
+`ticket assign <id> <name>` is an admin only command that assigns a task ID to a user
+`ticket unassign <id> <name>` is an admin only command that un-assigns a task ID to a user
 
-`task claim <id>` assigns the caller to the task.  If another user is assigned, fail.  A user cannot override an assignment.
-`task unclaim <id>` un-assigns the caller to the task.  If the user is not assigned, fail.   A user cannot override an asssigment.
+`ticket claim <id>` assigns the caller to the task.  If another user is assigned, fail.  A user cannot override an assignment.
+`ticket unclaim <id>` un-assigns the caller to the task.  If the user is not assigned, fail.   A user cannot override an asssigment.
 
-`task ls,list -u[ser] <name>` lists all tasks assigned to the user
+`ticket ls,list -u[ser] <name>` lists all tasks assigned to the user
 
-`task server` : below the "rainbow" task in the USAGE print the VERSION
-`task server` : below the VERSION print the taskdb location.
+`ticket server` : below the "rainbow" task in the USAGE print the VERSION
+`ticket server` : below the VERSION print the taskdb location.
 
 
-task list 
+ticket list 
     should be much nicer - print in a table perhaps?
     should incldue the assignee
     -n should limit number of responses on the server side (default 0 meaning all)
@@ -121,7 +121,7 @@ A task can be closed/archived/deleted to remove it from visibility
 
 If a task has children, it cannot be complete unlesss all children are complete.
 
-task state change commands
+ticket state change commands
     task open 1             - moves state to open
     task close 1            - moves status to closed
     task ready 1            - moves ready state to true
@@ -133,7 +133,7 @@ task state change commands
     task inprogress 1        - moves state to inprogress
     task complete 1          - moves state to complete
 
-`task onboard` should append an `${CWD}/AGENTS.md` file which is embeddedin the go code under cmd/task/AGENTS.md
+`ticket onboard` should append an `${CWD}/AGENTS.md` file which is embeddedin the go code under cmd/ticket/AGENTS.md
 
 group the CLI usage by admin commands and client commands
 order the CLI commands alphabetically in their section
@@ -143,7 +143,7 @@ Update the code, DESIGN and USER_GUIDE for the above.
 
 
 
-`task get N` should return in format
+`ticket get N` should return in format
 ID           :
 ParentID     :
 ProjectID    :
@@ -160,20 +160,20 @@ LastModified :
 Closed       :
 Acceptance Criteria :
 
-`task history N` should print the history.
+`ticket history N` should print the history.
 
 
 Create the `add-dependency` `remove-dependency` commands.
 
 If a task 4 depends on 3 other tasks (1, 2, 3) completing 
 
-task dependency add 4 1,2,3
+ticket dependency add 4 1,2,3
 
 Now 4 depends-on 1,2,3.
 
 LEt's task 4 does not depend on task 2
 
-task dependency remove 4 2
+ticket dependency remove 4 2
 
 note, the comma-separated ability for the tasks.
 
@@ -185,27 +185,27 @@ Update the code, DESIGN and USER_GUIDE for the above.
 remove slug from projects everywhere, cli, model, database.   
 
 to add acceptance criteria
-task project N update -ac "the acceptance criteria"
+ticket project N update -ac "the acceptance criteria"
 
 to update title or description
-task project N update -title "the new title"
-task project N update -description "the new description"
+ticket project N update -title "the new title"
+ticket project N update -description "the new description"
 
 to add acceptance criteria
-task project N update -ac "the acceptance criteria"
+ticket project N update -ac "the acceptance criteria"
 
 also make it an option when creating projects
 
 ## project status
-task project N enable
-task project N disable
+ticket project N enable
+ticket project N disable
 
 
 
 
-## New instruction req
+## New instruction ticket
 
-`task req -f file1,file2,file3 -o requirements.md` should read all files mentioned in -f and write to the -o filename the results of the prompt to an agent.  The agent should be prompted via a process invocation that receives the entire prompt.  
+`ticket ticket -f file1,file2,file3 -o requirements.md` should read all files mentioned in -f and write to the -o filename the results of the prompt to an agent.  The agent should be prompted via a process invocation that receives the entire prompt.  
 
 The invocation should be wired to print the STDOUT as well as to the file.
 
@@ -239,45 +239,45 @@ test and implement as server side checks
 
 - a closed ticket cannot be reopened
 
-- a ticket can be cloned/copied using `task cp,clone`.  Update the clone ticket to have a clone_of key/value.   A clone should be set to status=notready and unassisnged.
+- a ticket can be cloned/copied using `ticket cp,clone`.  Update the clone ticket to have a clone_of key/value.   A clone should be set to status=notready and unassisnged.
 
-- an epic can be cloned/copied using `task cp,clone`.  All sub-tickets are the cloned also.  
+- an epic can be cloned/copied using `ticket cp,clone`.  All sub-tickets are the cloned also.  
 
 ------------------------------------------------------------------
 
 MODE: REMOTE or LOCAL
 
-The task process can work in REMOTE (TASK_MODE=remote) or LOCAL (TASK_MODE=local).  This is set using 
+The ticket process can work in REMOTE (TICKET_MODE=remote) or LOCAL (TICKET_MODE=local).  This is set using 
 
 ```bash
 # either
-export TASK_MODE=local
+export TICKET_MODE=local
 # or
-export TASK_MODE=remote
+export TICKET_MODE=remote
 ```
 
-If unspecified TASK_MODE will default to local.
+If unspecified TICKET_MODE will default to local.
 
 REMOTE-mode
 
-Uses TASK_HOME for local files (~/.config/task/)
+Uses TICKET_HOME for local files (~/.config/ticket/)
 
-- Requires TASK_SERVER to be set to the address of the remote server.  If it is not present, fail.
+- Requires TICKET_SERVER to be set to the address of the remote server.  If it is not present, fail.
 - Requires a valid session token for all comms (except login/register)
-- `task login` will store the session token in $TASK_HOME/credentials.json
-- If the user supplied the username via the login prompt directly, the username will be stored in `$TASK_HOME/config.json` to be used on next login as the default.
+- `ticket login` will store the session token in $TICKET_HOME/credentials.json
+- If the user supplied the username via the login prompt directly, the username will be stored in `$TICKET_HOME/config.json` to be used on next login as the default.
 
-TASK_USERNAME/TASK_PASSWORD are only used in REMOTE mode when logging in; If present they are used to authenticate via login and then a session token is used after that.  If they are not present the user is prompted for their username/password.
+TICKET_USERNAME/TICKET_PASSWORD are only used in REMOTE mode when logging in; If present they are used to authenticate via login and then a session token is used after that.  If they are not present the user is prompted for their username/password.
 
 If a user is not authenticated
     - fail
-    - instruct user to run `task login`
+    - instruct user to run `ticket login`
     
-`task status` in remote mode:
+`ticket status` in remote mode:
     - prints the current effective configuration first
     - prints:
          mode: remote
-         server: <TASK_SERVER>
+         server: <TICKET_SERVER>
          username: <configured username or blank>
          authenticated: true|false
     - attempts a remote connection by calling the remote status endpoint
@@ -288,17 +288,17 @@ If a user is not authenticated
 
 LOCAL-mode
 
-In Local mode TASK_SERVER, TASK_USERNAME, TASK_PASSWORD are ignored.
+In Local mode TICKET_SERVER, TICKET_USERNAME, TICKET_PASSWORD are ignored.
 
 It will then select a database file using the following logic
 
     1. if -f <task_db_file> is specified in any command, chooose this
-    2. if TASK_HOME is specified, choose this and assume `$TASK_HOME/task.db`
-    3. fallback to a `$CWD/task.db` file
+    2. if TICKET_HOME is specified, choose this and assume `$TICKET_HOME/ticket.db`
+    3. fallback to a `$CWD/ticket.db` file
 
-TASK_USERNAME and TASK_PASSWORD are NOT used in local mode.  The username is $USERNAME of the computer.
+TICKET_USERNAME and TICKET_PASSWORD are NOT used in local mode.  The username is $USERNAME of the computer.
 
-`task status` in local mode:
+`ticket status` in local mode:
     - prints the current effective configuration first
     - prints:
          mode: local
@@ -310,7 +310,7 @@ TASK_USERNAME and TASK_PASSWORD are NOT used in local mode.  The username is $US
          connection: success   (green)
          connection: failure   (red)
     - if the database does not exist, print:
-         hint: run task initdb
+         hint: run ticket initdb
     - if `-nocolor` is set, print the same output without ANSI colors
 
 ------------------------------------------------------------------
@@ -321,22 +321,22 @@ Refactor the task code so that the CLI does not directly decide between store ca
 
 Create two libraries with the same task-domain service contract:
 
-`libtask`
+`libticket`
     - defines the service interface used by the CLI
     - provides the LOCAL implementation backed by SQLite/store
     - owns local-mode behavior, including DB path resolution and local user resolution
 
-`libtaskhttp`
+`libtickethttp`
     - provides the REMOTE implementation of the same service interface
     - talks to the HTTP API described by the OpenAPI spec
     - should not expose raw HTTP details to the CLI
 
 Dependency direction:
 
-    cmd/task      -> chooses libtask or libtaskhttp based on TASK_MODE
-    libtaskhttp   -> calls HTTP endpoints only
-    internal/server -> uses libtask service implementation internally
-    libtask       -> uses store/database
+    cmd/ticket      -> chooses libticket or libtickethttp based on TICKET_MODE
+    libtickethttp   -> calls HTTP endpoints only
+    internal/server -> uses libticket service implementation internally
+    libticket       -> uses store/database
 
 Do not define the interface around raw tables or CRUD helpers.  Define it around task-domain operations the CLI actually needs, for example:
 
@@ -353,16 +353,16 @@ Testing requirements:
 
     - Create a comprehensive contract test suite for the shared service interface.
     - Run the same red/green service tests against:
-         1. libtask (local SQLite-backed implementation)
-         2. libtaskhttp (HTTP-backed implementation)
-    - Keep transport-specific tests for HTTP request/response handling in libtaskhttp.
-    - Keep storage/schema edge-case tests in store/libtask.
+        1. libticket (local SQLite-backed implementation)
+        2. libtickethttp (HTTP-backed implementation)
+    - Keep transport-specific tests for HTTP request/response handling in libtickethttp.
+    - Keep storage/schema edge-case tests in store/libticket.
 
 Acceptance criteria:
 
     - CLI command handlers depend on the shared service interface, not on HTTP/store branching.
-    - LOCAL mode uses libtask.
-    - REMOTE mode uses libtaskhttp.
+    - LOCAL mode uses libticket.
+    - REMOTE mode uses libtickethttp.
     - Existing CLI behavior remains the same in both modes.
     - `go test ./...` passes with comprehensive coverage for both implementations.
 
@@ -371,17 +371,17 @@ Acceptance criteria:
 CONFIGURATION
 
 Configuration key/pairs can be set using a config file.  
-    - local `.task-config.toml` file 
-    - user-wide $TASK_HOME/task-config.toml
+    - local `.ticket-config.toml` file 
+    - user-wide $TICKET_HOME/ticket-config.toml
     
 Configuration can be set
 
-task config set key value -scope local,global
-task config rm key value -scope local,global
-task config ls,list [-scope local,global]
+ticket config set key value -scope local,global
+ticket config rm key value -scope local,global
+ticket config ls,list [-scope local,global]
 
-local = $CWD/task-config.json
-global = $TASK_HOME/task-config.json
+local = $CWD/ticket-config.json
+global = $TICKET_HOME/ticket-config.json
 
 Configuration keys
 
@@ -392,4 +392,68 @@ output.format=json,markdown (markdown)
 output.format=json,markdown (markdown)
 
 # the default CLI output mode if not specified (default)
-task.file=$TASK_HOME/task.db
+ticket.file=$TICKET_HOME/ticket.db
+
+----
+
+I want to think about remodelling how to use tickets in this system.
+Once we get to a solid design, I then want to refactor it all - documentation, CLI, tests, server, model, backend, database, to reflect this.
+
+Reason about the following and come back with your proposal.
+
+Overall goal: a ticket management system for software engineering.
+
+A ticket is a piece of work to be done.  It can be one of:
+    epic, task, bug.
+
+An epic can contain epics, tasks, bugs.  A task can have tasks and bugs.  
+
+"have" means it can be a parent_id of another ticket.
+
+A ticket is in a given "stage" to represent the high level "swimlane" of its progress.   
+    
+    design      - the ticket is being appraised and refined
+    develop     - the ticket has been design and is now being worked on
+    test        - the ticket outcome is verified and appraised
+    done        - the ticket is concluded as complete
+
+A ticket in a stage is then in a given "state"
+    it can be idle (being worked on) - must have assignee
+    it can be active (being worked on) - must have assignee
+    it can be complete (work completed)
+
+design: idle, active, complete
+develop: idle, active, complete
+test: idle, active, complete
+done: complete
+
+When a ticket moves to an active state, all parent tickets are marked as active.  
+
+The stage of an epic is set as the earliest stage of any descendant.
+
+An epic is active if any descendant is not active
+An epic is complete if ALL descendants are complete.
+
+Status of a ticket is the composite of stage/state = design/idle
+    
+So a ticket is moved between stages by setting the stage
+
+ticket create ...
+    stage is design
+    state is idle
+    return N (ticket id)
+
+ticket design N
+    state moves to idle
+ticket develop N
+    state moves to idle
+ticket test N
+    state moves to idle
+ticket done N
+    state moves to complete
+
+ticket idle N
+    state moves to idle
+ticket active N
+    state moves to active
+

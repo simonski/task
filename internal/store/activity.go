@@ -16,13 +16,13 @@ type HistoryEvent struct {
 }
 
 type Comment struct {
-	ID        int64  `json:"id"`
-	ItemID    int64  `json:"item_id"`
-	UserID    int64  `json:"user_id"`
+	ID        int64  `json:"-"`
+	ItemID    int64  `json:"-"`
+	UserID    int64  `json:"-"`
 	Author    string `json:"author"`
-	Comment   string `json:"comment"`
+	Comment   string `json:"-"`
 	Text      string `json:"text"`
-	CreatedAt string `json:"created_at"`
+	CreatedAt string `json:"date"`
 }
 
 func AddHistoryEvent(db *sql.DB, projectID, taskID int64, eventType string, payload any, createdBy int64) error {

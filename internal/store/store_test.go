@@ -8,7 +8,7 @@ import (
 )
 
 func TestInitCreatesDatabaseAndAdminUser(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 
 	if err := Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("Init() error = %v", err)
@@ -63,7 +63,7 @@ func TestInitCreatesDatabaseAndAdminUser(t *testing.T) {
 }
 
 func TestInitFailsIfDatabaseAlreadyExists(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "task.db")
+	dbPath := filepath.Join(t.TempDir(), "ticket.db")
 	if err := Init(dbPath, "admin", "password"); err != nil {
 		t.Fatalf("first Init() error = %v", err)
 	}
