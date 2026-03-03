@@ -481,8 +481,8 @@ func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/login":
-			var req map[string]string
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var loginPayload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&loginPayload); err != nil {
 				t.Fatalf("Decode(login) error = %v", err)
 			}
 			attempt := atomic.AddInt32(&loginAttempts, 1)
@@ -492,8 +492,8 @@ func TestLoginRetryStoresCredentialsSeparatelyAndLogoutRemovesThem(t *testing.T)
 				_, _ = w.Write([]byte(`{"error":"invalid credentials"}`))
 				return
 			}
-			if req["username"] != "alice" || req["password"] != "secret" {
-				t.Fatalf("retry login payload = %#v", req)
+			if loginPayload["username"] != "alice" || loginPayload["password"] != "secret" {
+				t.Fatalf("retry login payload = %#v", loginPayload)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"token":"session-token","user":{"username":"alice","role":"user"}}`))

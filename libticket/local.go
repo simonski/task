@@ -93,7 +93,7 @@ func (s *LocalService) DeleteUser(username string) error {
 	return store.DeleteUser(db, username)
 }
 
-func (s *LocalService) CreateProject(req ProjectCreateRequest) (store.Project, error) {
+func (s *LocalService) CreateProject(request ProjectCreateRequest) (store.Project, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return store.Project{}, err
@@ -103,7 +103,7 @@ func (s *LocalService) CreateProject(req ProjectCreateRequest) (store.Project, e
 	if err != nil {
 		return store.Project{}, err
 	}
-	return store.CreateProject(db, req.Title, req.Description, req.AcceptanceCriteria, user.ID)
+	return store.CreateProject(db, request.Title, request.Description, request.AcceptanceCriteria, user.ID)
 }
 
 func (s *LocalService) ListProjects() ([]store.Project, error) {
@@ -124,13 +124,13 @@ func (s *LocalService) GetProject(id string) (store.Project, error) {
 	return store.GetProject(db, id)
 }
 
-func (s *LocalService) UpdateProject(id int64, req ProjectUpdateRequest) (store.Project, error) {
+func (s *LocalService) UpdateProject(id int64, request ProjectUpdateRequest) (store.Project, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return store.Project{}, err
 	}
 	defer db.Close()
-	return store.UpdateProject(db, id, req.Title, req.Description, req.AcceptanceCriteria)
+	return store.UpdateProject(db, id, request.Title, request.Description, request.AcceptanceCriteria)
 }
 
 func (s *LocalService) SetProjectEnabled(id int64, enabled bool) (store.Project, error) {
@@ -142,7 +142,7 @@ func (s *LocalService) SetProjectEnabled(id int64, enabled bool) (store.Project,
 	return store.SetProjectStatus(db, id, enabled)
 }
 
-func (s *LocalService) CreateTask(req TaskCreateRequest) (store.Task, error) {
+func (s *LocalService) CreateTask(request TaskCreateRequest) (store.Task, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return store.Task{}, err
@@ -153,17 +153,17 @@ func (s *LocalService) CreateTask(req TaskCreateRequest) (store.Task, error) {
 		return store.Task{}, err
 	}
 	return store.CreateTask(db, store.TaskCreateParams{
-		ProjectID:          req.ProjectID,
-		ParentID:           req.ParentID,
-		CloneOf:            req.CloneOf,
-		Type:               req.Type,
-		Title:              req.Title,
-		Description:        req.Description,
-		AcceptanceCriteria: req.AcceptanceCriteria,
-		Priority:           req.Priority,
-		EstimateEffort:     req.EstimateEffort,
-		EstimateComplete:   req.EstimateComplete,
-		Assignee:           req.Assignee,
+		ProjectID:          request.ProjectID,
+		ParentID:           request.ParentID,
+		CloneOf:            request.CloneOf,
+		Type:               request.Type,
+		Title:              request.Title,
+		Description:        request.Description,
+		AcceptanceCriteria: request.AcceptanceCriteria,
+		Priority:           request.Priority,
+		EstimateEffort:     request.EstimateEffort,
+		EstimateComplete:   request.EstimateComplete,
+		Assignee:           request.Assignee,
 		CreatedBy:          user.ID,
 	})
 }
@@ -188,7 +188,7 @@ func (s *LocalService) ListTasksFiltered(projectID int64, taskType, status, sear
 	})
 }
 
-func (s *LocalService) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error) {
+func (s *LocalService) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return store.Task{}, err
@@ -199,16 +199,16 @@ func (s *LocalService) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, 
 		return store.Task{}, err
 	}
 	return store.UpdateTask(db, id, store.TaskUpdateParams{
-		Title:              req.Title,
-		Description:        req.Description,
-		AcceptanceCriteria: req.AcceptanceCriteria,
-		ParentID:           req.ParentID,
-		Assignee:           req.Assignee,
-		Status:             req.Status,
-		Priority:           req.Priority,
-		Order:              req.Order,
-		EstimateEffort:     req.EstimateEffort,
-		EstimateComplete:   req.EstimateComplete,
+		Title:              request.Title,
+		Description:        request.Description,
+		AcceptanceCriteria: request.AcceptanceCriteria,
+		ParentID:           request.ParentID,
+		Assignee:           request.Assignee,
+		Status:             request.Status,
+		Priority:           request.Priority,
+		Order:              request.Order,
+		EstimateEffort:     request.EstimateEffort,
+		EstimateComplete:   request.EstimateComplete,
 		UpdatedBy:          user.ID,
 		ActorUsername:      user.Username,
 		// Local mode bypasses server-side ownership restrictions.
@@ -316,7 +316,7 @@ func (s *LocalService) ListComments(id int64) ([]store.Comment, error) {
 	return store.ListComments(db, id)
 }
 
-func (s *LocalService) AddDependency(req DependencyRequest) (store.Dependency, error) {
+func (s *LocalService) AddDependency(request DependencyRequest) (store.Dependency, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return store.Dependency{}, err
@@ -326,16 +326,16 @@ func (s *LocalService) AddDependency(req DependencyRequest) (store.Dependency, e
 	if err != nil {
 		return store.Dependency{}, err
 	}
-	return store.AddDependency(db, req.ProjectID, req.TaskID, req.DependsOn, user.ID)
+	return store.AddDependency(db, request.ProjectID, request.TaskID, request.DependsOn, user.ID)
 }
 
-func (s *LocalService) RemoveDependency(req DependencyRequest) error {
+func (s *LocalService) RemoveDependency(request DependencyRequest) error {
 	db, err := s.openDB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	return store.DeleteDependency(db, req.ProjectID, req.TaskID, req.DependsOn)
+	return store.DeleteDependency(db, request.ProjectID, request.TaskID, request.DependsOn)
 }
 
 func (s *LocalService) ListDependencies(id int64) ([]store.Dependency, error) {
@@ -347,7 +347,7 @@ func (s *LocalService) ListDependencies(id int64) ([]store.Dependency, error) {
 	return store.ListDependencies(db, id)
 }
 
-func (s *LocalService) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
+func (s *LocalService) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return TaskRequestResponse{}, err
@@ -358,8 +358,8 @@ func (s *LocalService) RequestTask(req TaskRequest) (TaskRequestResponse, error)
 		return TaskRequestResponse{}, err
 	}
 	task, status, err := store.RequestTask(db, store.TaskRequestParams{
-		ProjectID: req.ProjectID,
-		TaskID:    req.TaskID,
+		ProjectID: request.ProjectID,
+		TaskID:    request.TaskID,
 		Username:  user.Username,
 		UserID:    user.ID,
 	})

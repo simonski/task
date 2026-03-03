@@ -292,17 +292,17 @@ func (c *Client) GetProject(id string) (store.Project, error) {
 	return project, err
 }
 
-func (c *Client) UpdateProject(id int64, req ProjectUpdateRequest) (store.Project, error) {
+func (c *Client) UpdateProject(id int64, request ProjectUpdateRequest) (store.Project, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
 			return store.Project{}, err
 		}
 		defer db.Close()
-		return store.UpdateProject(db, id, req.Title, req.Description, req.AcceptanceCriteria)
+		return store.UpdateProject(db, id, request.Title, request.Description, request.AcceptanceCriteria)
 	}
 	var project store.Project
-	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/projects/%d", id), req, &project)
+	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/projects/%d", id), request, &project)
 	return project, err
 }
 
@@ -324,7 +324,7 @@ func (c *Client) SetProjectEnabled(id int64, enabled bool) (store.Project, error
 	return project, err
 }
 
-func (c *Client) CreateTask(req TaskCreateRequest) (store.Task, error) {
+func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -336,22 +336,22 @@ func (c *Client) CreateTask(req TaskCreateRequest) (store.Task, error) {
 			return store.Task{}, err
 		}
 		return store.CreateTask(db, store.TaskCreateParams{
-			ProjectID:          req.ProjectID,
-			ParentID:           req.ParentID,
-			CloneOf:            req.CloneOf,
-			Type:               req.Type,
-			Title:              req.Title,
-			Description:        req.Description,
-			AcceptanceCriteria: req.AcceptanceCriteria,
-			Priority:           req.Priority,
-			EstimateEffort:     req.EstimateEffort,
-			EstimateComplete:   req.EstimateComplete,
-			Assignee:           req.Assignee,
+			ProjectID:          request.ProjectID,
+			ParentID:           request.ParentID,
+			CloneOf:            request.CloneOf,
+			Type:               request.Type,
+			Title:              request.Title,
+			Description:        request.Description,
+			AcceptanceCriteria: request.AcceptanceCriteria,
+			Priority:           request.Priority,
+			EstimateEffort:     request.EstimateEffort,
+			EstimateComplete:   request.EstimateComplete,
+			Assignee:           request.Assignee,
 			CreatedBy:          user.ID,
 		})
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodPost, "/api/tasks", req, &task)
+	err := c.doJSON(http.MethodPost, "/api/tasks", request, &task)
 	return task, err
 }
 
@@ -400,7 +400,7 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, as
 	return tasks, err
 }
 
-func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error) {
+func (c *Client) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -412,16 +412,16 @@ func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
 			return store.Task{}, err
 		}
 		return store.UpdateTask(db, id, store.TaskUpdateParams{
-			Title:              req.Title,
-			Description:        req.Description,
-			AcceptanceCriteria: req.AcceptanceCriteria,
-			ParentID:           req.ParentID,
-			Assignee:           req.Assignee,
-			Status:             req.Status,
-			Priority:           req.Priority,
-			Order:              req.Order,
-			EstimateEffort:     req.EstimateEffort,
-			EstimateComplete:   req.EstimateComplete,
+			Title:              request.Title,
+			Description:        request.Description,
+			AcceptanceCriteria: request.AcceptanceCriteria,
+			ParentID:           request.ParentID,
+			Assignee:           request.Assignee,
+			Status:             request.Status,
+			Priority:           request.Priority,
+			Order:              request.Order,
+			EstimateEffort:     request.EstimateEffort,
+			EstimateComplete:   request.EstimateComplete,
 			UpdatedBy:          user.ID,
 			ActorUsername:      user.Username,
 			// Local mode bypasses server-side ownership restrictions.
@@ -429,7 +429,7 @@ func (c *Client) UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
 		})
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tasks/%d", id), req, &task)
+	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tasks/%d", id), request, &task)
 	return task, err
 }
 
@@ -561,7 +561,7 @@ func (c *Client) ListComments(id int64) ([]store.Comment, error) {
 	return comments, err
 }
 
-func (c *Client) AddDependency(req DependencyRequest) (store.Dependency, error) {
+func (c *Client) AddDependency(request DependencyRequest) (store.Dependency, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -572,23 +572,23 @@ func (c *Client) AddDependency(req DependencyRequest) (store.Dependency, error) 
 		if err != nil {
 			return store.Dependency{}, err
 		}
-		return store.AddDependency(db, req.ProjectID, req.TaskID, req.DependsOn, user.ID)
+		return store.AddDependency(db, request.ProjectID, request.TaskID, request.DependsOn, user.ID)
 	}
 	var dependency store.Dependency
-	err := c.doJSON(http.MethodPost, "/api/dependencies", req, &dependency)
+	err := c.doJSON(http.MethodPost, "/api/dependencies", request, &dependency)
 	return dependency, err
 }
 
-func (c *Client) RemoveDependency(req DependencyRequest) error {
+func (c *Client) RemoveDependency(request DependencyRequest) error {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
 			return err
 		}
 		defer db.Close()
-		return store.DeleteDependency(db, req.ProjectID, req.TaskID, req.DependsOn)
+		return store.DeleteDependency(db, request.ProjectID, request.TaskID, request.DependsOn)
 	}
-	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/dependencies?project_id=%d&task_id=%d&depends_on=%d", req.ProjectID, req.TaskID, req.DependsOn), nil, nil)
+	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/dependencies?project_id=%d&task_id=%d&depends_on=%d", request.ProjectID, request.TaskID, request.DependsOn), nil, nil)
 }
 
 func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
@@ -605,7 +605,7 @@ func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
 	return dependencies, err
 }
 
-func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
+func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -617,8 +617,8 @@ func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
 			return TaskRequestResponse{}, err
 		}
 		task, status, err := store.RequestTask(db, store.TaskRequestParams{
-			ProjectID: req.ProjectID,
-			TaskID:    req.TaskID,
+			ProjectID: request.ProjectID,
+			TaskID:    request.TaskID,
 			Username:  user.Username,
 			UserID:    user.ID,
 		})
@@ -632,7 +632,7 @@ func (c *Client) RequestTask(req TaskRequest) (TaskRequestResponse, error) {
 		return response, nil
 	}
 	var reader *bytes.Reader
-	payload, err := json.Marshal(req)
+	payload, err := json.Marshal(request)
 	if err != nil {
 		return TaskRequestResponse{}, err
 	}
@@ -738,18 +738,18 @@ func (c *Client) doJSON(method, path string, body any, out any) error {
 		reader = bytes.NewReader(payload)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, reader)
+	httpRequest, err := http.NewRequest(method, c.baseURL+path, reader)
 	if err != nil {
 		return err
 	}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		httpRequest.Header.Set("Content-Type", "application/json")
 	}
 	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		httpRequest.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
-	resp, err := c.http.Do(req)
+	resp, err := c.http.Do(httpRequest)
 	if err != nil {
 		return err
 	}

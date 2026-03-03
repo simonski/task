@@ -31,12 +31,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		var req credentialsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var credentials credentialsRequest
+		if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		user, err := store.RegisterUser(db, req.Username, req.Password)
+		user, err := store.RegisterUser(db, credentials.Username, credentials.Password)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
@@ -49,12 +49,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		var req credentialsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var credentials credentialsRequest
+		if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		user, err := store.AuthenticateUser(db, req.Username, req.Password)
+		user, err := store.AuthenticateUser(db, credentials.Username, credentials.Password)
 		if err != nil {
 			switch {
 			case errors.Is(err, store.ErrInvalidCredentials):
@@ -157,12 +157,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeAuthError(w, err)
 				return
 			}
-			var req credentialsRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var credentials credentialsRequest
+			if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			user, err := store.CreateUser(db, req.Username, req.Password, "user")
+			user, err := store.CreateUser(db, credentials.Username, credentials.Password, "user")
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -247,12 +247,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeAuthError(w, err)
 				return
 			}
-			var req projectRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var projectPayload projectRequest
+			if err := json.NewDecoder(r.Body).Decode(&projectPayload); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			project, err := store.CreateProject(db, req.Title, req.Description, req.AcceptanceCriteria, user.ID)
+			project, err := store.CreateProject(db, projectPayload.Title, projectPayload.Description, projectPayload.AcceptanceCriteria, user.ID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -363,12 +363,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusNotFound, "project not found")
 				return
 			}
-			var req projectRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var projectPayload projectRequest
+			if err := json.NewDecoder(r.Body).Decode(&projectPayload); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			project, err := store.UpdateProject(db, id, req.Title, req.Description, req.AcceptanceCriteria)
+			project, err := store.UpdateProject(db, id, projectPayload.Title, projectPayload.Description, projectPayload.AcceptanceCriteria)
 			if err != nil {
 				if errors.Is(err, store.ErrProjectNotFound) {
 					writeError(w, http.StatusNotFound, err.Error())
@@ -393,23 +393,23 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeAuthError(w, err)
 			return
 		}
-		var req taskRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var taskPayload taskRequest
+		if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
 		task, err := store.CreateTask(db, store.TaskCreateParams{
-			ProjectID:          req.ProjectID,
-			ParentID:           req.ParentID,
-			Type:               req.Type,
-			Title:              req.Title,
-			Description:        req.Description,
-			AcceptanceCriteria: req.AcceptanceCriteria,
-			Priority:           req.Priority,
-			EstimateEffort:     req.EstimateEffort,
-			EstimateComplete:   req.EstimateComplete,
-			Assignee:           req.Assignee,
-			Status:             req.Status,
+			ProjectID:          taskPayload.ProjectID,
+			ParentID:           taskPayload.ParentID,
+			Type:               taskPayload.Type,
+			Title:              taskPayload.Title,
+			Description:        taskPayload.Description,
+			AcceptanceCriteria: taskPayload.AcceptanceCriteria,
+			Priority:           taskPayload.Priority,
+			EstimateEffort:     taskPayload.EstimateEffort,
+			EstimateComplete:   taskPayload.EstimateComplete,
+			Assignee:           taskPayload.Assignee,
+			Status:             taskPayload.Status,
 			CreatedBy:          user.ID,
 		})
 		if err != nil {
@@ -429,14 +429,14 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeAuthError(w, err)
 			return
 		}
-		var req taskAssignRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var assignmentRequest taskAssignRequest
+		if err := json.NewDecoder(r.Body).Decode(&assignmentRequest); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
 		task, status, err := store.RequestTask(db, store.TaskRequestParams{
-			ProjectID: req.ProjectID,
-			TaskID:    req.TaskID,
+			ProjectID: assignmentRequest.ProjectID,
+			TaskID:    assignmentRequest.TaskID,
 			Username:  user.Username,
 			UserID:    user.ID,
 		})
@@ -490,12 +490,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				}
 				writeJSON(w, http.StatusOK, comments)
 			case http.MethodPost:
-				var req commentRequest
-				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				var commentPayload commentRequest
+				if err := json.NewDecoder(r.Body).Decode(&commentPayload); err != nil {
 					writeError(w, http.StatusBadRequest, "invalid json body")
 					return
 				}
-				comment, err := store.AddComment(db, id, user.ID, req.Comment)
+				comment, err := store.AddComment(db, id, user.ID, commentPayload.Comment)
 				if err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
@@ -550,22 +550,22 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			}
 			writeJSON(w, http.StatusOK, task)
 		case http.MethodPut:
-			var req taskRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var taskPayload taskRequest
+			if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
 			task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
-				Title:              req.Title,
-				Description:        req.Description,
-				AcceptanceCriteria: req.AcceptanceCriteria,
-				ParentID:           req.ParentID,
-				Assignee:           req.Assignee,
-				Status:             req.Status,
-				Priority:           req.Priority,
-				Order:              req.Order,
-				EstimateEffort:     req.EstimateEffort,
-				EstimateComplete:   req.EstimateComplete,
+				Title:              taskPayload.Title,
+				Description:        taskPayload.Description,
+				AcceptanceCriteria: taskPayload.AcceptanceCriteria,
+				ParentID:           taskPayload.ParentID,
+				Assignee:           taskPayload.Assignee,
+				Status:             taskPayload.Status,
+				Priority:           taskPayload.Priority,
+				Order:              taskPayload.Order,
+				EstimateEffort:     taskPayload.EstimateEffort,
+				EstimateComplete:   taskPayload.EstimateComplete,
 				UpdatedBy:          user.ID,
 				ActorUsername:      user.Username,
 				ActorRole:          user.Role,
@@ -610,12 +610,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		}
 		switch r.Method {
 		case http.MethodPost:
-			var req dependencyRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var dependencyPayload dependencyRequest
+			if err := json.NewDecoder(r.Body).Decode(&dependencyPayload); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			dependency, err := store.AddDependency(db, req.ProjectID, req.TaskID, req.DependsOn, user.ID)
+			dependency, err := store.AddDependency(db, dependencyPayload.ProjectID, dependencyPayload.TaskID, dependencyPayload.DependsOn, user.ID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return

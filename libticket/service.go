@@ -12,15 +12,15 @@ type Service interface {
 	SetUserEnabled(username string, enabled bool) error
 	ListUsers() ([]store.User, error)
 	DeleteUser(username string) error
-	CreateProject(req ProjectCreateRequest) (store.Project, error)
+	CreateProject(request ProjectCreateRequest) (store.Project, error)
 	ListProjects() ([]store.Project, error)
 	GetProject(id string) (store.Project, error)
-	UpdateProject(id int64, req ProjectUpdateRequest) (store.Project, error)
+	UpdateProject(id int64, request ProjectUpdateRequest) (store.Project, error)
 	SetProjectEnabled(id int64, enabled bool) (store.Project, error)
-	CreateTask(req TaskCreateRequest) (store.Task, error)
+	CreateTask(request TaskCreateRequest) (store.Task, error)
 	ListTasks(projectID int64) ([]store.Task, error)
 	ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error)
-	UpdateTask(id int64, req TaskUpdateRequest) (store.Task, error)
+	UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error)
 	DeleteTask(id int64) error
 	SetTaskParent(id, parentID int64) (store.Task, error)
 	UnsetTaskParent(id int64) (store.Task, error)
@@ -29,8 +29,8 @@ type Service interface {
 	ListHistory(id int64) ([]store.HistoryEvent, error)
 	AddComment(id int64, comment string) (store.Comment, error)
 	ListComments(id int64) ([]store.Comment, error)
-	AddDependency(req DependencyRequest) (store.Dependency, error)
-	RemoveDependency(req DependencyRequest) error
+	AddDependency(request DependencyRequest) (store.Dependency, error)
+	RemoveDependency(request DependencyRequest) error
 	ListDependencies(id int64) ([]store.Dependency, error)
-	RequestTask(req TaskRequest) (TaskRequestResponse, error)
+	RequestTask(request TaskRequest) (TaskRequestResponse, error)
 }

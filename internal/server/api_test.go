@@ -870,28 +870,28 @@ func doJSONRequest(t *testing.T, handler http.Handler, method, path string, payl
 		}
 	}
 
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	request := httptest.NewRequest(method, path, bytes.NewReader(body))
 	if payload != nil {
-		req.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Content-Type", "application/json")
 	}
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+	handler.ServeHTTP(recorder, request)
 	return recorder
 }
 
 func doRawRequest(t *testing.T, handler http.Handler, method, path string, body []byte, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	request := httptest.NewRequest(method, path, bytes.NewReader(body))
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, req)
+	handler.ServeHTTP(recorder, request)
 	return recorder
 }
 

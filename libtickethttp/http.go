@@ -59,8 +59,8 @@ func (s *Service) DeleteUser(username string) error {
 	return s.client.DeleteUser(username)
 }
 
-func (s *Service) CreateProject(req libticket.ProjectCreateRequest) (store.Project, error) {
-	return s.client.CreateProject(req.Title, req.Description, req.AcceptanceCriteria)
+func (s *Service) CreateProject(request libticket.ProjectCreateRequest) (store.Project, error) {
+	return s.client.CreateProject(request.Title, request.Description, request.AcceptanceCriteria)
 }
 
 func (s *Service) ListProjects() ([]store.Project, error) {
@@ -71,16 +71,16 @@ func (s *Service) GetProject(id string) (store.Project, error) {
 	return s.client.GetProject(id)
 }
 
-func (s *Service) UpdateProject(id int64, req libticket.ProjectUpdateRequest) (store.Project, error) {
-	return s.client.UpdateProject(id, client.ProjectUpdateRequest(req))
+func (s *Service) UpdateProject(id int64, request libticket.ProjectUpdateRequest) (store.Project, error) {
+	return s.client.UpdateProject(id, client.ProjectUpdateRequest(request))
 }
 
 func (s *Service) SetProjectEnabled(id int64, enabled bool) (store.Project, error) {
 	return s.client.SetProjectEnabled(id, enabled)
 }
 
-func (s *Service) CreateTask(req libticket.TaskCreateRequest) (store.Task, error) {
-	return s.client.CreateTask(client.TaskCreateRequest(req))
+func (s *Service) CreateTask(request libticket.TaskCreateRequest) (store.Task, error) {
+	return s.client.CreateTask(client.TaskCreateRequest(request))
 }
 
 func (s *Service) ListTasks(projectID int64) ([]store.Task, error) {
@@ -91,8 +91,8 @@ func (s *Service) ListTasksFiltered(projectID int64, taskType, status, search, a
 	return s.client.ListTasksFiltered(projectID, taskType, status, search, assignee, limit)
 }
 
-func (s *Service) UpdateTask(id int64, req libticket.TaskUpdateRequest) (store.Task, error) {
-	return s.client.UpdateTask(id, client.TaskUpdateRequest(req))
+func (s *Service) UpdateTask(id int64, request libticket.TaskUpdateRequest) (store.Task, error) {
+	return s.client.UpdateTask(id, client.TaskUpdateRequest(request))
 }
 
 func (s *Service) DeleteTask(id int64) error {
@@ -127,20 +127,20 @@ func (s *Service) ListComments(id int64) ([]store.Comment, error) {
 	return s.client.ListComments(id)
 }
 
-func (s *Service) AddDependency(req libticket.DependencyRequest) (store.Dependency, error) {
-	return s.client.AddDependency(client.DependencyRequest(req))
+func (s *Service) AddDependency(request libticket.DependencyRequest) (store.Dependency, error) {
+	return s.client.AddDependency(client.DependencyRequest(request))
 }
 
-func (s *Service) RemoveDependency(req libticket.DependencyRequest) error {
-	return s.client.RemoveDependency(client.DependencyRequest(req))
+func (s *Service) RemoveDependency(request libticket.DependencyRequest) error {
+	return s.client.RemoveDependency(client.DependencyRequest(request))
 }
 
 func (s *Service) ListDependencies(id int64) ([]store.Dependency, error) {
 	return s.client.ListDependencies(id)
 }
 
-func (s *Service) RequestTask(req libticket.TaskRequest) (libticket.TaskRequestResponse, error) {
-	response, err := s.client.RequestTask(client.TaskRequest(req))
+func (s *Service) RequestTask(request libticket.TaskRequest) (libticket.TaskRequestResponse, error) {
+	response, err := s.client.RequestTask(client.TaskRequest(request))
 	if err != nil {
 		return libticket.TaskRequestResponse{}, err
 	}

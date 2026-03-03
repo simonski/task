@@ -1904,18 +1904,18 @@ func runDependencyCommand(args []string, add bool) error {
 		return err
 	}
 	for _, depID := range dependencyIDs {
-		req := libticket.DependencyRequest{
+		dependencyRequest := libticket.DependencyRequest{
 			ProjectID: project.ID,
 			TaskID:    taskID,
 			DependsOn: depID,
 		}
 		if add {
-			if _, err := api.AddDependency(req); err != nil {
+			if _, err := api.AddDependency(dependencyRequest); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := api.RemoveDependency(req); err != nil {
+		if err := api.RemoveDependency(dependencyRequest); err != nil {
 			return err
 		}
 	}
@@ -1988,15 +1988,15 @@ func runRequest(args []string) error {
 	if err != nil {
 		return err
 	}
-	req := libticket.TaskRequest{ProjectID: project.ID}
+	taskRequest := libticket.TaskRequest{ProjectID: project.ID}
 	if len(args) == 1 {
 		var id int64
 		if _, err := fmt.Sscan(args[0], &id); err != nil {
 			return errors.New("ticket id must be numeric")
 		}
-		req.TaskID = &id
+		taskRequest.TaskID = &id
 	}
-	response, err := api.RequestTask(req)
+	response, err := api.RequestTask(taskRequest)
 	if err != nil {
 		return err
 	}
