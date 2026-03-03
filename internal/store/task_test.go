@@ -37,6 +37,9 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	if task.ParentID == nil || *task.ParentID != epic.ID {
 		t.Fatalf("CreateTask().ParentID = %#v, want %d", task.ParentID, epic.ID)
 	}
+	if task.Stage != StageDesign || task.State != StateIdle {
+		t.Fatalf("CreateTask().Lifecycle = %s/%s, want design/idle", task.Stage, task.State)
+	}
 	if task.EstimateEffort != 5 || task.EstimateComplete != "2026-04-01T12:00:00Z" {
 		t.Fatalf("CreateTask() estimates = %#v", task)
 	}
@@ -79,6 +82,9 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	}
 	if statusUpdated.Status != "inprogress" {
 		t.Fatalf("UpdateTask().Status = %q, want inprogress", statusUpdated.Status)
+	}
+	if statusUpdated.Stage != StageDevelop || statusUpdated.State != StateActive {
+		t.Fatalf("UpdateTask().Lifecycle = %s/%s, want develop/active", statusUpdated.Stage, statusUpdated.State)
 	}
 
 	filtered, err := ListTasks(db, TaskListParams{

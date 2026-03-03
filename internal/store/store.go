@@ -125,6 +125,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 	title TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
 	acceptance_criteria TEXT NOT NULL DEFAULT '',
+	stage TEXT NOT NULL DEFAULT 'design',
+	state TEXT NOT NULL DEFAULT 'idle',
 	status TEXT NOT NULL DEFAULT 'open',
 	priority INTEGER NOT NULL DEFAULT 3,
 	sort_order INTEGER NOT NULL DEFAULT 0,
@@ -199,6 +201,38 @@ func migrateSchema(db *sql.DB) error {
 		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN estimate_complete TEXT NOT NULL DEFAULT ''`); err != nil {
 			return err
 		}
+	}
+	if !columnExists(db, "tasks", "stage") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN stage TEXT NOT NULL DEFAULT 'design'`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "tasks", "state") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'`); err != nil {
+			return err
+		}
+	}
+	if _, err := db.Exec(`
+		UPDATE tasks
+		SET
+			stage = CASE
+				WHEN status IN ('notready', 'open') THEN 'design'
+				WHEN status = 'inprogress' THEN 'develop'
+				WHEN status = 'complete' THEN 'done'
+				WHEN status = 'fail' THEN 'test'
+				ELSE COALESCE(NULLIF(TRIM(stage), ''), 'design')
+			END,
+			state = CASE
+				WHEN status IN ('notready', 'open') THEN 'idle'
+				WHEN status = 'inprogress' THEN 'active'
+				WHEN status IN ('complete', 'fail') THEN 'complete'
+				ELSE COALESCE(NULLIF(TRIM(state), ''), 'idle')
+			END
+		WHERE COALESCE(NULLIF(TRIM(stage), ''), '') = '' OR COALESCE(NULLIF(TRIM(state), ''), '') = ''
+		   OR stage NOT IN ('design', 'develop', 'test', 'done')
+		   OR state NOT IN ('idle', 'active', 'complete')
+	`); err != nil {
+		return err
 	}
 	return nil
 }

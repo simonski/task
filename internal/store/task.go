@@ -22,6 +22,8 @@ type Task struct {
 	Title              string    `json:"title"`
 	Description        string    `json:"description"`
 	AcceptanceCriteria string    `json:"acceptance_criteria"`
+	Stage              string    `json:"stage"`
+	State              string    `json:"state"`
 	Status             string    `json:"status"`
 	Priority           int       `json:"priority"`
 	Order              int       `json:"order"`
@@ -48,6 +50,8 @@ type TaskCreateParams struct {
 	EstimateEffort     int
 	EstimateComplete   string
 	Assignee           string
+	Stage              string
+	State              string
 	Status             string
 	CreatedBy          int64
 }
@@ -58,6 +62,8 @@ type TaskUpdateParams struct {
 	AcceptanceCriteria string
 	ParentID           *int64
 	Assignee           string
+	Stage              string
+	State              string
 	Status             string
 	Priority           int
 	Order              int
@@ -71,6 +77,8 @@ type TaskUpdateParams struct {
 type TaskListParams struct {
 	ProjectID int64
 	Type      string
+	Stage     string
+	State     string
 	Status    string
 	Search    string
 	Assignee  string
@@ -119,7 +127,10 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
 		return Task{}, err
 	}
-	status := defaultStatusForType(params.Type, params.Status)
+	stage, state, legacyStatus, err := resolveLifecycleForCreate(params.Type, params.Stage, params.State, params.Status, params.Assignee)
+	if err != nil {
+		return Task{}, err
+	}
 	priority := params.Priority
 	if priority == 0 {
 		priority = 1
@@ -127,9 +138,9 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	order := params.Order
 
 	result, err := db.Exec(`
-		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), status, priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
+		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), stage, state, legacyStatus, priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
 	if err != nil {
 		return Task{}, err
 	}
@@ -144,6 +155,8 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_created", map[string]any{
 		"type":              task.Type,
 		"title":             task.Title,
+		"stage":             task.Stage,
+		"state":             task.State,
 		"status":            task.Status,
 		"estimate_effort":   task.EstimateEffort,
 		"estimate_complete": task.EstimateComplete,
@@ -197,13 +210,13 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		}
 	}
 
-	status := current.Status
+	explicitLifecycle := normalizeOptional(params.Stage) != "" || normalizeOptional(params.State) != ""
+	stage, state, legacyStatus, err := resolveLifecycleForUpdate(current, params.Stage, params.State, params.Status, assignee)
+	if err != nil {
+		return Task{}, err
+	}
 	if strings.TrimSpace(params.Status) != "" {
-		status = normalizeStatus(params.Status)
-		if !validStatus(status) {
-			return Task{}, fmt.Errorf("invalid status %q", params.Status)
-		}
-		if status != current.Status {
+		if legacyStatus != current.Status {
 			if params.ActorRole != "admin" && strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
 				return Task{}, ErrForbidden
 			}
@@ -211,13 +224,20 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 				return Task{}, errors.New("closed ticket cannot be reopened")
 			}
 		}
+	} else if explicitLifecycle && (stage != current.Stage || state != current.State) {
+		if params.ActorRole != "admin" && strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
+			return Task{}, ErrForbidden
+		}
+		if current.Stage == StageDone {
+			return Task{}, errors.New("done ticket cannot be reopened")
+		}
 	}
 
 	result, err := db.Exec(`
 		UPDATE tasks
-		SET title = ?, description = ?, acceptance_criteria = ?, parent_id = ?, assignee = ?, status = ?, priority = ?, sort_order = ?, estimate_effort = ?, estimate_complete = ?, updated_at = CURRENT_TIMESTAMP
+		SET title = ?, description = ?, acceptance_criteria = ?, parent_id = ?, assignee = ?, stage = ?, state = ?, status = ?, priority = ?, sort_order = ?, estimate_effort = ?, estimate_complete = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE task_id = ?
-	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, status, params.Priority, params.Order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), id)
+	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, stage, state, legacyStatus, params.Priority, params.Order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), id)
 	if err != nil {
 		return Task{}, err
 	}
@@ -237,6 +257,8 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		"description":         task.Description,
 		"acceptance_criteria": task.AcceptanceCriteria,
 		"assignee":            task.Assignee,
+		"stage":               task.Stage,
+		"state":               task.State,
 		"status":              task.Status,
 		"priority":            task.Priority,
 		"order":               task.Order,
@@ -259,7 +281,7 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ?
 	`
@@ -268,12 +290,35 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 		query += ` AND type = ?`
 		args = append(args, taskType)
 	}
-	if status := normalizeOptional(params.Status); status != "" {
-		if !validStatus(status) {
-			return nil, fmt.Errorf("invalid status %q", params.Status)
+	if stage := normalizeOptional(params.Stage); stage != "" {
+		if !ValidStage(stage) {
+			return nil, fmt.Errorf("invalid stage %q", params.Stage)
 		}
-		query += ` AND status = ?`
-		args = append(args, status)
+		query += ` AND stage = ?`
+		args = append(args, stage)
+	}
+	if state := normalizeOptional(params.State); state != "" {
+		if !ValidState(state) {
+			return nil, fmt.Errorf("invalid state %q", params.State)
+		}
+		query += ` AND state = ?`
+		args = append(args, state)
+	}
+	if status := normalizeOptional(params.Status); status != "" {
+		if strings.Contains(status, "/") {
+			stage, state, err := parseRenderedLifecycle(status)
+			if err != nil {
+				return nil, err
+			}
+			query += ` AND stage = ? AND state = ?`
+			args = append(args, stage, state)
+		} else {
+			if !validStatus(status) {
+				return nil, fmt.Errorf("invalid status %q", params.Status)
+			}
+			query += ` AND status = ?`
+			args = append(args, status)
+		}
 	}
 	if search := strings.TrimSpace(params.Search); search != "" {
 		query += ` AND (LOWER(title) LIKE ? OR LOWER(description) LIKE ?)`
@@ -319,7 +364,7 @@ func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
 
 func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
@@ -335,7 +380,7 @@ func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 
 func GetTask(db *sql.DB, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
@@ -368,6 +413,8 @@ func scanTask(s scanner) (Task, error) {
 		&task.Title,
 		&task.Description,
 		&task.AcceptanceCriteria,
+		&task.Stage,
+		&task.State,
 		&task.Status,
 		&task.Priority,
 		&task.Order,
@@ -424,6 +471,14 @@ func normalizeStatus(status string) string {
 	return status
 }
 
+func parseRenderedLifecycle(status string) (string, string, error) {
+	parts := strings.SplitN(normalizeOptional(status), "/", 2)
+	if len(parts) != 2 || !ValidLifecycle(parts[0], parts[1]) {
+		return "", "", fmt.Errorf("invalid status %q", status)
+	}
+	return parts[0], parts[1], nil
+}
+
 func validateEstimateComplete(raw string) error {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -468,6 +523,83 @@ func defaultStatusForType(taskType, requested string) string {
 
 func isClosedStatus(status string) bool {
 	return status == "complete" || status == "fail"
+}
+
+func resolveLifecycleForCreate(taskType, stage, state, legacyStatus, assignee string) (string, string, string, error) {
+	rawStage := normalizeOptional(stage)
+	rawState := normalizeOptional(state)
+	if rawStage == "" && rawState == "" {
+		legacy := defaultStatusForType(taskType, legacyStatus)
+		stage, state = lifecycleFromLegacyStatus(legacy)
+		return stage, state, normalizeStatus(legacy), nil
+	}
+	if rawStage == "" || rawState == "" {
+		return "", "", "", errors.New("stage and state must be set together")
+	}
+	if !ValidLifecycle(rawStage, rawState) {
+		return "", "", "", fmt.Errorf("invalid lifecycle %s/%s", rawStage, rawState)
+	}
+	if rawState == StateActive && strings.TrimSpace(assignee) == "" {
+		return "", "", "", errors.New("active ticket requires assignee")
+	}
+	return rawStage, rawState, normalizeLegacyStatusForLifecycle(rawStage, rawState), nil
+}
+
+func resolveLifecycleForUpdate(current Task, stage, state, legacyStatus, assignee string) (string, string, string, error) {
+	nextStage := current.Stage
+	nextState := current.State
+	rawStage := normalizeOptional(stage)
+	rawState := normalizeOptional(state)
+	rawStatus := normalizeOptional(legacyStatus)
+	switch {
+	case rawStage != "" || rawState != "":
+		if rawStage == "" || rawState == "" {
+			return "", "", "", errors.New("stage and state must be set together")
+		}
+		nextStage = rawStage
+		nextState = rawState
+	case rawStatus != "":
+		if !validStatus(rawStatus) {
+			return "", "", "", fmt.Errorf("invalid status %q", legacyStatus)
+		}
+		nextStage, nextState = lifecycleFromLegacyStatus(rawStatus)
+		return nextStage, nextState, rawStatus, nil
+	}
+	if !ValidLifecycle(nextStage, nextState) {
+		return "", "", "", fmt.Errorf("invalid lifecycle %s/%s", nextStage, nextState)
+	}
+	if nextState == StateActive && strings.TrimSpace(assignee) == "" {
+		return "", "", "", errors.New("active ticket requires assignee")
+	}
+	return nextStage, nextState, normalizeLegacyStatusForLifecycle(nextStage, nextState), nil
+}
+
+func lifecycleFromLegacyStatus(status string) (string, string) {
+	switch normalizeStatus(status) {
+	case "notready", "open":
+		return StageDesign, StateIdle
+	case "inprogress":
+		return StageDevelop, StateActive
+	case "complete":
+		return StageDone, StateComplete
+	case "fail":
+		return StageTest, StateComplete
+	default:
+		return StageDesign, StateIdle
+	}
+}
+
+func normalizeLegacyStatusForLifecycle(stage, state string) string {
+	switch {
+	case stage == StageDone && state == StateComplete:
+		return "complete"
+	case stage == StageDevelop && state == StateActive:
+		return "inprogress"
+	case stage == StageTest && state == StateComplete:
+		return "fail"
+	default:
+		return "open"
+	}
 }
 
 func validateTaskAssignmentChange(currentAssignee, nextAssignee, actorUsername, actorRole string) error {
@@ -543,6 +675,8 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 			AcceptanceCriteria: task.AcceptanceCriteria,
 			ParentID:           task.ParentID,
 			Assignee:           username,
+			Stage:              task.Stage,
+			State:              task.State,
 			Status:             task.Status,
 			Priority:           task.Priority,
 			Order:              task.Order,
@@ -569,6 +703,8 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 		AcceptanceCriteria: task.AcceptanceCriteria,
 		ParentID:           task.ParentID,
 		Assignee:           username,
+		Stage:              task.Stage,
+		State:              task.State,
 		Status:             task.Status,
 		Priority:           task.Priority,
 		Order:              task.Order,
@@ -584,7 +720,7 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, status string) (Task, bool, error) {
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE assignee = ? AND status = ?
 	`
@@ -609,7 +745,7 @@ func findUnassignedOpenTask(db *sql.DB, projectID int64) (Task, bool, error) {
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND status = 'open' AND TRIM(COALESCE(assignee, '')) = ''
 		ORDER BY created_at, task_id
