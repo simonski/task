@@ -12,15 +12,18 @@ type StatusResponse struct {
 type CountSummary = store.CountSummary
 
 type ProjectCreateRequest struct {
+	Prefix             string `json:"prefix"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 }
 
 type ProjectUpdateRequest struct {
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 }
 
 type TaskCreateRequest struct {

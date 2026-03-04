@@ -766,11 +766,11 @@ func TestRunProjectCommandsInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
 	createOutput := captureStdout(t, func() {
-		if err := run([]string{"project", "create", "-description", "Desc", "-ac", "AC", "Project A"}); err != nil {
+		if err := run([]string{"project", "create", "-prefix", "PRA", "-description", "Desc", "-ac", "AC", "Project A"}); err != nil {
 			t.Fatalf("project create error = %v", err)
 		}
 	})
-	for _, want := range []string{"project: Project A", "status: active", "acceptance_criteria: AC"} {
+	for _, want := range []string{"project: Project A", "prefix: PRA", "status: open", "acceptance_criteria: AC"} {
 		if !strings.Contains(createOutput, want) {
 			t.Fatalf("project create output missing %q:\n%s", want, createOutput)
 		}
@@ -801,7 +801,7 @@ func TestRunProjectCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("project disable error = %v", err)
 		}
 	})
-	if !strings.Contains(disableOutput, "status: disabled") {
+	if !strings.Contains(disableOutput, "status: closed") {
 		t.Fatalf("project disable output = %q", disableOutput)
 	}
 
@@ -810,7 +810,7 @@ func TestRunProjectCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("project use error = %v", err)
 		}
 	})
-	if !strings.Contains(useOutput, "using project 1") {
+	if !strings.Contains(useOutput, "using project") {
 		t.Fatalf("project use output = %q", useOutput)
 	}
 }
@@ -840,22 +840,22 @@ func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
 			t.Fatalf("list error = %v", err)
 		}
 	})
-	checkRow := func(statusSymbol, taskID, statusText string) {
+	checkRow := func(statusSymbol, statusText string) {
 		found := false
 		for _, line := range strings.Split(unicodeOutput, "\n") {
 			fields := strings.Fields(line)
-			if len(fields) >= 4 && fields[0] == statusSymbol && fields[1] == taskID && fields[2] == "task" && fields[3] == statusText {
+			if len(fields) >= 4 && fields[0] == statusSymbol && fields[2] == "task" && fields[3] == statusText {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Fatalf("list unicode row missing symbol=%q status=%q id=%q:\n%s", statusSymbol, statusText, taskID, unicodeOutput)
+			t.Fatalf("list unicode row missing symbol=%q status=%q:\n%s", statusSymbol, statusText, unicodeOutput)
 		}
 	}
-	checkRow("◑", strconv.FormatInt(inProgressID, 10), "develop/active")
-	checkRow("◉", strconv.FormatInt(completeID, 10), "design/complete")
-	checkRow("○", strconv.FormatInt(openID, 10), "develop/idle")
+	checkRow("◑", "develop/active")
+	checkRow("◉", "design/complete")
+	checkRow("○", "develop/idle")
 
 	for _, want := range []string{"develop/active", "develop/idle", "design/complete"} {
 		if !strings.Contains(unicodeOutput, want) {
@@ -1018,7 +1018,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	setupLocalCLI(t)
 
-	if err := run([]string{"project", "create", "Second Project"}); err != nil {
+	if err := run([]string{"project", "create", "-prefix", "SEP", "Second Project"}); err != nil {
 		t.Fatalf("project create error = %v", err)
 	}
 	if err := run([]string{"project", "use", "1"}); err != nil {
@@ -1445,7 +1445,7 @@ func TestRunCountHistoryOrphansAndConfigInLocalMode(t *testing.T) {
 			t.Fatalf("history error = %v", err)
 		}
 	})
-	if !strings.Contains(historyOutput, "Event      : task_created") {
+	if !strings.Contains(historyOutput, "Event      : ticket_created") {
 		t.Fatalf("history output = %q", historyOutput)
 	}
 
@@ -1499,7 +1499,7 @@ func TestRunSetParentDisallowsEpicUnderTask(t *testing.T) {
 
 	if err := run([]string{"set-parent", strconv.FormatInt(epicID, 10), strconv.FormatInt(taskID, 10)}); err == nil {
 		t.Fatalf("set-parent should reject epic parenting by task")
-	} else if !strings.Contains(err.Error(), "epic parent must be an epic") {
+	} else if !strings.Contains(err.Error(), "task cannot parent epic") {
 		t.Fatalf("set-parent error = %v", err)
 	}
 }

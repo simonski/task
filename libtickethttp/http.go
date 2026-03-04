@@ -60,7 +60,7 @@ func (s *Service) DeleteUser(username string) error {
 }
 
 func (s *Service) CreateProject(request libticket.ProjectCreateRequest) (store.Project, error) {
-	return s.client.CreateProject(request.Title, request.Description, request.AcceptanceCriteria)
+	return s.client.CreateProject(client.ProjectCreateRequest(request))
 }
 
 func (s *Service) ListProjects() ([]store.Project, error) {

@@ -39,15 +39,18 @@ type StatusResponse struct {
 type CountSummary = store.CountSummary
 
 type ProjectCreateRequest struct {
+	Prefix             string `json:"prefix"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 }
 
 type ProjectUpdateRequest struct {
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 }
 
 type TaskCreateRequest struct {
@@ -257,7 +260,7 @@ func (c *Client) DeleteUser(username string) error {
 	return c.doJSON(http.MethodDelete, "/api/users/"+username, nil, nil)
 }
 
-func (c *Client) CreateProject(title, description, acceptanceCriteria string) (store.Project, error) {
+func (c *Client) CreateProject(request ProjectCreateRequest) (store.Project, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -268,14 +271,17 @@ func (c *Client) CreateProject(title, description, acceptanceCriteria string) (s
 		if err != nil {
 			return store.Project{}, err
 		}
-		return store.CreateProject(db, title, description, acceptanceCriteria, user.ID)
+		return store.CreateProjectWithParams(db, store.ProjectCreateParams{
+			Prefix:             request.Prefix,
+			Title:              request.Title,
+			Description:        request.Description,
+			AcceptanceCriteria: request.AcceptanceCriteria,
+			Notes:              request.Notes,
+			CreatedBy:          user.ID,
+		})
 	}
 	var project store.Project
-	err := c.doJSON(http.MethodPost, "/api/projects", ProjectCreateRequest{
-		Title:              title,
-		Description:        description,
-		AcceptanceCriteria: acceptanceCriteria,
-	}, &project)
+	err := c.doJSON(http.MethodPost, "/api/projects", request, &project)
 	return project, err
 }
 
@@ -314,7 +320,12 @@ func (c *Client) UpdateProject(id int64, request ProjectUpdateRequest) (store.Pr
 			return store.Project{}, err
 		}
 		defer db.Close()
-		return store.UpdateProject(db, id, request.Title, request.Description, request.AcceptanceCriteria)
+		return store.UpdateProjectWithParams(db, id, store.ProjectUpdateParams{
+			Title:              request.Title,
+			Description:        request.Description,
+			AcceptanceCriteria: request.AcceptanceCriteria,
+			Notes:              request.Notes,
+		})
 	}
 	var project store.Project
 	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/projects/%d", id), request, &project)

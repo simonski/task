@@ -125,8 +125,8 @@ var helpIndex = map[string]commandHelp{
 	},
 	"project": {
 		usage:   "ticket project <create|list|get|use>|<id> <update|enable|disable>",
-		details: []string{"Manages projects and the active project context used by subsequent commands.", "Projects are addressed by numeric id."},
-		example: "ticket project 3 update -title \"Customer Portal\"",
+		details: []string{"Manages projects and the active project context used by subsequent commands.", "Projects are addressed by prefix or numeric id."},
+		example: "ticket project CUS update -title \"Customer Portal\"",
 	},
 	"list": {
 		usage:   "ticket list|ls [--type <type>] [--stage <stage>] [--state <state>] [--status <stage/state>] [-u <user>] [-n <limit>] [--unicode] [--plain]",
@@ -163,10 +163,20 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Sets the parent of a task or epic.", "Both ids must be numeric task ids in the active project.", "If the child is an epic, the parent must also be an epic."},
 		example: "ticket set-parent 1 2",
 	},
+	"attach": {
+		usage:   "ticket attach <id> <parent-id>",
+		details: []string{"Alias for `ticket set-parent`."},
+		example: "ticket attach CUS-T-12 CUS-E-3",
+	},
 	"unset-parent": {
 		usage:   "ticket unset-parent <id>",
 		details: []string{"Clears the parent of a task or story.", "After this, the task becomes an orphan."},
 		example: "ticket unset-parent 1",
+	},
+	"detach": {
+		usage:   "ticket detach <id>",
+		details: []string{"Alias for `ticket unset-parent`."},
+		example: "ticket detach CUS-T-12",
 	},
 	"design": {
 		usage:   "ticket design <id>",
@@ -371,9 +381,9 @@ func run(args []string) error {
 		return runSearch(trimmedArgs[1:])
 	case "update":
 		return runUpdate(trimmedArgs[1:])
-	case "set-parent":
+	case "set-parent", "attach":
 		return runSetParent(trimmedArgs[1:])
-	case "unset-parent":
+	case "unset-parent", "detach":
 		return runUnsetParent(trimmedArgs[1:])
 	case "design":
 		return runTaskStageAlias(trimmedArgs[1:], store.StageDesign, "design")
@@ -946,15 +956,20 @@ func runProject(args []string) error {
 	case "create", "add", "new":
 		fs := flag.NewFlagSet("project create", flag.ContinueOnError)
 		fs.SetOutput(os.Stderr)
+		prefix := fs.String("prefix", "", "project prefix")
 		description := fs.String("description", "", "project description")
 		acceptanceCriteria := fs.String("ac", "", "project acceptance criteria")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 1 {
-			return errors.New("usage: ticket project create [-description text] [-ac text] \"Project Title\"")
+			return errors.New("usage: ticket project create -prefix <prefix> [-description text] [-ac text] \"Project Title\"")
+		}
+		if strings.TrimSpace(*prefix) == "" {
+			return errors.New("project prefix is required")
 		}
 		project, err := svc.CreateProject(libticket.ProjectCreateRequest{
+			Prefix:             *prefix,
 			Title:              fs.Arg(0),
 			Description:        *description,
 			AcceptanceCriteria: *acceptanceCriteria,
@@ -962,7 +977,7 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		cfg.CurrentProject = strconv.FormatInt(project.ID, 10)
+		cfg.CurrentProject = project.Prefix
 		cfg.CurrentEpicID = 0
 		if err := config.Save(cfg); err != nil {
 			return err
@@ -1003,12 +1018,12 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		cfg.CurrentProject = strconv.FormatInt(project.ID, 10)
+		cfg.CurrentProject = project.Prefix
 		cfg.CurrentEpicID = 0
 		if err := config.Save(cfg); err != nil {
 			return err
 		}
-		fmt.Printf("using project %d\n", project.ID)
+		fmt.Printf("using project %s\n", project.Prefix)
 		return nil
 	default:
 		return fmt.Errorf("unknown project command %q", args[0])
@@ -2730,6 +2745,7 @@ func printProject(project store.Project) {
 	}
 	fmt.Printf("project: %s\n", project.Title)
 	fmt.Printf("project_id: %d\n", project.ID)
+	fmt.Printf("prefix: %s\n", project.Prefix)
 	fmt.Printf("status: %s\n", project.Status)
 	if project.Description != "" {
 		fmt.Printf("description: %s\n", project.Description)
@@ -2745,14 +2761,14 @@ func printProjectTable(projects []store.Project, currentProjectID string) {
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tTITLE\tSTATUS\tCURRENT")
+	fmt.Fprintln(w, "ID\tPREFIX\tTITLE\tSTATUS\tCURRENT")
 	currentID := strings.TrimSpace(currentProjectID)
 	for _, project := range projects {
 		current := ""
-		if strconv.FormatInt(project.ID, 10) == currentID {
+		if strconv.FormatInt(project.ID, 10) == currentID || strings.EqualFold(project.Prefix, currentID) {
 			current = "(current)"
 		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", project.ID, project.Title, project.Status, current)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", project.ID, project.Prefix, project.Title, project.Status, current)
 	}
 	_ = w.Flush()
 }
@@ -2764,6 +2780,7 @@ func printTask(task store.Task) {
 	}
 	fmt.Printf("task: %s\n", task.Title)
 	fmt.Printf("id: %d\n", task.ID)
+	fmt.Printf("key: %s\n", task.Key)
 	fmt.Printf("type: %s\n", task.Type)
 	fmt.Printf("status: %s\n", task.Status)
 	fmt.Printf("project_id: %d\n", task.ProjectID)
@@ -2791,6 +2808,7 @@ func printTaskDetails(task store.Task, dependencies []store.Dependency) {
 	}
 	dependsOn := formatDependsOn(dependencies)
 	fmt.Printf("ID           : %d\n", task.ID)
+	fmt.Printf("Key          : %s\n", task.Key)
 	fmt.Printf("Type         : %s\n", task.Type)
 	fmt.Printf("Description  : %s\n", task.Description)
 	fmt.Printf("ParentID     : %s\n", parentID)
@@ -3246,9 +3264,11 @@ CLIENT COMMANDS
 		{"request-dryrun", "Simulate a request assignment without mutation"},
 		{"search", "Search tasks in the active project or across all projects"},
 		{"set-parent", "Set the parent of a task"},
+		{"attach", "Alias for set-parent"},
 		{"status", "Show server and authentication status"},
 		{"test", "Set a ticket stage to test"},
 		{"unset-parent", "Clear the parent of a task"},
+		{"detach", "Alias for unset-parent"},
 		{"unclaim", "Remove yourself from a task"},
 		{"update", "Update a task"},
 		{"version", "Print the current version from VERSION"},
@@ -3298,7 +3318,7 @@ func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUni
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "MOON\tID\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tTITLE")
+	fmt.Fprintln(w, "MOON\tKEY\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tTITLE")
 	for _, task := range tasks {
 		symbol := formatTaskStatusSymbol(task.Status, statusUnicode)
 		assignee := task.Assignee
@@ -3313,7 +3333,11 @@ func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUni
 		if task.ParentID != nil {
 			parentID = strconv.FormatInt(*task.ParentID, 10)
 		}
-		fmt.Fprintf(w, "%s\t%d\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", symbol, task.ID, task.Type, task.Status, parentID, assignee, task.Priority, dependsOn, task.Title)
+		key := task.Key
+		if strings.TrimSpace(key) == "" {
+			key = strconv.FormatInt(task.ID, 10)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", symbol, key, task.Type, task.Status, parentID, assignee, task.Priority, dependsOn, task.Title)
 	}
 	_ = w.Flush()
 }

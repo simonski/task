@@ -80,10 +80,13 @@ func TestCountEverything(t *testing.T) {
 	if len(projectOnly.Types) != 2 {
 		t.Fatalf("CountEverything(project).Types len = %d, want 2", len(projectOnly.Types))
 	}
-	if projectOnly.Types[0].Type != "task" || projectOnly.Types[0].Total != 2 {
+	if projectOnly.Types[0].Type != "epic" || projectOnly.Types[0].Total != 1 {
 		t.Fatalf("CountEverything(project).Types[0] = %#v", projectOnly.Types[0])
 	}
-	if projectOnly.Types[0].Statuses["done/complete"] != 1 || projectOnly.Types[0].Statuses["design/idle"] != 1 {
-		t.Fatalf("CountEverything(project).Types[0].Statuses = %#v", projectOnly.Types[0].Statuses)
+	if projectOnly.Types[1].Type != "task" || projectOnly.Types[1].Total != 2 {
+		t.Fatalf("CountEverything(project).Types[1] = %#v", projectOnly.Types[1])
+	}
+	if projectOnly.Types[1].Statuses["done/complete"] != 1 || projectOnly.Types[1].Statuses["design/idle"] != 1 {
+		t.Fatalf("CountEverything(project).Types[1].Statuses = %#v", projectOnly.Types[1].Statuses)
 	}
 }

@@ -22,7 +22,7 @@ func TestHistoryAndComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHistoryEvents() error = %v", err)
 	}
-	if len(events) == 0 || events[0].EventType != "task_created" {
+	if len(events) == 0 || events[0].EventType != "ticket_created" {
 		t.Fatalf("history after create = %#v", events)
 	}
 

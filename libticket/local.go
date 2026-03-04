@@ -113,7 +113,14 @@ func (s *LocalService) CreateProject(request ProjectCreateRequest) (store.Projec
 	if err != nil {
 		return store.Project{}, err
 	}
-	return store.CreateProject(db, request.Title, request.Description, request.AcceptanceCriteria, user.ID)
+	return store.CreateProjectWithParams(db, store.ProjectCreateParams{
+		Prefix:             request.Prefix,
+		Title:              request.Title,
+		Description:        request.Description,
+		AcceptanceCriteria: request.AcceptanceCriteria,
+		Notes:              request.Notes,
+		CreatedBy:          user.ID,
+	})
 }
 
 func (s *LocalService) ListProjects() ([]store.Project, error) {
@@ -140,7 +147,12 @@ func (s *LocalService) UpdateProject(id int64, request ProjectUpdateRequest) (st
 		return store.Project{}, err
 	}
 	defer db.Close()
-	return store.UpdateProject(db, id, request.Title, request.Description, request.AcceptanceCriteria)
+	return store.UpdateProjectWithParams(db, id, store.ProjectUpdateParams{
+		Title:              request.Title,
+		Description:        request.Description,
+		AcceptanceCriteria: request.AcceptanceCriteria,
+		Notes:              request.Notes,
+	})
 }
 
 func (s *LocalService) SetProjectEnabled(id int64, enabled bool) (store.Project, error) {

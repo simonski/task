@@ -252,7 +252,14 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			project, err := store.CreateProject(db, projectPayload.Title, projectPayload.Description, projectPayload.AcceptanceCriteria, user.ID)
+			project, err := store.CreateProjectWithParams(db, store.ProjectCreateParams{
+				Prefix:             projectPayload.Prefix,
+				Title:              projectPayload.Title,
+				Description:        projectPayload.Description,
+				AcceptanceCriteria: projectPayload.AcceptanceCriteria,
+				Notes:              projectPayload.Notes,
+				CreatedBy:          user.ID,
+			})
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
@@ -311,8 +318,8 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeAuthError(w, err)
 				return
 			}
-			var id int64
-			if _, err := fmt.Sscan(parts[0], &id); err != nil {
+			project, err := store.GetProject(db, parts[0])
+			if err != nil {
 				writeError(w, http.StatusNotFound, "project not found")
 				return
 			}
@@ -326,7 +333,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusNotFound, "not found")
 				return
 			}
-			project, err := store.SetProjectStatus(db, id, enabled)
+			project, err = store.SetProjectStatus(db, project.ID, enabled)
 			if err != nil {
 				if errors.Is(err, store.ErrProjectNotFound) {
 					writeError(w, http.StatusNotFound, err.Error())
@@ -360,17 +367,22 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeAuthError(w, err)
 				return
 			}
-			var id int64
-			if _, err := fmt.Sscan(parts[0], &id); err != nil {
-				writeError(w, http.StatusNotFound, "project not found")
-				return
-			}
 			var projectPayload projectRequest
 			if err := json.NewDecoder(r.Body).Decode(&projectPayload); err != nil {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			project, err := store.UpdateProject(db, id, projectPayload.Title, projectPayload.Description, projectPayload.AcceptanceCriteria)
+			currentProject, err := store.GetProject(db, parts[0])
+			if err != nil {
+				writeError(w, http.StatusNotFound, "project not found")
+				return
+			}
+			project, err := store.UpdateProjectWithParams(db, currentProject.ID, store.ProjectUpdateParams{
+				Title:              projectPayload.Title,
+				Description:        projectPayload.Description,
+				AcceptanceCriteria: projectPayload.AcceptanceCriteria,
+				Notes:              projectPayload.Notes,
+			})
 			if err != nil {
 				if errors.Is(err, store.ErrProjectNotFound) {
 					writeError(w, http.StatusNotFound, err.Error())
@@ -472,11 +484,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 		trimmed := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 		parts := strings.Split(trimmed, "/")
-		var id int64
-		if _, err := fmt.Sscan(parts[0], &id); err != nil {
+		taskRef, err := store.GetTaskByRef(db, parts[0])
+		if err != nil {
 			writeError(w, http.StatusNotFound, "task not found")
 			return
 		}
+		id := taskRef.ID
 
 		if len(parts) == 2 && parts[1] == "history" && r.Method == http.MethodGet {
 			events, err := store.ListHistoryEvents(db, id)
@@ -511,6 +524,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				task, err := store.GetTask(db, id)
 				if err == nil {
 					_ = store.AddHistoryEvent(db, task.ProjectID, id, "comment_added", map[string]any{
+						"key":        task.Key,
 						"comment_id": comment.ID,
 					}, user.ID)
 				}
@@ -670,9 +684,11 @@ type credentialsRequest struct {
 }
 
 type projectRequest struct {
+	Prefix             string `json:"prefix"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 }
 
 type taskRequest struct {

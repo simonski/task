@@ -261,7 +261,7 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 	if err := api.DeleteUser("alice"); err != nil {
 		t.Fatalf("DeleteUser() error = %v", err)
 	}
-	if _, err := api.CreateProject("P", "", ""); err != nil {
+	if _, err := api.CreateProject(ProjectCreateRequest{Title: "P", Prefix: "PPP"}); err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
 	if _, err := api.ListProjects(); err != nil {

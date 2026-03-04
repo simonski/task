@@ -180,16 +180,16 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 		if err != nil {
 			t.Fatalf("SetProjectEnabled(false) error = %v", err)
 		}
-		if disabled.Status != "disabled" {
-			t.Fatalf("SetProjectEnabled(false).Status = %q, want disabled", disabled.Status)
+		if disabled.Status != "closed" {
+			t.Fatalf("SetProjectEnabled(false).Status = %q, want closed", disabled.Status)
 		}
 
 		enabled, err := svc.SetProjectEnabled(project.ID, true)
 		if err != nil {
 			t.Fatalf("SetProjectEnabled(true) error = %v", err)
 		}
-		if enabled.Status != "active" {
-			t.Fatalf("SetProjectEnabled(true).Status = %q, want active", enabled.Status)
+		if enabled.Status != "open" {
+			t.Fatalf("SetProjectEnabled(true).Status = %q, want open", enabled.Status)
 		}
 	})
 

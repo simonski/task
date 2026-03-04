@@ -11,24 +11,63 @@ var ErrProjectNotFound = errors.New("project not found")
 
 type Project struct {
 	ID                 int64  `json:"project_id"`
+	Prefix             string `json:"prefix"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
+	Notes              string `json:"notes"`
 	Status             string `json:"status"`
 	CreatedBy          int64  `json:"created_by"`
 	CreatedAt          string `json:"created_at"`
+	UpdatedAt          string `json:"updated_at"`
+}
+
+type ProjectCreateParams struct {
+	Prefix             string
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	Notes              string
+	CreatedBy          int64
+}
+
+type ProjectUpdateParams struct {
+	Title              string
+	Description        string
+	AcceptanceCriteria string
+	Notes              string
 }
 
 func CreateProject(db *sql.DB, title, description, acceptanceCriteria string, createdBy int64) (Project, error) {
-	title = strings.TrimSpace(title)
+	return CreateProjectWithParams(db, ProjectCreateParams{
+		Prefix:             deriveProjectPrefix(title),
+		Title:              title,
+		Description:        description,
+		AcceptanceCriteria: acceptanceCriteria,
+		CreatedBy:          createdBy,
+	})
+}
+
+func CreateProjectWithParams(db *sql.DB, params ProjectCreateParams) (Project, error) {
+	title := strings.TrimSpace(params.Title)
 	if title == "" {
 		return Project{}, errors.New("project title is required")
 	}
-
+	prefix := normalizeProjectPrefix(params.Prefix)
+	if prefix == "" {
+		prefix = deriveProjectPrefix(title)
+	}
+	if err := validateProjectPrefix(prefix); err != nil {
+		return Project{}, err
+	}
+	uniquePrefix, err := nextUniqueProjectPrefix(db, prefix)
+	if err != nil {
+		return Project{}, err
+	}
 	result, err := db.Exec(`
-		INSERT INTO projects (title, description, acceptance_criteria, created_by)
-		VALUES (?, ?, ?, ?)
-	`, title, strings.TrimSpace(description), strings.TrimSpace(acceptanceCriteria), createdBy)
+		INSERT INTO projects (prefix, title, description, acceptance_criteria, notes, status, created_by)
+		VALUES (?, ?, ?, ?, ?, 'open', ?)
+	`, uniquePrefix, title, strings.TrimSpace(params.Description), strings.TrimSpace(params.AcceptanceCriteria), strings.TrimSpace(params.Notes), params.CreatedBy)
 	if err != nil {
 		return Project{}, err
 	}
@@ -41,7 +80,7 @@ func CreateProject(db *sql.DB, title, description, acceptanceCriteria string, cr
 
 func ListProjects(db *sql.DB) ([]Project, error) {
 	rows, err := db.Query(`
-		SELECT project_id, title, description, acceptance_criteria, status, COALESCE(created_by, 0), created_at
+		SELECT project_id, prefix, title, description, acceptance_criteria, notes, status, COALESCE(created_by, 0), created_at, updated_at
 		FROM projects
 		ORDER BY created_at, project_id
 	`)
@@ -53,7 +92,7 @@ func ListProjects(db *sql.DB) ([]Project, error) {
 	var projects []Project
 	for rows.Next() {
 		var project Project
-		if err := rows.Scan(&project.ID, &project.Title, &project.Description, &project.AcceptanceCriteria, &project.Status, &project.CreatedBy, &project.CreatedAt); err != nil {
+		if err := rows.Scan(&project.ID, &project.Prefix, &project.Title, &project.Description, &project.AcceptanceCriteria, &project.Notes, &project.Status, &project.CreatedBy, &project.CreatedAt, &project.UpdatedAt); err != nil {
 			return nil, err
 		}
 		projects = append(projects, project)
@@ -62,24 +101,37 @@ func ListProjects(db *sql.DB) ([]Project, error) {
 }
 
 func GetProject(db *sql.DB, rawID string) (Project, error) {
-	if strings.TrimSpace(rawID) == "" {
+	rawID = strings.TrimSpace(rawID)
+	if rawID == "" {
 		return Project{}, ErrProjectNotFound
 	}
 	var id int64
-	if _, err := fmt.Sscan(rawID, &id); err != nil {
-		return Project{}, ErrProjectNotFound
+	if _, err := fmt.Sscan(rawID, &id); err == nil {
+		return GetProjectByID(db, id)
 	}
-	return GetProjectByID(db, id)
+	row := db.QueryRow(`
+		SELECT project_id, prefix, title, description, acceptance_criteria, notes, status, COALESCE(created_by, 0), created_at, updated_at
+		FROM projects
+		WHERE prefix = ?
+	`, strings.ToUpper(rawID))
+	var project Project
+	if err := row.Scan(&project.ID, &project.Prefix, &project.Title, &project.Description, &project.AcceptanceCriteria, &project.Notes, &project.Status, &project.CreatedBy, &project.CreatedAt, &project.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Project{}, ErrProjectNotFound
+		}
+		return Project{}, err
+	}
+	return project, nil
 }
 
 func GetProjectByID(db *sql.DB, id int64) (Project, error) {
 	row := db.QueryRow(`
-		SELECT project_id, title, description, acceptance_criteria, status, COALESCE(created_by, 0), created_at
+		SELECT project_id, prefix, title, description, acceptance_criteria, notes, status, COALESCE(created_by, 0), created_at, updated_at
 		FROM projects
 		WHERE project_id = ?
 	`, id)
 	var project Project
-	if err := row.Scan(&project.ID, &project.Title, &project.Description, &project.AcceptanceCriteria, &project.Status, &project.CreatedBy, &project.CreatedAt); err != nil {
+	if err := row.Scan(&project.ID, &project.Prefix, &project.Title, &project.Description, &project.AcceptanceCriteria, &project.Notes, &project.Status, &project.CreatedBy, &project.CreatedAt, &project.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Project{}, ErrProjectNotFound
 		}
@@ -89,19 +141,27 @@ func GetProjectByID(db *sql.DB, id int64) (Project, error) {
 }
 
 func UpdateProject(db *sql.DB, id int64, title, description, acceptanceCriteria string) (Project, error) {
+	return UpdateProjectWithParams(db, id, ProjectUpdateParams{
+		Title:              title,
+		Description:        description,
+		AcceptanceCriteria: acceptanceCriteria,
+	})
+}
+
+func UpdateProjectWithParams(db *sql.DB, id int64, params ProjectUpdateParams) (Project, error) {
 	current, err := GetProjectByID(db, id)
 	if err != nil {
 		return Project{}, err
 	}
-	nextTitle := strings.TrimSpace(title)
+	nextTitle := strings.TrimSpace(params.Title)
 	if nextTitle == "" {
 		nextTitle = current.Title
 	}
 	_, err = db.Exec(`
 		UPDATE projects
-		SET title = ?, description = ?, acceptance_criteria = ?
+		SET title = ?, description = ?, acceptance_criteria = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE project_id = ?
-	`, nextTitle, description, acceptanceCriteria, id)
+	`, nextTitle, params.Description, params.AcceptanceCriteria, strings.TrimSpace(params.Notes), id)
 	if err != nil {
 		return Project{}, err
 	}
@@ -109,11 +169,11 @@ func UpdateProject(db *sql.DB, id int64, title, description, acceptanceCriteria 
 }
 
 func SetProjectStatus(db *sql.DB, id int64, enabled bool) (Project, error) {
-	status := "disabled"
+	status := "closed"
 	if enabled {
-		status = "active"
+		status = "open"
 	}
-	result, err := db.Exec(`UPDATE projects SET status = ? WHERE project_id = ?`, status, id)
+	result, err := db.Exec(`UPDATE projects SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`, status, id)
 	if err != nil {
 		return Project{}, err
 	}

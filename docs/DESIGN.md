@@ -323,7 +323,7 @@ Users must be able to:
 Representative commands:
 
 ```bash
-ticket project create -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
+ticket project create -prefix CUS -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
 ticket project list
 ticket project ls
 ticket project use 2
@@ -422,8 +422,8 @@ Assignment workflows must support:
 - `ticket request [<id>]` for the caller
 - `ticket claim <id>` for the caller
 - `ticket unclaim <id>` for the caller
-- `ticket set-parent <id> <parent-id>`
-- `ticket unset-parent <id>`
+- `ticket attach <id> <parent-id>`
+- `ticket detach <id>`
 - `ticket rm <id>`
 - `ticket delete <id>`
 - `ticket list -u <name>` / `ticket ls -u <name>` for assignee filtering
@@ -504,7 +504,7 @@ Requirements:
 Representative command set:
 
 ```bash
-ticket project create "Customer Portal"
+ticket project create -prefix CUS "Customer Portal"
 ticket project use 2
 
 ticket epic "Authentication"
@@ -553,7 +553,7 @@ Suggested storage areas:
 2. sessions
 3. projects
 4. tasks
-5. history_events
+5. ticket_history
 6. comments
 
 ### Application Shape

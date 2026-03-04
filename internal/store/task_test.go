@@ -151,8 +151,8 @@ func TestCreateOrUpdateTaskEnforcesEpicParentRules(t *testing.T) {
 		Type:      "epic",
 		Title:     "Invalid epic",
 		CreatedBy: 1,
-	}); err == nil || err.Error() != "epic parent must be an epic" {
-		t.Fatalf("CreateTask(epic with non-epic parent) error = %v, want epic parent must be an epic", err)
+	}); err == nil || err.Error() != "task cannot parent epic" {
+		t.Fatalf("CreateTask(epic with non-epic parent) error = %v, want task cannot parent epic", err)
 	}
 
 	epicParent, err := CreateTask(db, TaskCreateParams{
@@ -180,8 +180,8 @@ func TestCreateOrUpdateTaskEnforcesEpicParentRules(t *testing.T) {
 		Title:    "Valid epic",
 		ParentID: &taskChild.ID,
 	})
-	if err == nil || err.Error() != "epic parent must be an epic" {
-		t.Fatalf("UpdateTask(epic parented by task) error = %v, want epic parent must be an epic", err)
+	if err == nil || err.Error() != "task cannot parent epic" {
+		t.Fatalf("UpdateTask(epic parented by task) error = %v, want task cannot parent epic", err)
 	}
 }
 
@@ -812,7 +812,7 @@ func assertDerivedLifecycleHistory(t *testing.T, db *sql.DB, taskID int64, wantT
 
 	var derivedTransitions [][2]string
 	for _, event := range events {
-		if event.EventType != "task_lifecycle_derived" {
+		if event.EventType != "ticket_parent_lifecycle_changed" {
 			continue
 		}
 		var payload map[string]any

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,6 +16,7 @@ var (
 
 type Task struct {
 	ID                 int64     `json:"task_id"`
+	Key                string    `json:"key"`
 	ProjectID          int64     `json:"project_id"`
 	ParentID           *int64    `json:"parent_id,omitempty"`
 	CloneOf            *int64    `json:"clone_of,omitempty"`
@@ -107,11 +109,11 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 		if err != nil {
 			return Task{}, err
 		}
-		if parent.Type == "task" && params.Type == "epic" {
-			return Task{}, errors.New("epic parent must be an epic")
-		}
 		if parent.ProjectID != params.ProjectID {
 			return Task{}, errors.New("parent task must be in the same project")
+		}
+		if err := validateTaskParenting(parent.Type, params.Type); err != nil {
+			return Task{}, err
 		}
 	}
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
@@ -127,22 +129,43 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 	}
 	order := params.Order
 
-	result, err := db.Exec(`
-		INSERT INTO tasks (project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), stage, state, RenderLifecycleStatus(stage, state), priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
+	tx, err := db.Begin()
 	if err != nil {
+		return Task{}, err
+	}
+	defer tx.Rollback()
+	var projectPrefix string
+	var nextSequence int64
+	if err := tx.QueryRow(`SELECT prefix, ticket_sequence + 1 FROM projects WHERE project_id = ?`, params.ProjectID).Scan(&projectPrefix, &nextSequence); err != nil {
+		return Task{}, err
+	}
+	key, err := generateTicketKey(projectPrefix, params.Type, nextSequence)
+	if err != nil {
+		return Task{}, err
+	}
+	result, err := tx.Exec(`
+		INSERT INTO tasks (key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, key, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), stage, state, RenderLifecycleStatus(stage, state), priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
+	if err != nil {
+		return Task{}, err
+	}
+	if _, err := tx.Exec(`UPDATE projects SET ticket_sequence = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`, nextSequence, params.ProjectID); err != nil {
 		return Task{}, err
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
 		return Task{}, err
 	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, err
+	}
 	task, err := GetTask(db, id)
 	if err != nil {
 		return Task{}, err
 	}
-	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_created", map[string]any{
+	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "ticket_created", map[string]any{
+		"key":               task.Key,
 		"type":              task.Type,
 		"title":             task.Title,
 		"stage":             task.Stage,
@@ -186,8 +209,8 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		if parent.ProjectID != current.ProjectID {
 			return Task{}, errors.New("parent task must be in the same project")
 		}
-		if current.Type == "epic" && parent.Type != "epic" {
-			return Task{}, errors.New("epic parent must be an epic")
+		if err := validateTaskParenting(parent.Type, current.Type); err != nil {
+			return Task{}, err
 		}
 	}
 	assignee := strings.TrimSpace(params.Assignee)
@@ -243,7 +266,8 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "task_updated", map[string]any{
+	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "ticket_updated", map[string]any{
+		"key":                 task.Key,
 		"title":               task.Title,
 		"description":         task.Description,
 		"acceptance_criteria": task.AcceptanceCriteria,
@@ -275,7 +299,7 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ?
 	`
@@ -350,7 +374,7 @@ func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
 
 func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
@@ -366,11 +390,34 @@ func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
 
 func GetTask(db *sql.DB, id int64) (Task, error) {
 	row := db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
 
+	task, err := scanTask(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Task{}, ErrTaskNotFound
+		}
+		return Task{}, err
+	}
+	return hydrateTask(db, task)
+}
+
+func GetTaskByRef(db *sql.DB, raw string) (Task, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return Task{}, ErrTaskNotFound
+	}
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return GetTask(db, id)
+	}
+	row := db.QueryRow(`
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		FROM tasks
+		WHERE key = ?
+	`, strings.ToUpper(raw))
 	task, err := scanTask(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -393,6 +440,7 @@ func scanTask(s scanner) (Task, error) {
 	var archived int
 	if err := s.Scan(
 		&task.ID,
+		&task.Key,
 		&task.ProjectID,
 		&parentID,
 		&cloneOf,
@@ -523,13 +571,14 @@ func recalculateParentLifecycle(db *sql.DB, id int64, actorID int64) (*int64, er
 	}
 
 	if actorID != 0 {
-		_ = AddHistoryEvent(db, task.ProjectID, task.ID, "task_lifecycle_derived", map[string]any{
-			"from_stage": task.Stage,
-			"from_state": task.State,
+		_ = AddHistoryEvent(db, task.ProjectID, task.ID, "ticket_parent_lifecycle_changed", map[string]any{
+			"key":         task.Key,
+			"from_stage":  task.Stage,
+			"from_state":  task.State,
 			"from_status": RenderLifecycleStatus(task.Stage, task.State),
-			"to_stage": nextStage,
-			"to_state": nextState,
-			"to_status": RenderLifecycleStatus(nextStage, nextState),
+			"to_stage":    nextStage,
+			"to_state":    nextState,
+			"to_status":   RenderLifecycleStatus(nextStage, nextState),
 		}, actorID)
 	}
 	return task.ParentID, nil
@@ -537,7 +586,7 @@ func recalculateParentLifecycle(db *sql.DB, id int64, actorID int64) (*int64, er
 
 func listStoredChildTasks(db *sql.DB, parentID int64) ([]Task, error) {
 	rows, err := db.Query(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE parent_id = ?
 		ORDER BY created_at, task_id
@@ -560,7 +609,7 @@ func listStoredChildTasks(db *sql.DB, parentID int64) ([]Task, error) {
 
 func getStoredTask(db *sql.DB, id int64) (Task, error) {
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id))
@@ -606,11 +655,28 @@ func normalizeOptional(v string) string {
 
 func validTaskType(taskType string) bool {
 	switch taskType {
-	case "task", "bug", "epic":
+	case "task", "bug", "epic", "spike", "chore":
 		return true
 	default:
 		return false
 	}
+}
+
+func validateTaskParenting(parentType, childType string) error {
+	parentType = normalizeTaskType(parentType)
+	childType = normalizeTaskType(childType)
+	switch parentType {
+	case "epic":
+		if validTaskType(childType) {
+			return nil
+		}
+	case "task":
+		switch childType {
+		case "task", "bug", "spike", "chore":
+			return nil
+		}
+	}
+	return fmt.Errorf("%s cannot parent %s", parentType, childType)
 }
 
 func nullableInt64(v *int64) any {
@@ -775,7 +841,7 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, stage, state string) (Task, bool, error) {
 	query := `
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE assignee = ? AND stage = ? AND state = ?
 	`
@@ -800,7 +866,7 @@ func findUnassignedDevelopIdleTask(db *sql.DB, projectID int64) (Task, bool, err
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
+		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND stage = ? AND state = ? AND TRIM(COALESCE(assignee, '')) = ''
 		ORDER BY created_at, task_id
@@ -898,6 +964,9 @@ func DeleteTask(db *sql.DB, id int64) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM history_events WHERE task_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM ticket_history WHERE task_id = ?`, id); err != nil {
 		return err
 	}
 	result, err := tx.Exec(`DELETE FROM tasks WHERE task_id = ?`, id)

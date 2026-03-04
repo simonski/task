@@ -40,7 +40,7 @@ If `-f` is omitted, `ticket initdb` creates the SQLite database at `$TICKET_HOME
 `ticket initdb` creates:
 
 1. an `admin` account
-2. the default project, `Default Project` with project id `1`
+2. the default project, `Default Project`, with project id `1` and an auto-generated prefix
 
 Bootstrap resolution works like this:
 
@@ -211,7 +211,7 @@ Most teams use `ticket` in this order:
 Create a project:
 
 ```bash
-ticket project create -description "Portal backlog" -ac "Portal launch criteria" "Customer Portal"
+ticket project create -prefix CUS -description "Portal backlog" -ac "Portal launch criteria" "Customer Portal"
 ```
 
 The project is now the default project.
@@ -223,7 +223,7 @@ ticket project list
 ticket project ls
 ```
 
-`ticket project list` prints the project id, title, and status, and marks the active project as `(current)`.
+`ticket project list` prints the project id, prefix, title, and status, and marks the active project as `(current)`.
 
 Select the active project for subsequent commands:
 
@@ -360,7 +360,7 @@ ticket list -u alice
 ticket ls -u alice
 ```
 
-`ticket list` prints a table with the task id, type, rendered `status` (`stage/state`), assignee, priority, and title.
+`ticket list` prints a table with the ticket key, type, rendered `status` (`stage/state`), assignee, priority, and title.
 
 Search within the active project:
 
@@ -401,8 +401,8 @@ ticket claim 42
 ticket unclaim 42
 ticket request
 ticket request 42
-ticket set-parent 17 9
-ticket unset-parent 17
+ticket attach 17 9
+ticket detach 17
 ticket delete 17
 ```
 
@@ -477,7 +477,7 @@ ticket user delete --username <name>
 ticket user enable --username <name>
 ticket user disable --username <name>
 
-ticket project create "..."
+ticket project create -prefix ABC "..."
 ticket project list
 ticket project ls
 ticket project use <id>
@@ -513,8 +513,8 @@ ticket unassign <id> <name>
 ticket claim <id>
 ticket unclaim <id>
 ticket request [<id>]
-ticket set-parent <id> <parent-id>
-ticket unset-parent <id>
+ticket attach <id> <parent-id>
+ticket detach <id>
 ticket rm <id>
 ticket delete <id>
 ticket design <id>

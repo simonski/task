@@ -15,6 +15,8 @@ type HistoryEvent struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type TicketHistoryEvent = HistoryEvent
+
 type Comment struct {
 	ID        int64  `json:"-"`
 	ItemID    int64  `json:"-"`
@@ -34,13 +36,20 @@ func AddHistoryEvent(db *sql.DB, projectID, taskID int64, eventType string, payl
 		INSERT INTO history_events (project_id, task_id, event_type, payload, created_by)
 		VALUES (?, ?, ?, ?, ?)
 	`, projectID, taskID, eventType, string(data), nullableUserID(createdBy))
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`
+		INSERT INTO ticket_history (project_id, task_id, event_type, payload, created_by)
+		VALUES (?, ?, ?, ?, ?)
+	`, projectID, taskID, eventType, string(data), nullableUserID(createdBy))
 	return err
 }
 
 func ListHistoryEvents(db *sql.DB, taskID int64) ([]HistoryEvent, error) {
 	rows, err := db.Query(`
 		SELECT id, project_id, task_id, event_type, payload, COALESCE(created_by, 0), created_at
-		FROM history_events
+		FROM ticket_history
 		WHERE task_id = ?
 		ORDER BY id
 	`, taskID)

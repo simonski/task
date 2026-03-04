@@ -54,7 +54,7 @@ func TestUpdateAndEnableDisableProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetProjectStatus(disable) error = %v", err)
 	}
-	if disabled.Status != "disabled" {
+	if disabled.Status != "closed" {
 		t.Fatalf("SetProjectStatus(disable).Status = %q", disabled.Status)
 	}
 
@@ -62,7 +62,7 @@ func TestUpdateAndEnableDisableProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetProjectStatus(enable) error = %v", err)
 	}
-	if enabled.Status != "active" {
+	if enabled.Status != "open" {
 		t.Fatalf("SetProjectStatus(enable).Status = %q", enabled.Status)
 	}
 }

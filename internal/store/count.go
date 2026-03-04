@@ -70,7 +70,7 @@ func CountEverything(db *sql.DB, projectID *int64) (CountSummary, error) {
 		return CountSummary{}, err
 	}
 
-	for _, taskType := range []string{"task", "epic", "bug"} {
+	for _, taskType := range []string{"epic", "task", "bug", "spike", "chore"} {
 		if entry, ok := byType[taskType]; ok {
 			summary.Types = append(summary.Types, *entry)
 		}

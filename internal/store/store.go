@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -107,17 +109,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS projects (
 	project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+	prefix TEXT NOT NULL DEFAULT '',
 	title TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
 	acceptance_criteria TEXT NOT NULL DEFAULT '',
-	status TEXT NOT NULL DEFAULT 'active',
+	notes TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'open',
 	created_by INTEGER,
 	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	ticket_sequence INTEGER NOT NULL DEFAULT 0,
 	FOREIGN KEY(created_by) REFERENCES users(user_id)
 );
 
 CREATE TABLE IF NOT EXISTS tasks (
 	task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+	key TEXT NOT NULL DEFAULT '',
 	project_id INTEGER NOT NULL,
 	parent_id INTEGER,
 	clone_of INTEGER,
@@ -144,6 +151,19 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS history_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	project_id INTEGER NOT NULL,
+	task_id INTEGER NOT NULL,
+	event_type TEXT NOT NULL,
+	payload TEXT NOT NULL DEFAULT '{}',
+	created_by INTEGER,
+	created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	FOREIGN KEY(project_id) REFERENCES projects(project_id),
+	FOREIGN KEY(task_id) REFERENCES tasks(task_id),
+	FOREIGN KEY(created_by) REFERENCES users(user_id)
+);
+
+CREATE TABLE IF NOT EXISTS ticket_history (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	project_id INTEGER NOT NULL,
 	task_id INTEGER NOT NULL,
@@ -187,6 +207,38 @@ CREATE TABLE IF NOT EXISTS dependencies (
 }
 
 func migrateSchema(db *sql.DB) error {
+	if !columnExists(db, "projects", "prefix") {
+		if _, err := db.Exec(`ALTER TABLE projects ADD COLUMN prefix TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "projects", "notes") {
+		if _, err := db.Exec(`ALTER TABLE projects ADD COLUMN notes TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "projects", "updated_at") {
+		if _, err := db.Exec(`ALTER TABLE projects ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`); err != nil {
+			return err
+		}
+	}
+	if !columnExists(db, "projects", "ticket_sequence") {
+		if _, err := db.Exec(`ALTER TABLE projects ADD COLUMN ticket_sequence INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
+	if _, err := db.Exec(`UPDATE projects SET status = 'open' WHERE status = 'active'`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE projects SET status = 'closed' WHERE status = 'disabled'`); err != nil {
+		return err
+	}
+
+	if !columnExists(db, "tasks", "key") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN key TEXT NOT NULL DEFAULT ''`); err != nil {
+			return err
+		}
+	}
 	if !columnExists(db, "tasks", "sort_order") {
 		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`); err != nil {
 			return err
@@ -235,7 +287,125 @@ func migrateSchema(db *sql.DB) error {
 	`); err != nil {
 		return err
 	}
+	if err := backfillProjectPrefixes(db); err != nil {
+		return err
+	}
+	if err := backfillTicketKeys(db); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`
+		INSERT INTO ticket_history (id, project_id, task_id, event_type, payload, created_by, created_at)
+		SELECT h.id, h.project_id, h.task_id, h.event_type, h.payload, h.created_by, h.created_at
+		FROM history_events h
+		WHERE NOT EXISTS (SELECT 1 FROM ticket_history th WHERE th.id = h.id)
+	`); err != nil {
+		return err
+	}
 	return nil
+}
+
+func backfillProjectPrefixes(db *sql.DB) error {
+	rows, err := db.Query(`SELECT project_id, title, prefix FROM projects ORDER BY project_id`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type row struct {
+		id     int64
+		title  string
+		prefix string
+	}
+	var projects []row
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.id, &item.title, &item.prefix); err != nil {
+			return err
+		}
+		projects = append(projects, item)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, project := range projects {
+		if strings.TrimSpace(project.prefix) != "" {
+			continue
+		}
+		prefix, err := nextUniqueProjectPrefix(db, deriveProjectPrefix(project.title))
+		if err != nil {
+			return err
+		}
+		if _, err := db.Exec(`UPDATE projects SET prefix = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`, prefix, project.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backfillTicketKeys(db *sql.DB) error {
+	rows, err := db.Query(`
+		SELECT t.task_id, t.project_id, t.type, t.key, p.prefix
+		FROM tasks t
+		JOIN projects p ON p.project_id = t.project_id
+		ORDER BY t.project_id, t.task_id
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type row struct {
+		taskID    int64
+		projectID int64
+		taskType  string
+		key       string
+		prefix    string
+	}
+	var tasks []row
+	maxSeq := map[int64]int64{}
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.taskID, &item.projectID, &item.taskType, &item.key, &item.prefix); err != nil {
+			return err
+		}
+		tasks = append(tasks, item)
+		if seq := parseTicketSequence(item.key); seq > maxSeq[item.projectID] {
+			maxSeq[item.projectID] = seq
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		if strings.TrimSpace(task.key) == "" {
+			maxSeq[task.projectID]++
+			key, err := generateTicketKey(task.prefix, task.taskType, maxSeq[task.projectID])
+			if err != nil {
+				return err
+			}
+			if _, err := db.Exec(`UPDATE tasks SET key = ? WHERE task_id = ?`, key, task.taskID); err != nil {
+				return err
+			}
+		}
+	}
+	for projectID, seq := range maxSeq {
+		if _, err := db.Exec(`UPDATE projects SET ticket_sequence = CASE WHEN ticket_sequence < ? THEN ? ELSE ticket_sequence END WHERE project_id = ?`, seq, seq, projectID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parseTicketSequence(key string) int64 {
+	parts := strings.Split(strings.TrimSpace(key), "-")
+	if len(parts) != 3 {
+		return 0
+	}
+	seq, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil || seq < 0 {
+		return 0
+	}
+	return seq
 }
 
 func columnExists(db *sql.DB, tableName, columnName string) bool {
