@@ -267,7 +267,7 @@ func TestTaskAPI(t *testing.T) {
 		"description": "Email reset support",
 		"parent_id":   epic.ID,
 		"assignee":    "alice",
-		"status":      "inprogress",
+		"status":      "develop/active",
 	}, aliceAuth.Token)
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("update task status = %d body=%s", updateResp.Code, updateResp.Body.String())
@@ -343,7 +343,7 @@ func TestTaskAPI(t *testing.T) {
 		"project_id": project.ID,
 		"type":       "bug",
 		"title":      "Password reset email is not sent",
-		"status":     "open",
+		"status":     "develop/idle",
 	}, auth.Token)
 	if bugResp.Code != http.StatusCreated {
 		t.Fatalf("bug create status = %d body=%s", bugResp.Code, bugResp.Body.String())
@@ -550,7 +550,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		"project_id": project.ID,
 		"type":       "task",
 		"title":      "Not ready task",
-		"status":     "notready",
+		"status":     "design/idle",
 	}, adminAuth.Token)
 	var notReady store.Task
 	decodeResponse(t, notReadyResp, &notReady)
@@ -559,7 +559,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		"project_id": project.ID,
 		"type":       "task",
 		"title":      "Open task",
-		"status":     "open",
+		"status":     "develop/idle",
 	}, adminAuth.Token)
 	var openTask store.Task
 	decodeResponse(t, openResp, &openTask)
@@ -599,7 +599,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		"title":       openTask.Title,
 		"description": openTask.Description,
 		"assignee":    "alice",
-		"status":      "inprogress",
+		"status":      "develop/active",
 	}, aliceAuth.Token)
 	if inProgressResp.Code != http.StatusOK {
 		t.Fatalf("set inprogress status = %d body=%s", inProgressResp.Code, inProgressResp.Body.String())
@@ -679,7 +679,7 @@ func TestCloneTaskAPI(t *testing.T) {
 		"parent_id":  epic.ID,
 		"type":       "task",
 		"title":      "Child",
-		"status":     "open",
+		"status":     "develop/idle",
 		"assignee":   "admin",
 	}, auth.Token)
 	var child store.Task

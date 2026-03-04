@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -685,5 +687,149 @@ func TestCloneEpicClonesChildren(t *testing.T) {
 	}
 	if clonedChild.ParentID == nil || *clonedChild.ParentID != clonedEpic.ID {
 		t.Fatalf("cloned child parent = %#v, want %d", clonedChild.ParentID, clonedEpic.ID)
+	}
+}
+
+func TestParentLifecycleRecalculatesRecursivelyAndWritesDerivedHistory(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+
+	epic, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		Type:      "epic",
+		Title:     "Epic",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(epic) error = %v", err)
+	}
+	parentTask, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &epic.ID,
+		Type:      "task",
+		Title:     "Parent Task",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(parentTask) error = %v", err)
+	}
+	leafBug, err := CreateTask(db, TaskCreateParams{
+		ProjectID: project.ID,
+		ParentID:  &parentTask.ID,
+		Type:      "bug",
+		Title:     "Leaf Bug",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask(leafBug) error = %v", err)
+	}
+
+	updatedLeaf, err := UpdateTask(db, leafBug.ID, TaskUpdateParams{
+		Title:         leafBug.Title,
+		Description:   leafBug.Description,
+		ParentID:      leafBug.ParentID,
+		Assignee:      "alice",
+		Stage:         StageDevelop,
+		State:         StateActive,
+		UpdatedBy:     1,
+		ActorUsername: "admin",
+		ActorRole:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask(leaf to develop/active) error = %v", err)
+	}
+	if updatedLeaf.Status != "develop/active" {
+		t.Fatalf("leaf status = %q, want develop/active", updatedLeaf.Status)
+	}
+
+	reloadedParent, err := GetTask(db, parentTask.ID)
+	if err != nil {
+		t.Fatalf("GetTask(parentTask) error = %v", err)
+	}
+	if reloadedParent.Status != "develop/active" {
+		t.Fatalf("parent task status = %q, want develop/active", reloadedParent.Status)
+	}
+	reloadedEpic, err := GetTask(db, epic.ID)
+	if err != nil {
+		t.Fatalf("GetTask(epic) error = %v", err)
+	}
+	if reloadedEpic.Status != "develop/active" {
+		t.Fatalf("epic status = %q, want develop/active", reloadedEpic.Status)
+	}
+
+	if _, err := UpdateTask(db, leafBug.ID, TaskUpdateParams{
+		Title:         leafBug.Title,
+		Description:   leafBug.Description,
+		ParentID:      leafBug.ParentID,
+		Assignee:      "alice",
+		Stage:         StageDone,
+		State:         StateComplete,
+		UpdatedBy:     1,
+		ActorUsername: "admin",
+		ActorRole:     "admin",
+	}); err != nil {
+		t.Fatalf("UpdateTask(leaf to done/complete) error = %v", err)
+	}
+
+	reloadedParent, err = GetTask(db, parentTask.ID)
+	if err != nil {
+		t.Fatalf("GetTask(parentTask after complete) error = %v", err)
+	}
+	if reloadedParent.Status != "done/complete" {
+		t.Fatalf("parent task status after complete = %q, want done/complete", reloadedParent.Status)
+	}
+	reloadedEpic, err = GetTask(db, epic.ID)
+	if err != nil {
+		t.Fatalf("GetTask(epic after complete) error = %v", err)
+	}
+	if reloadedEpic.Status != "done/complete" {
+		t.Fatalf("epic status after complete = %q, want done/complete", reloadedEpic.Status)
+	}
+
+	assertDerivedLifecycleHistory(t, db, parentTask.ID, [][2]string{
+		{"design/idle", "develop/active"},
+		{"develop/active", "done/complete"},
+	})
+	assertDerivedLifecycleHistory(t, db, epic.ID, [][2]string{
+		{"design/idle", "develop/active"},
+		{"develop/active", "done/complete"},
+	})
+}
+
+func assertDerivedLifecycleHistory(t *testing.T, db *sql.DB, taskID int64, wantTransitions [][2]string) {
+	t.Helper()
+
+	events, err := ListHistoryEvents(db, taskID)
+	if err != nil {
+		t.Fatalf("ListHistoryEvents(%d) error = %v", taskID, err)
+	}
+
+	var derivedTransitions [][2]string
+	for _, event := range events {
+		if event.EventType != "task_lifecycle_derived" {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			t.Fatalf("json.Unmarshal(%q) error = %v", event.Payload, err)
+		}
+		derivedTransitions = append(derivedTransitions, [2]string{
+			payload["from_status"].(string),
+			payload["to_status"].(string),
+		})
+	}
+	if len(derivedTransitions) != len(wantTransitions) {
+		t.Fatalf("derived transitions for %d = %#v, want %#v", taskID, derivedTransitions, wantTransitions)
+	}
+	for i := range wantTransitions {
+		if derivedTransitions[i] != wantTransitions[i] {
+			t.Fatalf("derived transitions for %d = %#v, want %#v", taskID, derivedTransitions, wantTransitions)
+		}
 	}
 }

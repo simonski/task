@@ -182,7 +182,7 @@ func TestLocalServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		AcceptanceCriteria: "new ac",
 		ParentID:           &parent.ID,
 		Assignee:           requested.Task.Assignee,
-		Status:             "inprogress",
+		Status:             "develop/active",
 		Priority:           3,
 		Order:              7,
 		EstimateEffort:     5,
@@ -223,7 +223,7 @@ func TestLocalServiceIgnoresOwnershipForStatusChanges(t *testing.T) {
 		Description: task.Description,
 		ParentID:    task.ParentID,
 		Assignee:    task.Assignee,
-		Status:      "complete",
+		Status:      "done/complete",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)

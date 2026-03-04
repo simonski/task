@@ -166,7 +166,7 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		AcceptanceCriteria: "new ac",
 		ParentID:           &parent.ID,
 		Assignee:           requested.Task.Assignee,
-		Status:             "inprogress",
+		Status:             "develop/active",
 		Priority:           3,
 		Order:              7,
 		EstimateEffort:     5,

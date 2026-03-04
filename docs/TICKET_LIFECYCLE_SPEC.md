@@ -17,8 +17,9 @@ It defines:
 - migration requirements
 - test requirements
 
-This spec supersedes older documentation that describes ticket progress using
-`open`, `inprogress`, `notready`, `fail`, and related single-status values.
+This spec supersedes older documentation that described ticket progress using a
+single status field. The supported external lifecycle vocabulary is now only
+`stage`, `state`, and rendered `status` in `<stage>/<state>` form.
 
 ## Scope
 
@@ -258,15 +259,16 @@ Required lifecycle commands:
 
 ### Commands to Remove or Rework
 
-The following single-status commands are obsolete and must be removed or
-redefined to map to the stage/state model:
+The following single-status commands are obsolete and must be removed from the
+external command surface:
 
 - `ticket open`
 - `ticket ready`
 - `ticket inprogress`
 - `ticket fail`
-- `ticket update -status ...`
-- any search/list/filter behavior that assumes the old status vocabulary
+
+`ticket update -status ...` remains valid only when `status` is expressed as a
+rendered lifecycle value such as `develop/active`.
 
 ### Listing and Detail Views
 
@@ -431,9 +433,9 @@ Payloads should include old and new values where applicable.
 
 - add `stage` and `state` columns
 - backfill from existing `status`
-- keep old `status` temporarily for compatibility if needed during migration
+- keep old `status` column temporarily as a rendered/cache field during migration
 
-Suggested legacy mapping:
+Suggested migration mapping from historical databases:
 
 - `notready` -> `design/idle`
 - `open` -> `design/idle`
@@ -455,12 +457,13 @@ This mapping is transitional only and must not remain the long-term model.
 - add stage/state commands and filters
 - update output rendering
 
-### Phase 5: Remove legacy status
+### Phase 5: Remove legacy status compatibility
 
-- remove old `status` field from code paths
+- remove old single-status aliases and parsers from CLI/API edges
 - remove old docs
 - remove old tests
-- drop legacy DB column in a final migration
+- optionally drop the `status` DB column in a final migration if it is no
+  longer needed as a stored rendered field
 
 ## Testing Requirements
 
@@ -513,7 +516,7 @@ Must cover:
 Must cover:
 
 - old databases migrate safely
-- legacy statuses backfill deterministically
+- historical single-status values backfill deterministically
 - recalculation after migration produces valid parent lifecycle values
 
 ## Refactor Order
@@ -527,7 +530,7 @@ Recommended implementation order:
 5. update CLI
 6. update docs
 7. update UI
-8. remove legacy status code
+8. remove legacy single-status compatibility code
 
 ## Non-Goals for First Pass
 

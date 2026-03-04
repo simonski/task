@@ -5,10 +5,10 @@ This project uses **ticket** for issue tracking. Run `ticket onboard` to get sta
 ## Quick Reference
 
 ```bash
-ticket ready              # Find available work
+ticket list --status develop/idle   # Find available work
 ticket get <id>           # View issue details
-ticket update <id> --status in_progress  # Claim work
-ticket close <id>         # Complete work
+ticket update <id> --status develop/active  # Mark work active
+ticket done <id>          # Complete work
 ```
 
 ## Landing the Plane (Session Completion)

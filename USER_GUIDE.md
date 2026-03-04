@@ -428,7 +428,7 @@ ticket active 42
 ticket complete 42
 ```
 
-`ticket complete` is a compatibility alias for `ticket done`.
+`ticket complete` keeps the current stage and marks the ticket state as `complete`. Use `ticket done` to move a ticket into terminal `done/complete`.
 
 Most client-facing commands also support `-json` to pretty-print the JSON response.
 

@@ -154,9 +154,9 @@ var helpIndex = map[string]commandHelp{
 		example: "ticket search password reset -status develop/active -owner alice -allprojects",
 	},
 	"update": {
-		usage:   "ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
-		details: []string{"Updates one or more task fields in a single command.", "Use `-stage` and `-state` to edit the lifecycle directly on leaf tickets. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
-		example: "ticket update 42 -title \"Customer Portal\" -stage develop -state active -priority 2 -estimate_effort 5",
+		usage:   "ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-status <stage/state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
+		details: []string{"Updates one or more task fields in a single command.", "Use `-stage` and `-state` or `-status <stage/state>` to edit the lifecycle directly on leaf tickets. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
+		example: "ticket update 42 -title \"Customer Portal\" -status develop/active -priority 2 -estimate_effort 5",
 	},
 	"set-parent": {
 		usage:   "ticket set-parent <id> <parent-id>",
@@ -200,7 +200,7 @@ var helpIndex = map[string]commandHelp{
 	},
 	"complete": {
 		usage:   "ticket complete <id>",
-		details: []string{"Compatibility alias for moving a ticket to `done/complete`."},
+		details: []string{"Sets the ticket state to `complete` without changing the stage."},
 		example: "ticket complete 42",
 	},
 	"add": {
@@ -375,8 +375,6 @@ func run(args []string) error {
 		return runSetParent(trimmedArgs[1:])
 	case "unset-parent":
 		return runUnsetParent(trimmedArgs[1:])
-	case "set-status":
-		return runSetStatus(trimmedArgs[1:])
 	case "design":
 		return runTaskStageAlias(trimmedArgs[1:], store.StageDesign, "design")
 	case "develop":
@@ -390,13 +388,7 @@ func run(args []string) error {
 	case "active":
 		return runTaskStateAlias(trimmedArgs[1:], store.StateActive, "active")
 	case "complete":
-		return runLegacyTaskStatusAlias(trimmedArgs[1:], "complete", "complete")
-	case "open", "ready":
-		return runLegacyTaskStatusAlias(trimmedArgs[1:], "open", trimmedArgs[0])
-	case "inprogress":
-		return runLegacyTaskStatusAlias(trimmedArgs[1:], "inprogress", "inprogress")
-	case "fail":
-		return runLegacyTaskStatusAlias(trimmedArgs[1:], "fail", "fail")
+		return runTaskStateAlias(trimmedArgs[1:], store.StateComplete, "complete")
 	case "assign":
 		return runAssign(trimmedArgs[1:])
 	case "unassign":
@@ -1578,27 +1570,6 @@ func runTaskStateAlias(args []string, state, command string) error {
 	return updateTaskState(args[0], state)
 }
 
-func runSetStatus(args []string) error {
-	if len(args) != 2 {
-		return errors.New("usage: ticket set-status <id> <status>")
-	}
-	return runLegacyTaskStatusAlias(args[:1], args[1], "set-status")
-}
-
-func runLegacyTaskStatusAlias(args []string, status, command string) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: ticket %s <id>", command)
-	}
-	stage, state, err := store.ParseLifecycleStatus(status)
-	if err != nil {
-		return err
-	}
-	if stage == store.StageDone {
-		return updateTaskStage(args[0], stage)
-	}
-	return updateTaskLifecycle(args[0], stage, state)
-}
-
 func updateTaskStage(idArg, stage string) error {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
@@ -1641,26 +1612,6 @@ func updateTaskState(idArg, state string) error {
 		return err
 	}
 	return updateTaskLifecycleRequest(svc, id, current, current.Stage, state)
-}
-
-func updateTaskLifecycle(idArg, stage, state string) error {
-	var id int64
-	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	svc, err := resolveService(cfg)
-	if err != nil {
-		return err
-	}
-	current, err := svc.GetTask(id)
-	if err != nil {
-		return err
-	}
-	return updateTaskLifecycleRequest(svc, id, current, stage, state)
 }
 
 func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.Task, stage, state string) error {
@@ -1707,7 +1658,7 @@ func runUpdate(args []string) error {
 	order := fs.Int("order", 0, "task order")
 	estimateEffort := fs.Int("estimate_effort", 0, "estimated effort")
 	estimateComplete := fs.String("estimate_complete", "", "estimated completion time (RFC3339)")
-	status := fs.String("status", "", "legacy task status alias")
+	status := fs.String("status", "", "rendered task status (<stage>/<state>)")
 	stage := fs.String("stage", "", "task stage")
 	state := fs.String("state", "", "task state")
 	parentIDRaw := fs.String("parent_id", "", "task parent id")
@@ -3273,26 +3224,22 @@ CLIENT COMMANDS
 		{"claim", "Assign yourself to a task"},
 		{"clone", "Clone a task or epic"},
 		{"comment", "Add comments to a task"},
-		{"complete", "Compatibility alias for done/complete"},
+		{"complete", "Set a ticket state to complete"},
 		{"count", "Count users, projects, and work by type"},
 		{"design", "Set a ticket stage to design"},
 		{"dependency", "Manage dependency links between tasks"},
 		{"delete", "Delete a task permanently"},
 		{"develop", "Set a ticket stage to develop"},
 		{"done", "Set a ticket stage to done"},
-		{"fail", "Compatibility alias for test/complete"},
 		{"get", "Show a task with history and comments"},
 		{"help", "Show command help"},
 		{"idle", "Set a ticket state to idle"},
-		{"inprogress", "Compatibility alias for develop/active"},
 		{"list", "List tasks in the active project"},
 		{"login", "Log into the server"},
 		{"logout", "Clear the local session"},
 		{"onboard", "Append the embedded AGENTS.md template in the current directory"},
-		{"open", "Compatibility alias for develop/idle"},
 		{"orphans", "List tasks with no parent"},
 		{"project", "Manage projects and active project context"},
-		{"ready", "Compatibility alias for open"},
 		{"register", "Create a user account on the server"},
 		{"ticket", "Generate requirements via an external agent"},
 		{"request", "Request work for the current user"},

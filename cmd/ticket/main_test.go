@@ -53,24 +53,26 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 
 	clientOrder := []string{
 		"  add",
+		"  active",
 		"  claim",
 		"  clone",
 		"  comment",
 		"  complete",
 		"  count",
+		"  design",
 		"  dependency",
-		"  fail",
+		"  delete",
+		"  develop",
+		"  done",
 		"  get",
 		"  help",
-		"  inprogress",
+		"  idle",
 		"  list",
 		"  login",
 		"  logout",
 		"  onboard",
-		"  open",
 		"  orphans",
 		"  project",
-		"  ready",
 		"  register",
 		"\n  ticket          ",
 		"  request",
@@ -78,6 +80,7 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 		"  search",
 		"  set-parent",
 		"  status",
+		"  test",
 		"  unset-parent",
 		"  unclaim",
 		"  update",
@@ -718,7 +721,7 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 			ID:                 42,
 			Title:              "Example Task",
 			Type:               "task",
-			Status:             "open",
+			Status:             "design/idle",
 			Description:        "Example description",
 			ProjectID:          7,
 			Priority:           1,
@@ -745,7 +748,7 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 		"EstimateEffort   : 3",
 		"EstimateComplete : 2026-04-01T12:00:00Z",
 		"DependsOn    : []",
-		"Status       : open",
+		"Status       : design/idle",
 		"Priority     : 1",
 		"Created      : 2026-03-01 12:00:00",
 		"LastModified : 2026-03-02 09:30:00",
@@ -818,16 +821,18 @@ func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
 	openID := createLocalTask(t, []string{"add", "Moon Open Task"})
 	inProgressID := createLocalTask(t, []string{"add", "Moon Inprogress Task"})
 	completeID := createLocalTask(t, []string{"add", "Moon Complete Task"})
-	if err := run([]string{"inprogress", strconv.FormatInt(inProgressID, 10)}); err != nil {
-		t.Fatalf("inprogress error = %v", err)
+	if err := run([]string{"develop", strconv.FormatInt(inProgressID, 10)}); err != nil {
+		t.Fatalf("develop error = %v", err)
+	}
+	if err := run([]string{"active", strconv.FormatInt(inProgressID, 10)}); err != nil {
+		t.Fatalf("active error = %v", err)
 	}
 	if err := run([]string{"complete", strconv.FormatInt(completeID, 10)}); err != nil {
 		t.Fatalf("complete error = %v", err)
 	}
 
-	// update one task by id to be notready so open and notready states are both exercised.
-	if err := run([]string{"update", strconv.FormatInt(openID, 10), "-status", "notready"}); err != nil {
-		t.Fatalf("update notready error = %v", err)
+	if err := run([]string{"develop", strconv.FormatInt(openID, 10)}); err != nil {
+		t.Fatalf("develop open task error = %v", err)
 	}
 
 	unicodeOutput := captureStdout(t, func() {
@@ -849,10 +854,10 @@ func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
 		}
 	}
 	checkRow("◑", strconv.FormatInt(inProgressID, 10), "develop/active")
-	checkRow("◉", strconv.FormatInt(completeID, 10), "done/complete")
-	checkRow("○", strconv.FormatInt(openID, 10), "design/idle")
+	checkRow("◉", strconv.FormatInt(completeID, 10), "design/complete")
+	checkRow("○", strconv.FormatInt(openID, 10), "develop/idle")
 
-	for _, want := range []string{"develop/active", "design/idle", "done/complete"} {
+	for _, want := range []string{"develop/active", "develop/idle", "design/complete"} {
 		if !strings.Contains(unicodeOutput, want) {
 			t.Fatalf("list unicode output missing %q:\n%s", want, unicodeOutput)
 		}
@@ -1033,7 +1038,7 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	if err := run([]string{"claim", strconv.FormatInt(matchingID, 10)}); err != nil {
 		t.Fatalf("claim error = %v", err)
 	}
-	if err := run([]string{"update", strconv.FormatInt(matchingID, 10), "-status", "inprogress", "-priority", "4"}); err != nil {
+	if err := run([]string{"update", strconv.FormatInt(matchingID, 10), "-stage", "develop", "-state", "active", "-priority", "4"}); err != nil {
 		t.Fatalf("update matching task error = %v", err)
 	}
 	if err := run([]string{"update", strconv.FormatInt(otherID, 10), "-priority", "2"}); err != nil {
@@ -1044,7 +1049,7 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 		if err := run([]string{
 			"search",
 			"free", "form", "entry",
-			"-status", "inprogress",
+			"-status", "develop/active",
 			"-title", "entry",
 			"-description", "customer portal",
 			"-priority", "4",
@@ -1100,7 +1105,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 			"-order", "7",
 			"-estimate_effort", "5",
 			"-estimate_complete", "2026-04-15T12:00:00Z",
-			"-status", "inprogress",
+			"-status", "develop/active",
 			"-parent_id", strconv.FormatInt(parentID, 10),
 		}); err != nil {
 			t.Fatalf("update error = %v", err)
@@ -1291,7 +1296,7 @@ func TestRunStatusChangeInLocalModeDoesNotRequireOwnership(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "status: done/complete") {
+	if !strings.Contains(output, "status: design/complete") {
 		t.Fatalf("complete output = %q", output)
 	}
 }

@@ -385,7 +385,7 @@ Representative commands:
 ticket list
 ticket ls
 ticket list --type bug
-ticket list --status open
+ticket list --status develop/idle
 ticket search "password reset"
 ticket search "password reset" -allprojects
 ticket get 42
@@ -400,19 +400,18 @@ The CLI should support `-json` on client-facing commands and pretty-print the re
 
 `ticket list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
-### Workflow And Status Management
+### Workflow And Lifecycle Management
 
-The system should support task progression through status changes.
+The system should support ticket progression through explicit stage/state
+changes.
 
-The first release supports this default status set:
+The lifecycle model is:
 
-- `notready`
-- `open`
-- `inprogress`
-- `complete`
-- `fail`
+- stages: `design`, `develop`, `test`, `done`
+- states: `idle`, `active`, `complete`
+- rendered status: `<stage>/<state>`
 
-The CLI and web app must both support easy status changes.
+The CLI and web app must both support easy lifecycle changes.
 
 Assignment workflows must support:
 
@@ -428,12 +427,14 @@ Assignment workflows must support:
 - `ticket rm <id>`
 - `ticket delete <id>`
 - `ticket list -u <name>` / `ticket ls -u <name>` for assignee filtering
-- `ticket open <id>`
-- `ticket ready <id>` as an alias for `ticket open <id>`
-- `ticket inprogress <id>`
+- `ticket design <id>`
+- `ticket develop <id>`
+- `ticket test <id>`
+- `ticket done <id>`
+- `ticket idle <id>`
+- `ticket active <id>`
 - `ticket complete <id>`
-- `ticket fail <id>`
-- `ticket update <id> -status <status>`
+- `ticket update <id> -status <stage/state>`
 - `ticket update <id> -title <title>`
 - `ticket update <id> -description <description>`
 - `ticket update <id> -ac <acceptance-criteria>`
@@ -451,9 +452,9 @@ Assignment rules:
 - `ticket request <id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
 - `ticket request` must return `{"status":"NO-WORK"}` when no assignable work exists
 - successful request responses must return `{"status":"ASSIGNED","task":...}`
-- if the caller already has an assigned `inprogress` task, that task is returned
-- otherwise, if the caller has assigned `open` work, the oldest assigned `open` task is returned
-- otherwise, `ticket request` assigns the oldest unassigned `open` task in the active project
+- if the caller already has an assigned `develop/active` ticket, that ticket is returned
+- otherwise, if the caller has assigned `develop/idle` work, the oldest assigned `develop/idle` ticket is returned
+- otherwise, `ticket request` assigns the oldest unassigned `develop/idle` ticket in the active project
 - `ticket claim` must fail if the task is already assigned to another user
 - `ticket unclaim` must fail if the caller is not the current assignee
 - a non-admin user must not be able to override another user assignment through the generic task update API
@@ -606,23 +607,23 @@ The product is successful if a user can:
 6. manage work visually through the web interface
 
 
-## Task Status
+## Ticket Lifecycle
 
-The status of a task is either
-    notready
-    open
-    inprogress
-    complete
-    fail
+The lifecycle of a ticket is:
+    stage: design | develop | test | done
+    state: idle | active | complete
+    status: <stage>/<state>
 
-This is set using 
-    `ticket open N`
-    `ticket ready N`
-    `ticket inprogress N`
+This is set using
+    `ticket design N`
+    `ticket develop N`
+    `ticket test N`
+    `ticket done N`
+    `ticket idle N`
+    `ticket active N`
     `ticket complete N`
-    `ticket fail N`
 or
-    `ticket update N -status <status>`
+    `ticket update N -status <stage/state>`
     `ticket update N -title <title>`
     `ticket update N -description <description>`
     `ticket update N -ac <acceptance-criteria>`
@@ -646,6 +647,6 @@ Or a user may request ANY task
 
 It is either assigned a task, or no work is available. If assigned, the task is updated to have this user name and the response is `{"status":"ASSIGNED","task":...}`. If not, the response is `{"status":"NO-WORK"}`.
 
-If the user has already been assigned a task, the task that is inprogress is returned. If the user has been assigned a task that is ready, then the oldest task that is assigned is then returned.
+If the user has already been assigned a `develop/active` ticket, that ticket is returned. If the user has been assigned a `develop/idle` ticket, then the oldest assigned `develop/idle` ticket is returned.
 
     
