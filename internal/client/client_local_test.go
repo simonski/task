@@ -1,6 +1,7 @@
 package client
 
 import (
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -163,4 +164,48 @@ func TestLocalModeClientDeleteTicket(t *testing.T) {
 	if _, err := api.GetTicketByID(task.ID); !errors.Is(err, store.ErrTicketNotFound) {
 		t.Fatalf("GetTicket(deleted) error = %v, want ErrTicketNotFound", err)
 	}
+}
+
+func TestLocalModeClientStatusIsReadOnlyWithoutMatchingUser(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+
+	dbPath := filepath.Join(tempDir, "ticket.db")
+	if err := store.Init(dbPath, "admin", "secret"); err != nil {
+		t.Fatalf("store.Init() error = %v", err)
+	}
+
+	api := New(config.Config{})
+	status, err := api.Status()
+	if err != nil {
+		t.Fatalf("Status() error = %v", err)
+	}
+	if status.Authenticated || status.User != nil {
+		t.Fatalf("Status() = %#v, want unauthenticated without side effects", status)
+	}
+	if _, err := store.GetUserByUsername(mustOpenDB(t, dbPath), localUsername()); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("Status() should not create local user, err = %v", err)
+	}
+}
+
+func TestLocalModeClientStatusFailsWhenDatabaseMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("TICKET_MODE", "local")
+	t.Setenv("TICKET_HOME", tempDir)
+
+	api := New(config.Config{})
+	if _, err := api.Status(); err == nil {
+		t.Fatal("Status() error = nil, want missing database error")
+	}
+}
+
+func mustOpenDB(t *testing.T, path string) *sql.DB {
+	t.Helper()
+	db, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("store.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }

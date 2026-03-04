@@ -30,14 +30,26 @@ func NewLocal(cfg config.Config) *LocalService {
 }
 
 func (s *LocalService) Status() (StatusResponse, error) {
-	db, err := s.openDB()
+	path, err := config.ResolveDatabasePath()
+	if err != nil {
+		return StatusResponse{}, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return StatusResponse{}, err
+	}
+	db, err := store.Open(path)
 	if err != nil {
 		return StatusResponse{}, err
 	}
 	defer db.Close()
-	user, err := s.localUser(db)
-	if err != nil {
+	user, err := store.GetUserByUsername(db, LocalUsername())
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return StatusResponse{Status: "ok", Authenticated: false}, nil
+	case err != nil:
 		return StatusResponse{}, err
+	case !user.Enabled:
+		return StatusResponse{Status: "ok", Authenticated: false}, nil
 	}
 	return StatusResponse{
 		Status:        "ok",

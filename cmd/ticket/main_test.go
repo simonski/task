@@ -654,15 +654,7 @@ func TestRunStatusRemoteSuccess(t *testing.T) {
 func TestRunStatusLocalMissingDatabasePrintsHint(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
-	t.Setenv("TICKET_HOME", "")
-	originalWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd() error = %v", err)
-	}
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("Chdir(tempDir) error = %v", err)
-	}
-	defer func() { _ = os.Chdir(originalWD) }()
+	t.Setenv("TICKET_HOME", tempDir)
 
 	var runErr error
 	output := captureStdout(t, func() {

@@ -2,7 +2,6 @@ package libticket_test
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestLocalServiceContract(t *testing.T) {
 	}, libtickettest.ContractOptions{RequireStatusOwnership: false})
 }
 
-func TestLocalServiceStatusCreatesLocalUser(t *testing.T) {
+func TestLocalServiceStatusIsReadOnlyWithoutMatchingUser(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
 	t.Setenv("TICKET_HOME", tempDir)
@@ -39,11 +38,8 @@ func TestLocalServiceStatusCreatesLocalUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if !status.Authenticated || status.User == nil {
-		t.Fatalf("Status() = %#v", status)
-	}
-	if status.User.Username != libticket.LocalUsername() {
-		t.Fatalf("Status().User.Username = %q, want %q", status.User.Username, libticket.LocalUsername())
+	if status.Authenticated || status.User != nil {
+		t.Fatalf("Status() = %#v, want unauthenticated without side effects", status)
 	}
 }
 
@@ -61,18 +57,14 @@ func TestLocalServiceRemoteAuthCommandsFail(t *testing.T) {
 	}
 }
 
-func TestLocalServiceStatusCreatesDatabaseWhenMissing(t *testing.T) {
+func TestLocalServiceStatusFailsWhenDatabaseMissing(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
 	t.Setenv("TICKET_HOME", tempDir)
-	dbPath := filepath.Join(tempDir, "ticket.db")
 
 	svc := libticket.NewLocal(config.Config{})
-	if _, err := svc.Status(); err != nil {
-		t.Fatalf("Status() error = %v", err)
-	}
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Fatalf("Status() should create/open local db at %s: %v", dbPath, err)
+	if _, err := svc.Status(); err == nil {
+		t.Fatal("Status() error = nil, want missing database error")
 	}
 }
 
@@ -86,7 +78,7 @@ func TestLocalUsernameUsesEnvironmentFallbacks(t *testing.T) {
 	}
 }
 
-func TestLocalServiceUsesTaskHomeDatabasePath(t *testing.T) {
+func TestLocalServiceUsesTicketHomeDatabasePath(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
 	t.Setenv("TICKET_HOME", tempDir)

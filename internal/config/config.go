@@ -153,14 +153,11 @@ func ResolveDatabasePath() (string, error) {
 	if override := envValue("TICKET_DB_OVERRIDE"); override != "" {
 		return override, nil
 	}
-	if home := envValue("TICKET_HOME"); home != "" {
-		return filepath.Join(home, "ticket.db"), nil
-	}
-	cwd, err := os.Getwd()
+	home, err := Home()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(cwd, "ticket.db"), nil
+	return filepath.Join(home, "ticket.db"), nil
 }
 
 func Path() (string, error) {
@@ -191,5 +188,5 @@ func Home() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, ".config", "task"), nil
+	return filepath.Join(homeDir, ".config", "ticket"), nil
 }

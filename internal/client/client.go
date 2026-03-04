@@ -163,16 +163,27 @@ func (c *Client) Logout() error {
 
 func (c *Client) Status() (StatusResponse, error) {
 	if c.mode == config.ModeLocal {
-		db, err := c.openLocalDB()
+		dbPath, err := config.ResolveDatabasePath()
+		if err != nil {
+			return StatusResponse{}, err
+		}
+		if _, err := os.Stat(dbPath); err != nil {
+			return StatusResponse{}, err
+		}
+		db, err := store.Open(dbPath)
 		if err != nil {
 			return StatusResponse{}, err
 		}
 		defer db.Close()
 
-		username := localUsername()
-		user, err := ensureLocalUser(db, username)
-		if err != nil {
+		user, err := store.GetUserByUsername(db, localUsername())
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return StatusResponse{Status: "ok", Authenticated: false}, nil
+		case err != nil:
 			return StatusResponse{}, err
+		case !user.Enabled:
+			return StatusResponse{Status: "ok", Authenticated: false}, nil
 		}
 		return StatusResponse{
 			Status:        "ok",

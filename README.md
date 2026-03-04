@@ -39,7 +39,7 @@ ticket initdb
 ticket server
 ```
 
-The web UI is then available at `http://localhost:8000`.
+The web UI is then available at `http://localhost:8080`.
 
 ## CLI Quick Start
 

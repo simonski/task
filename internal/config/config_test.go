@@ -80,7 +80,7 @@ func TestResolveModeRejectsInvalidValue(t *testing.T) {
 	}
 }
 
-func TestResolveDatabasePathUsesOverrideTaskHomeAndCWD(t *testing.T) {
+func TestResolveDatabasePathUsesOverrideAndHomeDefaults(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_DB_OVERRIDE", filepath.Join(tempDir, "override.db"))
 	path, err := ResolveDatabasePath()
@@ -102,25 +102,21 @@ func TestResolveDatabasePathUsesOverrideTaskHomeAndCWD(t *testing.T) {
 	}
 
 	t.Setenv("TICKET_HOME", "")
-	originalWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd() error = %v", err)
-	}
-	if err := os.Chdir(tempDir); err != nil {
-		t.Fatalf("Chdir(tempDir) error = %v", err)
-	}
-	defer func() { _ = os.Chdir(originalWD) }()
 	path, err = ResolveDatabasePath()
 	if err != nil {
-		t.Fatalf("ResolveDatabasePath(CWD) error = %v", err)
+		t.Fatalf("ResolveDatabasePath(default home) error = %v", err)
 	}
-	wantPath := strings.TrimPrefix(filepath.Clean(filepath.Join(tempDir, "ticket.db")), "/private")
-	if strings.TrimPrefix(filepath.Clean(path), "/private") != wantPath {
-		t.Fatalf("ResolveDatabasePath(CWD) = %q", path)
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir() error = %v", err)
+	}
+	wantPath := filepath.Join(userHome, ".config", "ticket", "ticket.db")
+	if strings.TrimPrefix(filepath.Clean(path), "/private") != strings.TrimPrefix(filepath.Clean(wantPath), "/private") {
+		t.Fatalf("ResolveDatabasePath(default home) = %q, want %q", path, wantPath)
 	}
 }
 
-func TestHomeDefaultsToDotConfigTask(t *testing.T) {
+func TestHomeDefaultsToDotConfigTicket(t *testing.T) {
 	t.Setenv("TICKET_HOME", "")
 	t.Setenv("TICKET_CONFIG_DIR", "")
 
@@ -132,7 +128,7 @@ func TestHomeDefaultsToDotConfigTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Home() error = %v", err)
 	}
-	want := filepath.Join(userHome, ".config", "task")
+	want := filepath.Join(userHome, ".config", "ticket")
 	if got != want {
 		t.Fatalf("Home() = %q, want %q", got, want)
 	}
