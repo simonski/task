@@ -129,9 +129,9 @@ var helpIndex = map[string]commandHelp{
 		example: "ticket project 3 update -title \"Customer Portal\"",
 	},
 	"list": {
-		usage:   "ticket list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>] [--unicode] [--plain]",
-		details: []string{"Lists tasks in the active project with optional type, status, assignee, and limit filters.", "`-n` is applied server-side. `0` means no limit."},
-		example: "ticket list --type bug --status open -u alice -n 20",
+		usage:   "ticket list|ls [--type <type>] [--stage <stage>] [--state <state>] [--status <stage/state>] [-u <user>] [-n <limit>] [--unicode] [--plain]",
+		details: []string{"Lists tasks in the active project with optional type, lifecycle, assignee, and limit filters.", "`status` is a rendered composite such as `develop/active`. `-n` is applied server-side. `0` means no limit."},
+		example: "ticket list --type bug --status develop/idle -u alice -n 20",
 	},
 	"orphans": {
 		usage:   "ticket orphans [-url <server-url>]",
@@ -149,14 +149,14 @@ var helpIndex = map[string]commandHelp{
 		example: "ticket show 42",
 	},
 	"search": {
-		usage:   "ticket search <free form query> [-status <status>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>] [-allprojects]",
-		details: []string{"Searches tasks in the active project by default.", "Use `-allprojects` to search across every project. Optional filters narrow by status, title text, description text, priority, and owner."},
-		example: "ticket search password reset -status open -owner alice -allprojects",
+		usage:   "ticket search <free form query> [-stage <stage>] [-state <state>] [-status <stage/state>] [-title <text>] [-description <text>] [-priority <n>] [-owner <user>] [-allprojects]",
+		details: []string{"Searches tasks in the active project by default.", "Use `-allprojects` to search across every project. Optional filters narrow by lifecycle, title text, description text, priority, and owner."},
+		example: "ticket search password reset -status develop/active -owner alice -allprojects",
 	},
 	"update": {
-		usage:   "ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
-		details: []string{"Updates one or more task fields in a single command.", "Accepted status values are `notready`, `open`, `inprogress`, `complete`, and `fail`. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
-		example: "ticket update 42 -title \"Customer Portal\" -status inprogress -priority 2 -estimate_effort 5",
+		usage:   "ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]",
+		details: []string{"Updates one or more task fields in a single command.", "Use `-stage` and `-state` to edit the lifecycle directly on leaf tickets. `estimate_complete` must be RFC3339, for example `2026-03-31T17:00:00Z`."},
+		example: "ticket update 42 -title \"Customer Portal\" -stage develop -state active -priority 2 -estimate_effort 5",
 	},
 	"set-parent": {
 		usage:   "ticket set-parent <id> <parent-id>",
@@ -168,34 +168,44 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Clears the parent of a task or story.", "After this, the task becomes an orphan."},
 		example: "ticket unset-parent 1",
 	},
-	"open": {
-		usage:   "ticket open <id>",
-		details: []string{"Sets the task status to `open`."},
-		example: "ticket open 42",
+	"design": {
+		usage:   "ticket design <id>",
+		details: []string{"Sets the ticket stage to `design` and the state to `idle`."},
+		example: "ticket design 42",
 	},
-	"ready": {
-		usage:   "ticket ready <id>",
-		details: []string{"Alias for `ticket open <id>`.", "Use this when marking a task as ready for work."},
-		example: "ticket ready 42",
+	"develop": {
+		usage:   "ticket develop <id>",
+		details: []string{"Sets the ticket stage to `develop` and the state to `idle`."},
+		example: "ticket develop 42",
 	},
-	"inprogress": {
-		usage:   "ticket inprogress <id>",
-		details: []string{"Sets the task status to `inprogress`."},
-		example: "ticket inprogress 42",
+	"test": {
+		usage:   "ticket test <id>",
+		details: []string{"Sets the ticket stage to `test` and the state to `idle`."},
+		example: "ticket test 42",
+	},
+	"done": {
+		usage:   "ticket done <id>",
+		details: []string{"Sets the ticket stage to `done` and the state to `complete`."},
+		example: "ticket done 42",
+	},
+	"idle": {
+		usage:   "ticket idle <id>",
+		details: []string{"Sets the ticket state to `idle` without changing the stage."},
+		example: "ticket idle 42",
+	},
+	"active": {
+		usage:   "ticket active <id>",
+		details: []string{"Sets the ticket state to `active` without changing the stage.", "`active` requires an assignee; if the ticket is unassigned the CLI claims it for the current user first."},
+		example: "ticket active 42",
 	},
 	"complete": {
 		usage:   "ticket complete <id>",
-		details: []string{"Sets the task status to `complete`."},
+		details: []string{"Compatibility alias for moving a ticket to `done/complete`."},
 		example: "ticket complete 42",
-	},
-	"fail": {
-		usage:   "ticket fail <id>",
-		details: []string{"Sets the task status to `fail`."},
-		example: "ticket fail 42",
 	},
 	"add": {
 		usage:   "ticket add|create|new [-title <title>] [-t <type>] [-p <priority>] [-a <assignee>] [-d <description>] [-ac <criteria>] [-parent <id>] [-project <project>] [-estimate_effort <n>] [-estimate_complete <rfc3339>] [title words]",
-		details: []string{"Creates a task-like entity in the active project.", "Positional title words and `-title` are equivalent ways to set the title.", "Defaults: `type=task`, `priority=1`, blank assignee, blank description, blank acceptance criteria, blank parent, current project, `estimate_effort=0`, blank `estimate_complete`."},
+		details: []string{"Creates a task-like entity in the active project.", "Positional title words and `-title` are equivalent ways to set the title.", "Defaults: `type=task`, `stage=design`, `state=idle`, `priority=1`, blank assignee, blank description, blank acceptance criteria, blank parent, current project, `estimate_effort=0`, blank `estimate_complete`."},
 		example: "ticket add \"Customers can reset their password.\"",
 	},
 	"comment": {
@@ -205,7 +215,7 @@ var helpIndex = map[string]commandHelp{
 	},
 	"clone": {
 		usage:   "ticket clone|cp <id>",
-		details: []string{"Clones a task or epic.", "Cloned items are unassigned, set to `notready`, and keep a `clone_of` reference to the source item. Cloning an epic also clones its child tasks."},
+		details: []string{"Clones a task or epic.", "Cloned items are unassigned, reset to `design/idle`, and keep a `clone_of` reference to the source item. Cloning an epic also clones its child tasks."},
 		example: "ticket clone 42",
 	},
 	"delete": {
@@ -250,7 +260,7 @@ var helpIndex = map[string]commandHelp{
 	},
 	"request": {
 		usage:   "ticket request [--dryrun] [<id>]",
-		details: []string{"Requests work for the current user.", "With an id, the server attempts to assign that specific task. Without an id, it assigns the oldest unassigned `open` task in the active project, unless the user already has assigned work to resume."},
+		details: []string{"Requests work for the current user.", "With an id, the server attempts to assign that specific ticket. Without an id, it resumes the user's oldest assigned `develop/active` ticket, then assigned `develop/idle` work, then assigns the oldest unassigned `develop/idle` ticket in the active project."},
 		example: "ticket request 42",
 	},
 	"request-dryrun": {
@@ -367,16 +377,26 @@ func run(args []string) error {
 		return runUnsetParent(trimmedArgs[1:])
 	case "set-status":
 		return runSetStatus(trimmedArgs[1:])
-	case "open":
-		return runTaskStatusAlias(trimmedArgs[1:], "open", "open")
-	case "ready":
-		return runTaskStatusAlias(trimmedArgs[1:], "open", "ready")
-	case "inprogress":
-		return runTaskStatusAlias(trimmedArgs[1:], "inprogress", "inprogress")
+	case "design":
+		return runTaskStageAlias(trimmedArgs[1:], store.StageDesign, "design")
+	case "develop":
+		return runTaskStageAlias(trimmedArgs[1:], store.StageDevelop, "develop")
+	case "test":
+		return runTaskStageAlias(trimmedArgs[1:], store.StageTest, "test")
+	case "done":
+		return runTaskStageAlias(trimmedArgs[1:], store.StageDone, "done")
+	case "idle":
+		return runTaskStateAlias(trimmedArgs[1:], store.StateIdle, "idle")
+	case "active":
+		return runTaskStateAlias(trimmedArgs[1:], store.StateActive, "active")
 	case "complete":
-		return runTaskStatusAlias(trimmedArgs[1:], "complete", "complete")
+		return runLegacyTaskStatusAlias(trimmedArgs[1:], "complete", "complete")
+	case "open", "ready":
+		return runLegacyTaskStatusAlias(trimmedArgs[1:], "open", trimmedArgs[0])
+	case "inprogress":
+		return runLegacyTaskStatusAlias(trimmedArgs[1:], "inprogress", "inprogress")
 	case "fail":
-		return runTaskStatusAlias(trimmedArgs[1:], "fail", "fail")
+		return runLegacyTaskStatusAlias(trimmedArgs[1:], "fail", "fail")
 	case "assign":
 		return runAssign(trimmedArgs[1:])
 	case "unassign":
@@ -1204,11 +1224,23 @@ func containsFlag(args []string, flag string) bool {
 	return false
 }
 
+func resolveLifecycleInput(status, stage, state string) (string, string, error) {
+	if strings.TrimSpace(stage) != "" || strings.TrimSpace(state) != "" {
+		return stage, state, nil
+	}
+	if strings.TrimSpace(status) == "" {
+		return "", "", nil
+	}
+	return store.ParseLifecycleStatus(status)
+}
+
 func runList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	taskType := fs.String("type", "", "filter by task type")
-	status := fs.String("status", "", "filter by task status")
+	stage := fs.String("stage", "", "filter by task stage")
+	state := fs.String("state", "", "filter by task state")
+	status := fs.String("status", "", "filter by rendered task status")
 	assignee := fs.String("user", "", "filter by assignee")
 	fs.StringVar(assignee, "u", "", "filter by assignee")
 	limit := fs.Int("n", 0, "maximum number of tasks to return; 0 means all")
@@ -1218,14 +1250,18 @@ func runList(args []string) error {
 		return err
 	}
 	if *limit < 0 {
-		return errors.New("usage: ticket list|ls [--type <type>] [--status <status>] [-u <user>] [-n <limit>]")
+		return errors.New("usage: ticket list|ls [--type <type>] [--stage <stage>] [--state <state>] [--status <stage/state>] [-u <user>] [-n <limit>]")
 	}
 	statusUnicode := *useUnicode && !*plain
+	resolvedStage, resolvedState, err := resolveLifecycleInput(*status, *stage, *state)
+	if err != nil {
+		return err
+	}
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasksFiltered(project.ID, *taskType, *status, "", *assignee, *limit)
+	tasks, err := api.ListTasksFiltered(project.ID, *taskType, resolvedStage, resolvedState, "", "", *assignee, *limit)
 	if err != nil {
 		return err
 	}
@@ -1330,12 +1366,12 @@ func runSearch(args []string) error {
 	}
 	var tasks []store.Task
 	for _, project := range projects {
-		projectTasks, err := svc.ListTasksFiltered(project.ID, "", "", "", "", 0)
+		projectTasks, err := svc.ListTasksFiltered(project.ID, "", "", "", "", "", "", 0)
 		if err != nil {
 			return err
 		}
 		for _, task := range projectTasks {
-			if !taskMatchesSearch(task, query, filters.status, filters.title, filters.description, filters.priority, filters.owner) {
+			if !taskMatchesSearch(task, query, filters.stage, filters.state, filters.status, filters.title, filters.description, filters.priority, filters.owner) {
 				continue
 			}
 			tasks = append(tasks, task)
@@ -1351,6 +1387,8 @@ func runSearch(args []string) error {
 }
 
 type searchFilters struct {
+	stage       string
+	state       string
 	status      string
 	title       string
 	description string
@@ -1364,6 +1402,18 @@ func parseSearchArgs(args []string) (string, searchFilters, error) {
 	var terms []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-stage":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -stage requires a value")
+			}
+			filters.stage = args[i+1]
+			i++
+		case "-state":
+			if i+1 >= len(args) {
+				return "", filters, errors.New("search flag -state requires a value")
+			}
+			filters.state = args[i+1]
+			i++
 		case "-status":
 			if i+1 >= len(args) {
 				return "", filters, errors.New("search flag -status requires a value")
@@ -1407,7 +1457,7 @@ func parseSearchArgs(args []string) (string, searchFilters, error) {
 	return strings.TrimSpace(strings.Join(terms, " ")), filters, nil
 }
 
-func taskMatchesSearch(task store.Task, query, status, title, description string, priority int, owner string) bool {
+func taskMatchesSearch(task store.Task, query, stage, state, status, title, description string, priority int, owner string) bool {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query != "" {
 		haystack := strings.ToLower(strings.Join([]string{
@@ -1422,7 +1472,20 @@ func taskMatchesSearch(task store.Task, query, status, title, description string
 			return false
 		}
 	}
-	if trimmed := strings.TrimSpace(status); trimmed != "" && task.Status != trimmed {
+	if trimmed := strings.TrimSpace(status); trimmed != "" {
+		stageFilter, stateFilter, err := resolveLifecycleInput(trimmed, "", "")
+		if err == nil {
+			if task.Stage != strings.TrimSpace(stageFilter) || task.State != strings.TrimSpace(stateFilter) {
+				return false
+			}
+		} else if task.Status != trimmed {
+			return false
+		}
+	}
+	if trimmed := strings.TrimSpace(stage); trimmed != "" && task.Stage != trimmed {
+		return false
+	}
+	if trimmed := strings.TrimSpace(state); trimmed != "" && task.State != trimmed {
 		return false
 	}
 	if trimmed := strings.ToLower(strings.TrimSpace(title)); trimmed != "" && !strings.Contains(strings.ToLower(task.Title), trimmed) {
@@ -1441,13 +1504,6 @@ func taskMatchesSearch(task store.Task, query, status, title, description string
 		return false
 	}
 	return true
-}
-
-func runSetStatus(args []string) error {
-	if len(args) != 2 {
-		return errors.New("usage: ticket set-status <id> <status>")
-	}
-	return updateTaskStatus(args[0], args[1])
 }
 
 func runSetParent(args []string) error {
@@ -1508,14 +1564,42 @@ func runUnsetParent(args []string) error {
 	return nil
 }
 
-func runTaskStatusAlias(args []string, status, command string) error {
+func runTaskStageAlias(args []string, stage, command string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: ticket %s <id>", command)
 	}
-	return updateTaskStatus(args[0], status)
+	return updateTaskStage(args[0], stage)
 }
 
-func updateTaskStatus(idArg, status string) error {
+func runTaskStateAlias(args []string, state, command string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: ticket %s <id>", command)
+	}
+	return updateTaskState(args[0], state)
+}
+
+func runSetStatus(args []string) error {
+	if len(args) != 2 {
+		return errors.New("usage: ticket set-status <id> <status>")
+	}
+	return runLegacyTaskStatusAlias(args[:1], args[1], "set-status")
+}
+
+func runLegacyTaskStatusAlias(args []string, status, command string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: ticket %s <id>", command)
+	}
+	stage, state, err := store.ParseLifecycleStatus(status)
+	if err != nil {
+		return err
+	}
+	if stage == store.StageDone {
+		return updateTaskStage(args[0], stage)
+	}
+	return updateTaskLifecycle(args[0], stage, state)
+}
+
+func updateTaskStage(idArg, stage string) error {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
 		return errors.New("ticket id must be numeric")
@@ -1532,13 +1616,71 @@ func updateTaskStatus(idArg, status string) error {
 	if err != nil {
 		return err
 	}
+	nextState := store.StateIdle
+	if stage == store.StageDone {
+		nextState = store.StateComplete
+	}
+	return updateTaskLifecycleRequest(svc, id, current, stage, nextState)
+}
+
+func updateTaskState(idArg, state string) error {
+	var id int64
+	if _, err := fmt.Sscan(idArg, &id); err != nil {
+		return errors.New("ticket id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	return updateTaskLifecycleRequest(svc, id, current, current.Stage, state)
+}
+
+func updateTaskLifecycle(idArg, stage, state string) error {
+	var id int64
+	if _, err := fmt.Sscan(idArg, &id); err != nil {
+		return errors.New("ticket id must be numeric")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	current, err := svc.GetTask(id)
+	if err != nil {
+		return err
+	}
+	return updateTaskLifecycleRequest(svc, id, current, stage, state)
+}
+
+func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.Task, stage, state string) error {
+	assignee := current.Assignee
+	if state == store.StateActive && strings.TrimSpace(assignee) == "" {
+		status, err := svc.Status()
+		if err == nil && status.User != nil && strings.TrimSpace(status.User.Username) != "" {
+			assignee = status.User.Username
+		} else {
+			assignee = currentOSUser()
+		}
+	}
 	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
-		Assignee:           current.Assignee,
-		Status:             status,
+		Assignee:           assignee,
+		Stage:              stage,
+		State:              state,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -1565,16 +1707,18 @@ func runUpdate(args []string) error {
 	order := fs.Int("order", 0, "task order")
 	estimateEffort := fs.Int("estimate_effort", 0, "estimated effort")
 	estimateComplete := fs.String("estimate_complete", "", "estimated completion time (RFC3339)")
-	status := fs.String("status", "", "task status")
+	status := fs.String("status", "", "legacy task status alias")
+	stage := fs.String("stage", "", "task stage")
+	state := fs.String("state", "", "task state")
 	parentIDRaw := fs.String("parent_id", "", "task parent id")
 	if len(args) == 0 {
-		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 {
-		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	var id int64
 	if _, err := fmt.Sscan(args[0], &id); err != nil {
@@ -1589,9 +1733,11 @@ func runUpdate(args []string) error {
 	hasEstimateEffort := containsFlag(args[1:], "-estimate_effort")
 	hasEstimateComplete := containsFlag(args[1:], "-estimate_complete")
 	hasStatus := containsFlag(args[1:], "-status")
+	hasStage := containsFlag(args[1:], "-stage")
+	hasState := containsFlag(args[1:], "-state")
 	hasParentID := containsFlag(args[1:], "-parent_id")
-	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasEstimateEffort && !hasEstimateComplete && !hasStatus && !hasParentID {
-		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-status <status>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
+	if !hasTitle && !hasDescription && !hasDesc && !hasAC && !hasPriority && !hasOrder && !hasEstimateEffort && !hasEstimateComplete && !hasStatus && !hasStage && !hasState && !hasParentID {
+		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1611,7 +1757,8 @@ func runUpdate(args []string) error {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           current.Assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -1642,7 +1789,18 @@ func runUpdate(args []string) error {
 		next.EstimateComplete = *estimateComplete
 	}
 	if hasStatus {
-		next.Status = *status
+		resolvedStage, resolvedState, err := resolveLifecycleInput(*status, "", "")
+		if err != nil {
+			return err
+		}
+		next.Stage = resolvedStage
+		next.State = resolvedState
+	}
+	if hasStage {
+		next.Stage = *stage
+	}
+	if hasState {
+		next.State = *state
 	}
 	if hasParentID {
 		parentID, err := strconv.ParseInt(strings.TrimSpace(*parentIDRaw), 10, 64)
@@ -1757,7 +1915,8 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -1829,7 +1988,8 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           "",
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -2095,17 +2255,17 @@ func resolveCurrentRequestUser(cfg config.Config, mode string) (string, error) {
 }
 
 func predictRequestedTask(api libticket.Service, projectID int64, username string, requestedID *int64) (*store.Task, string, error) {
-	tasks, err := api.ListTasksFiltered(projectID, "", "", "", "", 0)
+	tasks, err := api.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
 	if err != nil {
 		return nil, "", err
 	}
 	for _, task := range tasks {
-		if task.Status == "inprogress" && strings.TrimSpace(task.Assignee) == username {
+		if task.Stage == store.StageDevelop && task.State == store.StateActive && strings.TrimSpace(task.Assignee) == username {
 			return &task, "ASSIGNED", nil
 		}
 	}
 	for _, task := range tasks {
-		if task.Status == "open" && strings.TrimSpace(task.Assignee) == username {
+		if task.Stage == store.StageDevelop && task.State == store.StateIdle && strings.TrimSpace(task.Assignee) == username {
 			return &task, "ASSIGNED", nil
 		}
 	}
@@ -2124,14 +2284,14 @@ func predictRequestedTask(api libticket.Service, projectID int64, username strin
 		if strings.TrimSpace(task.Assignee) != "" {
 			return nil, "REJECTED", nil
 		}
-		if task.Status != "open" {
+		if task.Stage != store.StageDevelop || task.State != store.StateIdle {
 			return nil, "REJECTED", nil
 		}
 		return &task, "ASSIGNED", nil
 	}
 
 	for _, task := range tasks {
-		if task.Status == "open" && strings.TrimSpace(task.Assignee) == "" {
+		if task.Stage == store.StageDevelop && task.State == store.StateIdle && strings.TrimSpace(task.Assignee) == "" {
 			return &task, "ASSIGNED", nil
 		}
 	}
@@ -2296,7 +2456,7 @@ func runReview(args []string) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasksFiltered(project.ID, "requirement", *status, "", "", 0)
+	tasks, err := api.ListTasksFiltered(project.ID, "requirement", "", "", *status, "", "", 0)
 	if err != nil {
 		return err
 	}
@@ -2333,7 +2493,8 @@ func runRequirementStatus(status string, args []string) error {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           current.Assignee,
-		Status:             status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -2372,7 +2533,8 @@ func runRevise(args []string) error {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           current.Assignee,
-		Status:             "proposed",
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -2414,7 +2576,7 @@ func runDecision(args []string) error {
 		if err != nil {
 			return err
 		}
-		tasks, err := api.ListTasksFiltered(project.ID, "decision", "", "", "", 0)
+		tasks, err := api.ListTasksFiltered(project.ID, "decision", "", "", "", "", "", 0)
 		if err != nil {
 			return err
 		}
@@ -3107,25 +3269,30 @@ CLIENT COMMANDS
 `)
 	printCommandUsageRows(&b, [][2]string{
 		{"add", "Create a task in the active project"},
+		{"active", "Set a ticket state to active"},
 		{"claim", "Assign yourself to a task"},
 		{"clone", "Clone a task or epic"},
 		{"comment", "Add comments to a task"},
-		{"complete", "Set a task status to complete"},
+		{"complete", "Compatibility alias for done/complete"},
 		{"count", "Count users, projects, and work by type"},
+		{"design", "Set a ticket stage to design"},
 		{"dependency", "Manage dependency links between tasks"},
 		{"delete", "Delete a task permanently"},
-		{"fail", "Set a task status to fail"},
+		{"develop", "Set a ticket stage to develop"},
+		{"done", "Set a ticket stage to done"},
+		{"fail", "Compatibility alias for test/complete"},
 		{"get", "Show a task with history and comments"},
 		{"help", "Show command help"},
-		{"inprogress", "Set a task status to inprogress"},
+		{"idle", "Set a ticket state to idle"},
+		{"inprogress", "Compatibility alias for develop/active"},
 		{"list", "List tasks in the active project"},
 		{"login", "Log into the server"},
 		{"logout", "Clear the local session"},
 		{"onboard", "Append the embedded AGENTS.md template in the current directory"},
-		{"open", "Set a task status to open"},
+		{"open", "Compatibility alias for develop/idle"},
 		{"orphans", "List tasks with no parent"},
 		{"project", "Manage projects and active project context"},
-		{"ready", "Alias for open"},
+		{"ready", "Compatibility alias for open"},
 		{"register", "Create a user account on the server"},
 		{"ticket", "Generate requirements via an external agent"},
 		{"request", "Request work for the current user"},
@@ -3133,6 +3300,7 @@ CLIENT COMMANDS
 		{"search", "Search tasks in the active project or across all projects"},
 		{"set-parent", "Set the parent of a task"},
 		{"status", "Show server and authentication status"},
+		{"test", "Set a ticket stage to test"},
 		{"unset-parent", "Clear the parent of a task"},
 		{"unclaim", "Remove yourself from a task"},
 		{"update", "Update a task"},
@@ -3207,14 +3375,18 @@ func formatTaskStatusSymbol(status string, useUnicode bool) string {
 	if !useUnicode {
 		return ""
 	}
-	switch status {
-	case "open":
+	stage, state, err := store.ParseLifecycleStatus(status)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case stage == store.StageDesign && state == store.StateIdle:
 		return "○"
-	case "notready":
+	case stage == store.StageDevelop && state == store.StateIdle:
 		return "○"
-	case "inprogress":
+	case state == store.StateActive:
 		return "◑"
-	case "complete":
+	case state == store.StateComplete:
 		return "◉"
 	default:
 		return ""
@@ -3222,13 +3394,18 @@ func formatTaskStatusSymbol(status string, useUnicode bool) string {
 }
 
 func formatStatusCounts(statuses map[string]int) string {
-	order := []string{"open", "inprogress", "notready", "complete", "fail"}
+	order := []string{"design/idle", "design/active", "design/complete", "develop/idle", "develop/active", "develop/complete", "test/idle", "test/active", "test/complete", "done/complete"}
 	labels := map[string]string{
-		"open":       "open",
-		"inprogress": "in progress",
-		"notready":   "not ready",
-		"complete":   "complete",
-		"fail":       "fail",
+		"design/idle":      "design/idle",
+		"design/active":    "design/active",
+		"design/complete":  "design/complete",
+		"develop/idle":     "develop/idle",
+		"develop/active":   "develop/active",
+		"develop/complete": "develop/complete",
+		"test/idle":        "test/idle",
+		"test/active":      "test/active",
+		"test/complete":    "test/complete",
+		"done/complete":    "done/complete",
 	}
 	var parts []string
 	for _, status := range order {

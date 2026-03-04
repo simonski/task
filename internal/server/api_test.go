@@ -279,11 +279,11 @@ func TestTaskAPI(t *testing.T) {
 	}
 	var updated store.Task
 	decodeResponse(t, getResp, &updated)
-	if updated.Status != "inprogress" {
-		t.Fatalf("updated status = %q, want inprogress", updated.Status)
+	if updated.Status != "develop/active" {
+		t.Fatalf("updated status = %q, want develop/active", updated.Status)
 	}
 
-	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?type=task&status=inprogress&q=password", nil, auth.Token)
+	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?type=task&status=develop/active&q=password", nil, auth.Token)
 	if filteredResp.Code != http.StatusOK {
 		t.Fatalf("filtered list status = %d body=%s", filteredResp.Code, filteredResp.Body.String())
 	}
@@ -691,7 +691,7 @@ func TestCloneTaskAPI(t *testing.T) {
 	}
 	var clonedEpic store.Task
 	decodeResponse(t, cloneResp, &clonedEpic)
-	if clonedEpic.CloneOf == nil || *clonedEpic.CloneOf != epic.ID || clonedEpic.Status != "notready" || clonedEpic.Assignee != "" {
+	if clonedEpic.CloneOf == nil || *clonedEpic.CloneOf != epic.ID || clonedEpic.Status != "design/idle" || clonedEpic.Assignee != "" {
 		t.Fatalf("cloned epic = %#v", clonedEpic)
 	}
 
@@ -708,7 +708,7 @@ func TestCloneTaskAPI(t *testing.T) {
 	if clonedChild == nil {
 		t.Fatalf("cloned child not found in %#v", tasks)
 	}
-	if clonedChild.ParentID == nil || *clonedChild.ParentID != clonedEpic.ID || clonedChild.Status != "notready" || clonedChild.Assignee != "" {
+	if clonedChild.ParentID == nil || *clonedChild.ParentID != clonedEpic.ID || clonedChild.Status != "design/idle" || clonedChild.Assignee != "" {
 		t.Fatalf("cloned child = %#v", clonedChild)
 	}
 }

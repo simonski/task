@@ -18,37 +18,42 @@ func TestCountEverything(t *testing.T) {
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Task A",
-		Status:    "open",
+		Stage:     StageDesign,
+		State:     StateIdle,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(task open) error = %v", err)
+		t.Fatalf("CreateTask(task design/idle) error = %v", err)
 	}
 	if _, err := CreateTask(db, TaskCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Task B",
-		Status:    "complete",
+		Stage:     StageDone,
+		State:     StateComplete,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(task complete) error = %v", err)
+		t.Fatalf("CreateTask(task done/complete) error = %v", err)
 	}
 	if _, err := CreateTask(db, TaskCreateParams{
 		ProjectID: project.ID,
 		Type:      "epic",
 		Title:     "Epic A",
-		Status:    "complete",
+		Stage:     StageDone,
+		State:     StateComplete,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(epic complete) error = %v", err)
+		t.Fatalf("CreateTask(epic done/complete) error = %v", err)
 	}
 	if _, err := CreateTask(db, TaskCreateParams{
 		ProjectID: otherProject.ID,
 		Type:      "bug",
 		Title:     "Bug A",
-		Status:    "inprogress",
+		Stage:     StageDevelop,
+		State:     StateActive,
+		Assignee:  "alice",
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(bug in progress) error = %v", err)
+		t.Fatalf("CreateTask(bug develop/active) error = %v", err)
 	}
 
 	all, err := CountEverything(db, nil)
@@ -78,7 +83,7 @@ func TestCountEverything(t *testing.T) {
 	if projectOnly.Types[0].Type != "task" || projectOnly.Types[0].Total != 2 {
 		t.Fatalf("CountEverything(project).Types[0] = %#v", projectOnly.Types[0])
 	}
-	if projectOnly.Types[0].Statuses["complete"] != 1 || projectOnly.Types[0].Statuses["open"] != 1 {
+	if projectOnly.Types[0].Statuses["done/complete"] != 1 || projectOnly.Types[0].Statuses["design/idle"] != 1 {
 		t.Fatalf("CountEverything(project).Types[0].Statuses = %#v", projectOnly.Types[0].Statuses)
 	}
 }

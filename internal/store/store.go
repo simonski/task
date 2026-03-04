@@ -216,7 +216,8 @@ func migrateSchema(db *sql.DB) error {
 		UPDATE tasks
 		SET
 			stage = CASE
-				WHEN status IN ('notready', 'open') THEN 'design'
+				WHEN status = 'notready' THEN 'design'
+				WHEN status = 'open' THEN 'develop'
 				WHEN status = 'inprogress' THEN 'develop'
 				WHEN status = 'complete' THEN 'done'
 				WHEN status = 'fail' THEN 'test'

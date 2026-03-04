@@ -11,6 +11,16 @@ import (
 	"github.com/simonski/ticket/internal/store"
 )
 
+func resolveRequestLifecycle(status, stage, state string) (string, string, error) {
+	if strings.TrimSpace(stage) != "" || strings.TrimSpace(state) != "" {
+		return stage, state, nil
+	}
+	if strings.TrimSpace(status) == "" {
+		return stage, state, nil
+	}
+	return store.ParseLifecycleStatus(status)
+}
+
 type LocalService struct {
 	cfg config.Config
 }
@@ -152,6 +162,10 @@ func (s *LocalService) CreateTask(request TaskCreateRequest) (store.Task, error)
 	if err != nil {
 		return store.Task{}, err
 	}
+	stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
+	if err != nil {
+		return store.Task{}, err
+	}
 	return store.CreateTask(db, store.TaskCreateParams{
 		ProjectID:          request.ProjectID,
 		ParentID:           request.ParentID,
@@ -164,15 +178,17 @@ func (s *LocalService) CreateTask(request TaskCreateRequest) (store.Task, error)
 		EstimateEffort:     request.EstimateEffort,
 		EstimateComplete:   request.EstimateComplete,
 		Assignee:           request.Assignee,
+		Stage:              stage,
+		State:              state,
 		CreatedBy:          user.ID,
 	})
 }
 
 func (s *LocalService) ListTasks(projectID int64) ([]store.Task, error) {
-	return s.ListTasksFiltered(projectID, "", "", "", "", 0)
+	return s.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
 }
 
-func (s *LocalService) ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error) {
+func (s *LocalService) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return nil, err
@@ -181,6 +197,8 @@ func (s *LocalService) ListTasksFiltered(projectID int64, taskType, status, sear
 	return store.ListTasks(db, store.TaskListParams{
 		ProjectID: projectID,
 		Type:      taskType,
+		Stage:     stage,
+		State:     state,
 		Status:    status,
 		Search:    search,
 		Assignee:  assignee,
@@ -198,13 +216,18 @@ func (s *LocalService) UpdateTask(id int64, request TaskUpdateRequest) (store.Ta
 	if err != nil {
 		return store.Task{}, err
 	}
+	stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
+	if err != nil {
+		return store.Task{}, err
+	}
 	return store.UpdateTask(db, id, store.TaskUpdateParams{
 		Title:              request.Title,
 		Description:        request.Description,
 		AcceptanceCriteria: request.AcceptanceCriteria,
 		ParentID:           request.ParentID,
 		Assignee:           request.Assignee,
-		Status:             request.Status,
+		Stage:              stage,
+		State:              state,
 		Priority:           request.Priority,
 		Order:              request.Order,
 		EstimateEffort:     request.EstimateEffort,
@@ -236,7 +259,8 @@ func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           &parentID,
 		Assignee:           current.Assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -255,7 +279,8 @@ func (s *LocalService) UnsetTaskParent(id int64) (store.Task, error) {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           nil,
 		Assignee:           current.Assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,

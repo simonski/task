@@ -33,11 +33,13 @@ func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Local task",
+		Stage:     "develop",
+		State:     "idle",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
-	if strings.TrimSpace(task.Assignee) != "" || task.Status != "open" {
+	if strings.TrimSpace(task.Assignee) != "" || task.Status != "develop/idle" {
 		t.Fatalf("CreateTask() = %#v", task)
 	}
 
@@ -54,13 +56,14 @@ func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 		Description: task.Description,
 		ParentID:    task.ParentID,
 		Assignee:    requested.Task.Assignee,
-		Status:      "inprogress",
+		Stage:       "develop",
+		State:       "active",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
-	if updated.Status != "inprogress" {
-		t.Fatalf("UpdateTask().Status = %q, want inprogress", updated.Status)
+	if updated.Status != "develop/active" {
+		t.Fatalf("UpdateTask().Status = %q, want develop/active", updated.Status)
 	}
 
 	parent, err := api.CreateTask(TaskCreateRequest{
@@ -124,13 +127,14 @@ func TestLocalModeClientIgnoresOwnershipForStatusChanges(t *testing.T) {
 		Description: task.Description,
 		ParentID:    task.ParentID,
 		Assignee:    task.Assignee,
-		Status:      "complete",
+		Stage:       "done",
+		State:       "complete",
 	})
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
-	if updated.Status != "complete" {
-		t.Fatalf("UpdateTask().Status = %q, want complete", updated.Status)
+	if updated.Status != "done/complete" {
+		t.Fatalf("UpdateTask().Status = %q, want done/complete", updated.Status)
 	}
 }
 

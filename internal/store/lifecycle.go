@@ -1,5 +1,10 @@
 package store
 
+import (
+	"fmt"
+	"strings"
+)
+
 const (
 	StageDesign  = "design"
 	StageDevelop = "develop"
@@ -68,5 +73,33 @@ func CompareStageOrder(left, right string) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+func ParseLifecycleStatus(raw string) (string, string, error) {
+	trimmed := strings.TrimSpace(strings.ToLower(raw))
+	if trimmed == "" {
+		return "", "", fmt.Errorf("invalid status %q", raw)
+	}
+	if strings.Contains(trimmed, "/") {
+		parts := strings.SplitN(trimmed, "/", 2)
+		if len(parts) == 2 && ValidLifecycle(parts[0], parts[1]) {
+			return parts[0], parts[1], nil
+		}
+		return "", "", fmt.Errorf("invalid status %q", raw)
+	}
+	switch trimmed {
+	case "notready":
+		return StageDesign, StateIdle, nil
+	case "open", "ready":
+		return StageDevelop, StateIdle, nil
+	case "inprogress", "in_progress":
+		return StageDevelop, StateActive, nil
+	case "fail":
+		return StageTest, StateComplete, nil
+	case "complete", "done":
+		return StageDone, StateComplete, nil
+	default:
+		return "", "", fmt.Errorf("invalid status %q", raw)
 	}
 }

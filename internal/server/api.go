@@ -291,6 +291,8 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			tasks, err := store.ListTasks(db, store.TaskListParams{
 				ProjectID: project.ID,
 				Type:      r.URL.Query().Get("type"),
+				Stage:     r.URL.Query().Get("stage"),
+				State:     r.URL.Query().Get("state"),
 				Status:    r.URL.Query().Get("status"),
 				Search:    r.URL.Query().Get("q"),
 				Assignee:  r.URL.Query().Get("assignee"),
@@ -398,6 +400,11 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
+		stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		task, err := store.CreateTask(db, store.TaskCreateParams{
 			ProjectID:          taskPayload.ProjectID,
 			ParentID:           taskPayload.ParentID,
@@ -409,7 +416,8 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			EstimateEffort:     taskPayload.EstimateEffort,
 			EstimateComplete:   taskPayload.EstimateComplete,
 			Assignee:           taskPayload.Assignee,
-			Status:             taskPayload.Status,
+			Stage:              stage,
+			State:              state,
 			CreatedBy:          user.ID,
 		})
 		if err != nil {
@@ -555,13 +563,19 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
+			stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
 				Title:              taskPayload.Title,
 				Description:        taskPayload.Description,
 				AcceptanceCriteria: taskPayload.AcceptanceCriteria,
 				ParentID:           taskPayload.ParentID,
 				Assignee:           taskPayload.Assignee,
-				Status:             taskPayload.Status,
+				Stage:              stage,
+				State:              state,
 				Priority:           taskPayload.Priority,
 				Order:              taskPayload.Order,
 				EstimateEffort:     taskPayload.EstimateEffort,
@@ -669,6 +683,8 @@ type taskRequest struct {
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
 	Status             string `json:"status"`
+	Stage              string `json:"stage"`
+	State              string `json:"state"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
 	EstimateEffort     int    `json:"estimate_effort"`
@@ -694,6 +710,16 @@ type taskAssignRequest struct {
 type authResponse struct {
 	Token string     `json:"token"`
 	User  store.User `json:"user"`
+}
+
+func resolveLifecycleRequest(status, stage, state string) (string, string, error) {
+	if strings.TrimSpace(stage) != "" || strings.TrimSpace(state) != "" {
+		return stage, state, nil
+	}
+	if strings.TrimSpace(status) == "" {
+		return stage, state, nil
+	}
+	return store.ParseLifecycleStatus(status)
 }
 
 func userFromRequest(db *sql.DB, r *http.Request) (store.User, error) {

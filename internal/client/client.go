@@ -62,6 +62,9 @@ type TaskCreateRequest struct {
 	EstimateEffort     int    `json:"estimate_effort"`
 	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
+	Status             string `json:"status,omitempty"`
+	Stage              string `json:"stage,omitempty"`
+	State              string `json:"state,omitempty"`
 }
 
 type TaskUpdateRequest struct {
@@ -71,6 +74,8 @@ type TaskUpdateRequest struct {
 	ParentID           *int64 `json:"parent_id,omitempty"`
 	Assignee           string `json:"assignee"`
 	Status             string `json:"status,omitempty"`
+	Stage              string `json:"stage,omitempty"`
+	State              string `json:"state,omitempty"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
 	EstimateEffort     int    `json:"estimate_effort"`
@@ -95,6 +100,16 @@ type TaskRequest struct {
 type TaskRequestResponse struct {
 	Status string      `json:"status"`
 	Task   *store.Task `json:"task,omitempty"`
+}
+
+func resolveRequestLifecycle(status, stage, state string) (string, string, error) {
+	if strings.TrimSpace(stage) != "" || strings.TrimSpace(state) != "" {
+		return stage, state, nil
+	}
+	if strings.TrimSpace(status) == "" {
+		return stage, state, nil
+	}
+	return store.ParseLifecycleStatus(status)
 }
 
 func New(cfg config.Config) *Client {
@@ -335,6 +350,10 @@ func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 		if err != nil {
 			return store.Task{}, err
 		}
+		stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
+		if err != nil {
+			return store.Task{}, err
+		}
 		return store.CreateTask(db, store.TaskCreateParams{
 			ProjectID:          request.ProjectID,
 			ParentID:           request.ParentID,
@@ -347,6 +366,8 @@ func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 			EstimateEffort:     request.EstimateEffort,
 			EstimateComplete:   request.EstimateComplete,
 			Assignee:           request.Assignee,
+			Stage:              stage,
+			State:              state,
 			CreatedBy:          user.ID,
 		})
 	}
@@ -356,10 +377,10 @@ func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 }
 
 func (c *Client) ListTasks(projectID int64) ([]store.Task, error) {
-	return c.ListTasksFiltered(projectID, "", "", "", "", 0)
+	return c.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
 }
 
-func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error) {
+func (c *Client) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
@@ -369,6 +390,8 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, as
 		return store.ListTasks(db, store.TaskListParams{
 			ProjectID: projectID,
 			Type:      taskType,
+			Stage:     stage,
+			State:     state,
 			Status:    status,
 			Search:    search,
 			Assignee:  assignee,
@@ -379,6 +402,12 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, status, search, as
 	values := url.Values{}
 	if taskType != "" {
 		values.Set("type", taskType)
+	}
+	if stage != "" {
+		values.Set("stage", stage)
+	}
+	if state != "" {
+		values.Set("state", state)
 	}
 	if status != "" {
 		values.Set("status", status)
@@ -411,13 +440,18 @@ func (c *Client) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, er
 		if err != nil {
 			return store.Task{}, err
 		}
+		stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
+		if err != nil {
+			return store.Task{}, err
+		}
 		return store.UpdateTask(db, id, store.TaskUpdateParams{
 			Title:              request.Title,
 			Description:        request.Description,
 			AcceptanceCriteria: request.AcceptanceCriteria,
 			ParentID:           request.ParentID,
 			Assignee:           request.Assignee,
-			Status:             request.Status,
+			Stage:              stage,
+			State:              state,
 			Priority:           request.Priority,
 			Order:              request.Order,
 			EstimateEffort:     request.EstimateEffort,
@@ -456,7 +490,8 @@ func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           &parentID,
 		Assignee:           current.Assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -475,7 +510,8 @@ func (c *Client) UnsetTaskParent(id int64) (store.Task, error) {
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           nil,
 		Assignee:           current.Assignee,
-		Status:             current.Status,
+		Stage:              current.Stage,
+		State:              current.State,
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,

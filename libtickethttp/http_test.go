@@ -149,11 +149,14 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		Priority:           1,
 		EstimateEffort:     2,
 		EstimateComplete:   "2026-04-01T09:00:00Z",
+		Stage:              "develop",
+		State:              "idle",
 	})
 	if err != nil {
 		t.Fatalf("CreateTask(task) error = %v", err)
 	}
-	if _, err := svc.RequestTask(libticket.TaskRequest{ProjectID: 1, TaskID: &task.ID}); err != nil {
+	requested, err := svc.RequestTask(libticket.TaskRequest{ProjectID: 1, TaskID: &task.ID})
+	if err != nil {
 		t.Fatalf("RequestTask() error = %v", err)
 	}
 
@@ -162,7 +165,7 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		Description:        "new description",
 		AcceptanceCriteria: "new ac",
 		ParentID:           &parent.ID,
-		Assignee:           task.Assignee,
+		Assignee:           requested.Task.Assignee,
 		Status:             "inprogress",
 		Priority:           3,
 		Order:              7,
@@ -172,7 +175,7 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
-	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "inprogress" || updated.Priority != 3 || updated.Order != 7 || updated.EstimateEffort != 5 || updated.EstimateComplete != "2026-04-15T12:00:00Z" {
+	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "develop/active" || updated.Priority != 3 || updated.Order != 7 || updated.EstimateEffort != 5 || updated.EstimateComplete != "2026-04-15T12:00:00Z" {
 		t.Fatalf("UpdateTask() = %#v", updated)
 	}
 	if updated.ParentID == nil || *updated.ParentID != parent.ID {

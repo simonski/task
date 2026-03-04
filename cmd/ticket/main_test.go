@@ -848,11 +848,11 @@ func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
 			t.Fatalf("list unicode row missing symbol=%q status=%q id=%q:\n%s", statusSymbol, statusText, taskID, unicodeOutput)
 		}
 	}
-	checkRow("◑", strconv.FormatInt(inProgressID, 10), "inprogress")
-	checkRow("◉", strconv.FormatInt(completeID, 10), "complete")
-	checkRow("○", strconv.FormatInt(openID, 10), "notready")
+	checkRow("◑", strconv.FormatInt(inProgressID, 10), "develop/active")
+	checkRow("◉", strconv.FormatInt(completeID, 10), "done/complete")
+	checkRow("○", strconv.FormatInt(openID, 10), "design/idle")
 
-	for _, want := range []string{"inprogress", "notready", "complete"} {
+	for _, want := range []string{"develop/active", "design/idle", "done/complete"} {
 		if !strings.Contains(unicodeOutput, want) {
 			t.Fatalf("list unicode output missing %q:\n%s", want, unicodeOutput)
 		}
@@ -889,6 +889,12 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 
 	taskID := createLocalTask(t, []string{"add", "-d", "findable description", "-ac", "ship it", "-estimate_effort", "8", "-estimate_complete", "2026-04-20T17:00:00Z", "Task Alpha"})
 	depID := createLocalTask(t, []string{"add", "Task Beta"})
+	if err := run([]string{"develop", strconv.FormatInt(taskID, 10)}); err != nil {
+		t.Fatalf("develop task alpha error = %v", err)
+	}
+	if err := run([]string{"develop", strconv.FormatInt(depID, 10)}); err != nil {
+		t.Fatalf("develop task beta error = %v", err)
+	}
 	if err := run([]string{"comment", "add", strconv.FormatInt(taskID, 10), "latest note"}); err != nil {
 		t.Fatalf("comment add error = %v", err)
 	}
@@ -923,7 +929,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	}
 
 	listOutput := captureStdout(t, func() {
-		if err := run([]string{"list", "--status", "open"}); err != nil {
+		if err := run([]string{"list", "--status", "develop/idle"}); err != nil {
 			t.Fatalf("list error = %v", err)
 		}
 	})
@@ -936,7 +942,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("request error = %v", err)
 		}
 	})
-	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: open") {
+	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: develop/idle") {
 		t.Fatalf("request output = %q", requestOutput)
 	}
 
@@ -972,7 +978,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("clone error = %v", err)
 		}
 	})
-	if !strings.Contains(cloneOutput, "clone_of: "+strconv.FormatInt(taskID, 10)) || !strings.Contains(cloneOutput, "status: notready") {
+	if !strings.Contains(cloneOutput, "clone_of: "+strconv.FormatInt(taskID, 10)) || !strings.Contains(cloneOutput, "status: design/idle") {
 		t.Fatalf("clone output = %q", cloneOutput)
 	}
 
@@ -1047,7 +1053,7 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 			t.Fatalf("search error = %v", err)
 		}
 	})
-	if !strings.Contains(output, strconv.FormatInt(matchingID, 10)+"\ttask\tinprogress\tFree form entry") {
+	if !strings.Contains(output, strconv.FormatInt(matchingID, 10)+"\ttask\tdevelop/active\tFree form entry") {
 		t.Fatalf("search output missing matching task:\n%s", output)
 	}
 	if strings.Contains(output, strconv.FormatInt(otherID, 10)+"\t") {
@@ -1066,10 +1072,10 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 			t.Fatalf("search allprojects error = %v", err)
 		}
 	})
-	if !strings.Contains(allProjectsOutput, strconv.FormatInt(matchingID, 10)+"\ttask\tinprogress\tFree form entry") {
+	if !strings.Contains(allProjectsOutput, strconv.FormatInt(matchingID, 10)+"\ttask\tdevelop/active\tFree form entry") {
 		t.Fatalf("allprojects output missing current project task:\n%s", allProjectsOutput)
 	}
-	if !strings.Contains(allProjectsOutput, strconv.FormatInt(crossProjectID, 10)+"\ttask\topen\tFree form entry elsewhere") {
+	if !strings.Contains(allProjectsOutput, strconv.FormatInt(crossProjectID, 10)+"\ttask\tdesign/idle\tFree form entry elsewhere") {
 		t.Fatalf("allprojects output missing cross-project task:\n%s", allProjectsOutput)
 	}
 }
@@ -1107,7 +1113,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		"Order        : 7",
 		"EstimateEffort   : 5",
 		"EstimateComplete : 2026-04-15T12:00:00Z",
-		"Status       : inprogress",
+		"Status       : develop/active",
 		"Priority     : 3",
 		"Acceptance Criteria : new ac",
 	} {
@@ -1128,7 +1134,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		"Order        : 7",
 		"EstimateEffort   : 5",
 		"EstimateComplete : 2026-04-15T12:00:00Z",
-		"Status       : inprogress",
+		"Status       : develop/active",
 		"Priority     : 3",
 		"Acceptance Criteria : new ac",
 	} {
@@ -1285,7 +1291,7 @@ func TestRunStatusChangeInLocalModeDoesNotRequireOwnership(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(output, "status: complete") {
+	if !strings.Contains(output, "status: done/complete") {
 		t.Fatalf("complete output = %q", output)
 	}
 }

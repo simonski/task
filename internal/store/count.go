@@ -30,16 +30,16 @@ func CountEverything(db *sql.DB, projectID *int64) (CountSummary, error) {
 	}
 
 	query := `
-		SELECT type, status, COUNT(*)
+		SELECT type, stage, state, COUNT(*)
 		FROM tasks
 	`
 	var rows *sql.Rows
 	var err error
 	if projectID != nil {
 		query += ` WHERE project_id = ?`
-		rows, err = db.Query(query+` GROUP BY type, status ORDER BY type, status`, *projectID)
+		rows, err = db.Query(query+` GROUP BY type, stage, state ORDER BY type, stage, state`, *projectID)
 	} else {
-		rows, err = db.Query(query + ` GROUP BY type, status ORDER BY type, status`)
+		rows, err = db.Query(query + ` GROUP BY type, stage, state ORDER BY type, stage, state`)
 	}
 	if err != nil {
 		return CountSummary{}, err
@@ -49,9 +49,10 @@ func CountEverything(db *sql.DB, projectID *int64) (CountSummary, error) {
 	byType := map[string]*TypeCount{}
 	for rows.Next() {
 		var taskType string
-		var status string
+		var stage string
+		var state string
 		var count int
-		if err := rows.Scan(&taskType, &status, &count); err != nil {
+		if err := rows.Scan(&taskType, &stage, &state, &count); err != nil {
 			return CountSummary{}, err
 		}
 		entry, ok := byType[taskType]
@@ -63,7 +64,7 @@ func CountEverything(db *sql.DB, projectID *int64) (CountSummary, error) {
 			byType[taskType] = entry
 		}
 		entry.Total += count
-		entry.Statuses[status] = count
+		entry.Statuses[RenderLifecycleStatus(stage, state)] = count
 	}
 	if err := rows.Err(); err != nil {
 		return CountSummary{}, err

@@ -57,7 +57,7 @@ func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ParseQuery() error = %v", err)
 		}
-		if values.Get("type") != "bug" || values.Get("status") != "open" || values.Get("q") != "needle" || values.Get("assignee") != "alice" || values.Get("limit") != "25" {
+		if values.Get("type") != "bug" || values.Get("status") != "develop/idle" || values.Get("q") != "needle" || values.Get("assignee") != "alice" || values.Get("limit") != "25" {
 			t.Fatalf("query = %#v", values)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -66,7 +66,7 @@ func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
 	defer server.Close()
 
 	api := New(config.Config{ServerURL: server.URL})
-	if _, err := api.ListTasksFiltered(7, "bug", "open", "needle", "alice", 25); err != nil {
+	if _, err := api.ListTasksFiltered(7, "bug", "", "", "develop/idle", "needle", "alice", 25); err != nil {
 		t.Fatalf("ListTasksFiltered() error = %v", err)
 	}
 }
@@ -209,9 +209,9 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/7/disable":
 			_, _ = w.Write([]byte(`{"project_id":7,"title":"P2","status":"disabled"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","status":"open"}`))
+			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11":
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","status":"open"}`))
+			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/tasks/11":
 			_, _ = w.Write([]byte(`{"status":"deleted"}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/tasks/11":
@@ -223,9 +223,9 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 			if payload.ParentID != nil {
 				parentJSON = `,"parent_id":` + strconv.FormatInt(*payload.ParentID, 10)
 			}
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","status":"inprogress"` + parentJSON + `}`))
+			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"develop","state":"active","status":"develop/active"` + parentJSON + `}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks/11/clone":
-			_, _ = w.Write([]byte(`{"task_id":21,"project_id":7,"title":"T","type":"task","status":"notready","clone_of":11}`))
+			_, _ = w.Write([]byte(`{"task_id":21,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle","clone_of":11}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11/history":
 			_, _ = w.Write([]byte(`[{"id":1,"task_id":11,"event_type":"task_updated"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks/11/comments":
@@ -285,7 +285,7 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 	if err := api.DeleteTask(taskID); err != nil {
 		t.Fatalf("DeleteTask() error = %v", err)
 	}
-	if _, err := api.UpdateTask(taskID, TaskUpdateRequest{Title: "T", Status: "inprogress"}); err != nil {
+	if _, err := api.UpdateTask(taskID, TaskUpdateRequest{Title: "T", Stage: "develop", State: "active"}); err != nil {
 		t.Fatalf("UpdateTask() error = %v", err)
 	}
 	if _, err := api.SetTaskParent(taskID, dependsOn); err != nil {

@@ -35,6 +35,9 @@ type TaskCreateRequest struct {
 	EstimateEffort     int    `json:"estimate_effort"`
 	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
+	Status             string `json:"status,omitempty"`
+	Stage              string `json:"stage,omitempty"`
+	State              string `json:"state,omitempty"`
 }
 
 type TaskUpdateRequest struct {
@@ -44,6 +47,8 @@ type TaskUpdateRequest struct {
 	ParentID           *int64 `json:"parent_id,omitempty"`
 	Assignee           string `json:"assignee"`
 	Status             string `json:"status,omitempty"`
+	Stage              string `json:"stage,omitempty"`
+	State              string `json:"state,omitempty"`
 	Priority           int    `json:"priority"`
 	Order              int    `json:"order"`
 	EstimateEffort     int    `json:"estimate_effort"`

@@ -87,8 +87,8 @@ func (s *Service) ListTasks(projectID int64) ([]store.Task, error) {
 	return s.client.ListTasks(projectID)
 }
 
-func (s *Service) ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error) {
-	return s.client.ListTasksFiltered(projectID, taskType, status, search, assignee, limit)
+func (s *Service) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
+	return s.client.ListTasksFiltered(projectID, taskType, stage, state, status, search, assignee, limit)
 }
 
 func (s *Service) UpdateTask(id int64, request libticket.TaskUpdateRequest) (store.Task, error) {

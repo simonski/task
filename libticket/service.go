@@ -19,7 +19,7 @@ type Service interface {
 	SetProjectEnabled(id int64, enabled bool) (store.Project, error)
 	CreateTask(request TaskCreateRequest) (store.Task, error)
 	ListTasks(projectID int64) ([]store.Task, error)
-	ListTasksFiltered(projectID int64, taskType, status, search, assignee string, limit int) ([]store.Task, error)
+	ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error)
 	UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error)
 	DeleteTask(id int64) error
 	SetTaskParent(id, parentID int64) (store.Task, error)

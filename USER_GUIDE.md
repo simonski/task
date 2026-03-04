@@ -344,14 +344,13 @@ ticket list --type bug
 ticket list --type epic
 ```
 
-Filter by status:
+Filter by lifecycle:
 
 ```bash
-ticket list --status open
-ticket list --status notready
-ticket list --status inprogress
-ticket list --status complete
-ticket list --status fail
+ticket list --stage design
+ticket list --state active
+ticket list --status develop/idle
+ticket list --status done/complete
 ```
 
 Filter by assignee:
@@ -361,13 +360,13 @@ ticket list -u alice
 ticket ls -u alice
 ```
 
-`ticket list` prints a table with the task id, type, status, assignee, priority, and title.
+`ticket list` prints a table with the task id, type, rendered `status` (`stage/state`), assignee, priority, and title.
 
 Search within the active project:
 
 ```bash
 ticket search "password reset"
-ticket search password reset -status open -owner alice
+ticket search password reset -status develop/idle -owner alice
 ```
 
 Search across all projects:
@@ -415,19 +414,21 @@ They also fail if the named user does not exist or is disabled.
 
 `ticket rm` and `ticket delete` remove a task permanently. They fail if the task still has child tasks.
 
-`ticket request` asks the server to assign work to the current user. If the user already has an `inprogress` task, that task is returned. Otherwise, if the user has assigned `open` work, the oldest assigned `open` task is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific task is requested and cannot be assigned, the JSON response status is `REJECTED`.
+`ticket request` asks the server to assign work to the current user. If the user already has an assigned `develop/active` ticket, that ticket is returned. Otherwise, if the user has assigned `develop/idle` work, the oldest assigned `develop/idle` ticket is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific ticket is requested and cannot be assigned, the JSON response status is `REJECTED`.
 
-Status commands:
+Lifecycle commands:
 
 ```bash
-ticket open 42
-ticket ready 42
-ticket inprogress 42
+ticket design 42
+ticket develop 42
+ticket test 42
+ticket done 42
+ticket idle 42
+ticket active 42
 ticket complete 42
-ticket fail 42
 ```
 
-`ticket ready` is an alias for `ticket open`.
+`ticket complete` is a compatibility alias for `ticket done`.
 
 Most client-facing commands also support `-json` to pretty-print the JSON response.
 
@@ -496,7 +497,7 @@ ticket epic "..."
 ticket list
 ticket ls
 ticket list --type task
-ticket list --status open
+ticket list --status develop/idle
 ticket list -u <name>
 ticket search "..."
 ticket search "..." -allprojects
@@ -516,16 +517,18 @@ ticket set-parent <id> <parent-id>
 ticket unset-parent <id>
 ticket rm <id>
 ticket delete <id>
-ticket open <id>
-ticket ready <id>
-ticket inprogress <id>
+ticket design <id>
+ticket develop <id>
+ticket test <id>
+ticket done <id>
+ticket idle <id>
+ticket active <id>
 ticket complete <id>
-ticket fail <id>
-ticket update <id> -status <status>
+ticket update <id> -stage <stage> -state <state>
 ticket count
 ticket count -project_id <id>
 
-ticket update <id> -status open
+ticket update <id> -stage develop -state idle
 ticket update <id> -title "new title"
 ticket update <id> -description "new description"
 ticket update <id> -ac "new acceptance criteria"
@@ -534,7 +537,6 @@ ticket update <id> -order 7
 ticket update <id> -parent_id 12
 ticket update <id> -estimate_effort 5
 ticket update <id> -estimate_complete 2026-04-30T17:00:00Z
-ticket update <id> -status open -priority 2 -title "new title"
-ticket update <id> -status closed
+ticket update <id> -stage develop -state active -priority 2 -title "new title"
 
 ```

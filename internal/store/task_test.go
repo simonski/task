@@ -11,6 +11,9 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
 
 	epic, err := CreateTask(db, TaskCreateParams{
 		ProjectID: project.ID,
@@ -73,15 +76,19 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 		Title:            updated.Title,
 		Description:      updated.Description,
 		ParentID:         updated.ParentID,
-		Status:           "inprogress",
+		Stage:            StageDevelop,
+		State:            StateActive,
+		Assignee:         "alice",
+		ActorUsername:    "admin",
+		ActorRole:        "admin",
 		EstimateEffort:   updated.EstimateEffort,
 		EstimateComplete: updated.EstimateComplete,
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask(status) error = %v", err)
+		t.Fatalf("UpdateTask(stage/state) error = %v", err)
 	}
-	if statusUpdated.Status != "inprogress" {
-		t.Fatalf("UpdateTask().Status = %q, want inprogress", statusUpdated.Status)
+	if statusUpdated.Status != "develop/active" {
+		t.Fatalf("UpdateTask().Status = %q, want develop/active", statusUpdated.Status)
 	}
 	if statusUpdated.Stage != StageDevelop || statusUpdated.State != StateActive {
 		t.Fatalf("UpdateTask().Lifecycle = %s/%s, want develop/active", statusUpdated.Stage, statusUpdated.State)
@@ -90,7 +97,7 @@ func TestCreateUpdateAndListTasks(t *testing.T) {
 	filtered, err := ListTasks(db, TaskListParams{
 		ProjectID: project.ID,
 		Type:      "task",
-		Status:    "inprogress",
+		Status:    "develop/active",
 		Search:    "password",
 	})
 	if err != nil {
@@ -190,21 +197,23 @@ func TestRequestTask(t *testing.T) {
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Blocked setup",
-		Status:    "notready",
+		Stage:     StageDesign,
+		State:     StateIdle,
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(notready) error = %v", err)
+		t.Fatalf("CreateTask(design/idle) error = %v", err)
 	}
 	openTask, err := CreateTask(db, TaskCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Open task",
-		Status:    "open",
+		Stage:     StageDevelop,
+		State:     StateIdle,
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(open) error = %v", err)
+		t.Fatalf("CreateTask(develop/idle) error = %v", err)
 	}
 
 	assigned, status, err := RequestTask(db, TaskRequestParams{
@@ -236,13 +245,14 @@ func TestRequestTask(t *testing.T) {
 		Description:   assigned.Description,
 		ParentID:      assigned.ParentID,
 		Assignee:      "alice",
-		Status:        "inprogress",
+		Stage:         StageDevelop,
+		State:         StateActive,
 		UpdatedBy:     2,
 		ActorUsername: "alice",
 		ActorRole:     "user",
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask(inprogress) error = %v", err)
+		t.Fatalf("UpdateTask(develop/active) error = %v", err)
 	}
 
 	requested, status, err := RequestTask(db, TaskRequestParams{
@@ -414,12 +424,13 @@ func TestUpdateTaskStatusRequiresAssignee(t *testing.T) {
 		Description:   task.Description,
 		ParentID:      task.ParentID,
 		Assignee:      "",
-		Status:        "inprogress",
+		Stage:         StageDevelop,
+		State:         StateActive,
 		UpdatedBy:     2,
 		ActorUsername: "alice",
 		ActorRole:     "user",
-	}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("UpdateTask(status unassigned) error = %v, want ErrForbidden", err)
+	}); err == nil || err.Error() != "active ticket requires assignee" {
+		t.Fatalf("UpdateTask(status unassigned) error = %v, want active ticket requires assignee", err)
 	}
 }
 
@@ -438,21 +449,25 @@ func TestUpdateTaskStatusAllowsAdminBypass(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask() error = %v", err)
 	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
 	updated, err := UpdateTask(db, task.ID, TaskUpdateParams{
 		Title:         task.Title,
 		Description:   task.Description,
 		ParentID:      task.ParentID,
-		Assignee:      "",
-		Status:        "inprogress",
+		Assignee:      "alice",
+		Stage:         StageDevelop,
+		State:         StateActive,
 		UpdatedBy:     1,
 		ActorUsername: "admin",
 		ActorRole:     "admin",
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask(admin status bypass) error = %v", err)
+		t.Fatalf("UpdateTask(admin lifecycle bypass) error = %v", err)
 	}
-	if updated.Status != "inprogress" {
-		t.Fatalf("UpdateTask(admin status bypass).Status = %q, want inprogress", updated.Status)
+	if updated.Status != "develop/active" {
+		t.Fatalf("UpdateTask(admin lifecycle bypass).Status = %q, want develop/active", updated.Status)
 	}
 }
 
@@ -470,7 +485,8 @@ func TestClosedTaskCannotBeReopened(t *testing.T) {
 		Type:      "task",
 		Title:     "Closed task",
 		Assignee:  "alice",
-		Status:    "complete",
+		Stage:     StageDone,
+		State:     StateComplete,
 		CreatedBy: 1,
 	})
 	if err != nil {
@@ -481,11 +497,12 @@ func TestClosedTaskCannotBeReopened(t *testing.T) {
 		Description:   task.Description,
 		ParentID:      task.ParentID,
 		Assignee:      "alice",
-		Status:        "open",
+		Stage:         StageDevelop,
+		State:         StateIdle,
 		UpdatedBy:     2,
 		ActorUsername: "alice",
 		ActorRole:     "user",
-	}); err == nil || err.Error() != "closed ticket cannot be reopened" {
+	}); err == nil || err.Error() != "done ticket cannot be reopened" {
 		t.Fatalf("UpdateTask(reopen) error = %v", err)
 	}
 }
@@ -503,7 +520,8 @@ func TestCloneTaskClonesSingleTask(t *testing.T) {
 		Description:        "desc",
 		AcceptanceCriteria: "ac",
 		Assignee:           "alice",
-		Status:             "inprogress",
+		Stage:              StageDevelop,
+		State:              StateActive,
 		Priority:           3,
 		CreatedBy:          1,
 	})
@@ -514,7 +532,7 @@ func TestCloneTaskClonesSingleTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CloneTask() error = %v", err)
 	}
-	if cloned.ID == task.ID || cloned.Status != "notready" || cloned.Assignee != "" {
+	if cloned.ID == task.ID || cloned.Status != "design/idle" || cloned.Assignee != "" {
 		t.Fatalf("CloneTask() = %#v", cloned)
 	}
 	if cloned.CloneOf == nil || *cloned.CloneOf != task.ID {

@@ -43,6 +43,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			ProjectID: project.ID,
 			Type:      "task",
 			Title:     "Contract Task",
+			Stage:     "develop",
+			State:     "idle",
 		})
 		if err != nil {
 			t.Fatalf("CreateTask() error = %v", err)
@@ -64,13 +66,14 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Description: task.Description,
 			ParentID:    task.ParentID,
 			Assignee:    response.Task.Assignee,
-			Status:      "inprogress",
+			Stage:       "develop",
+			State:       "active",
 		})
 		if err != nil {
 			t.Fatalf("UpdateTask() error = %v", err)
 		}
-		if updated.Status != "inprogress" {
-			t.Fatalf("UpdateTask().Status = %q, want inprogress", updated.Status)
+		if updated.Status != "develop/active" {
+			t.Fatalf("UpdateTask().Status = %q, want develop/active", updated.Status)
 		}
 
 		comment, err := svc.AddComment(task.ID, "contract comment")
@@ -136,8 +139,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 		if cloned.CloneOf == nil || *cloned.CloneOf != task.ID {
 			t.Fatalf("CloneTask() = %#v", cloned)
 		}
-		if cloned.Status != "notready" {
-			t.Fatalf("CloneTask().Status = %q, want notready", cloned.Status)
+		if cloned.Status != "design/idle" {
+			t.Fatalf("CloneTask().Status = %q, want design/idle", cloned.Status)
 		}
 
 		status, err := svc.Status()
@@ -203,6 +206,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Type:        "bug",
 			Title:       "Bug task",
 			Description: "find me",
+			Stage:       "develop",
+			State:       "idle",
 		})
 		if err != nil {
 			t.Fatalf("CreateTask() error = %v", err)
@@ -216,7 +221,7 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			t.Fatalf("RequestTask() = %#v", requested)
 		}
 
-		filtered, err := svc.ListTasksFiltered(project.ID, "bug", "open", "find", requested.Task.Assignee, 10)
+		filtered, err := svc.ListTasksFiltered(project.ID, "bug", "", "", "develop/idle", "find", requested.Task.Assignee, 10)
 		if err != nil {
 			t.Fatalf("ListTasksFiltered() error = %v", err)
 		}
@@ -229,12 +234,13 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Description: task.Description,
 			ParentID:    task.ParentID,
 			Assignee:    requested.Task.Assignee,
-			Status:      "complete",
+			Stage:       "done",
+			State:       "complete",
 		})
 		if err != nil {
 			t.Fatalf("UpdateTask(complete) error = %v", err)
 		}
-		if completed.Status != "complete" {
+		if completed.Status != "done/complete" {
 			t.Fatalf("UpdateTask(complete).Status = %q", completed.Status)
 		}
 
@@ -251,7 +257,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Description: task.Description,
 			ParentID:    task.ParentID,
 			Assignee:    requested.Task.Assignee,
-			Status:      "open",
+			Stage:       "develop",
+			State:       "idle",
 		}); err == nil {
 			t.Fatal("UpdateTask(reopen) error = nil, want closed ticket error")
 		}
@@ -285,9 +292,10 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Description: task.Description,
 			ParentID:    task.ParentID,
 			Assignee:    task.Assignee,
-			Status:      "bogus",
+			Stage:       "bogus",
+			State:       "idle",
 		}); err == nil {
-			t.Fatal("UpdateTask(invalid status) error = nil")
+			t.Fatal("UpdateTask(invalid lifecycle) error = nil")
 		}
 
 		if err := svc.RemoveDependency(libticket.DependencyRequest{
@@ -307,6 +315,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Type:      "task",
 			Title:     "Assigned Elsewhere",
 			Assignee:  "someone-else",
+			Stage:     "develop",
+			State:     "idle",
 		})
 		if err != nil {
 			t.Fatalf("CreateTask(assigned) error = %v", err)
@@ -339,6 +349,8 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Type:      "task",
 			Title:     "Assigned to bob",
 			Assignee:  "bob",
+			Stage:     "develop",
+			State:     "idle",
 		})
 		if err != nil {
 			t.Fatalf("CreateTask() error = %v", err)
@@ -348,9 +360,10 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			Description: task.Description,
 			ParentID:    task.ParentID,
 			Assignee:    task.Assignee,
-			Status:      "inprogress",
+			Stage:       "develop",
+			State:       "active",
 		}); err == nil {
-			t.Fatal("UpdateTask(status by non-assignee) error = nil")
+			t.Fatal("UpdateTask(lifecycle by non-assignee) error = nil")
 		}
 	})
 
