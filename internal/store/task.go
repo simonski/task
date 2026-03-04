@@ -10,12 +10,12 @@ import (
 )
 
 var (
-	ErrTaskNotFound    = errors.New("ticket not found")
-	ErrTaskHasChildren = errors.New("task has child tasks")
+	ErrTicketNotFound    = errors.New("ticket not found")
+	ErrTicketHasChildren = errors.New("ticket has child tickets")
 )
 
-type Task struct {
-	ID                 int64     `json:"task_id"`
+type Ticket struct {
+	ID                 int64     `json:"ticket_id"`
 	Key                string    `json:"key"`
 	ProjectID          int64     `json:"project_id"`
 	ParentID           *int64    `json:"parent_id,omitempty"`
@@ -39,7 +39,7 @@ type Task struct {
 	UpdatedAt          string    `json:"updated_at"`
 }
 
-type TaskCreateParams struct {
+type TicketCreateParams struct {
 	ProjectID          int64
 	ParentID           *int64
 	CloneOf            *int64
@@ -57,7 +57,7 @@ type TaskCreateParams struct {
 	CreatedBy          int64
 }
 
-type TaskUpdateParams struct {
+type TicketUpdateParams struct {
 	Title              string
 	Description        string
 	AcceptanceCriteria string
@@ -74,7 +74,7 @@ type TaskUpdateParams struct {
 	ActorRole          string
 }
 
-type TaskListParams struct {
+type TicketListParams struct {
 	ProjectID int64
 	Type      string
 	Stage     string
@@ -85,45 +85,45 @@ type TaskListParams struct {
 	Limit     int
 }
 
-type TaskRequestParams struct {
+type TicketRequestParams struct {
 	ProjectID int64
-	TaskID    *int64
-	TaskRef   string
+	TicketID  *int64
+	TicketRef string
 	Username  string
 	UserID    int64
 	DryRun    bool
 }
 
-func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
-	params.Type = normalizeTaskType(params.Type)
+func CreateTicket(db *sql.DB, params TicketCreateParams) (Ticket, error) {
+	params.Type = normalizeTicketType(params.Type)
 	params.Title = strings.TrimSpace(params.Title)
 	if params.ProjectID == 0 {
-		return Task{}, errors.New("project is required")
+		return Ticket{}, errors.New("project is required")
 	}
 	if params.Title == "" {
-		return Task{}, errors.New("ticket title is required")
+		return Ticket{}, errors.New("ticket title is required")
 	}
-	if !validTaskType(params.Type) {
-		return Task{}, fmt.Errorf("invalid ticket type %q", params.Type)
+	if !validTicketType(params.Type) {
+		return Ticket{}, fmt.Errorf("invalid ticket type %q", params.Type)
 	}
 	if params.ParentID != nil {
-		parent, err := GetTask(db, *params.ParentID)
+		parent, err := GetTicket(db, *params.ParentID)
 		if err != nil {
-			return Task{}, err
+			return Ticket{}, err
 		}
 		if parent.ProjectID != params.ProjectID {
-			return Task{}, errors.New("parent ticket must be in the same project")
+			return Ticket{}, errors.New("parent ticket must be in the same project")
 		}
-		if err := validateTaskParenting(parent.Type, params.Type); err != nil {
-			return Task{}, err
+		if err := validateTicketParenting(parent.Type, params.Type); err != nil {
+			return Ticket{}, err
 		}
 	}
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	stage, state, err := resolveLifecycleForCreate(params.Stage, params.State, params.Assignee)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	priority := params.Priority
 	if priority == 0 {
@@ -133,119 +133,119 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 
 	tx, err := db.Begin()
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	defer tx.Rollback()
 	var projectPrefix string
 	var nextSequence int64
 	if err := tx.QueryRow(`SELECT prefix, ticket_sequence + 1 FROM projects WHERE project_id = ?`, params.ProjectID).Scan(&projectPrefix, &nextSequence); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	key, err := generateTicketKey(projectPrefix, params.Type, nextSequence)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	result, err := tx.Exec(`
 		INSERT INTO tasks (key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, created_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, key, params.ProjectID, nullableInt64(params.ParentID), nullableInt64(params.CloneOf), params.Type, params.Title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), stage, state, RenderLifecycleStatus(stage, state), priority, order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), strings.TrimSpace(params.Assignee), params.CreatedBy)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if _, err := tx.Exec(`UPDATE projects SET ticket_sequence = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`, nextSequence, params.ProjectID); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	id, err := result.LastInsertId()
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	task, err := GetTask(db, id)
+	ticket, err := GetTicket(db, id)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "ticket_created", map[string]any{
-		"key":               task.Key,
-		"type":              task.Type,
-		"title":             task.Title,
-		"stage":             task.Stage,
-		"state":             task.State,
-		"status":            task.Status,
-		"estimate_effort":   task.EstimateEffort,
-		"estimate_complete": task.EstimateComplete,
+	if err := AddHistoryEvent(db, ticket.ProjectID, ticket.ID, "ticket_created", map[string]any{
+		"key":               ticket.Key,
+		"type":              ticket.Type,
+		"title":             ticket.Title,
+		"stage":             ticket.Stage,
+		"state":             ticket.State,
+		"status":            ticket.Status,
+		"estimate_effort":   ticket.EstimateEffort,
+		"estimate_complete": ticket.EstimateComplete,
 	}, params.CreatedBy); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if err := syncAncestorLifecycle(db, params.ParentID, params.CreatedBy); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return GetTask(db, id)
+	return GetTicket(db, id)
 }
 
-func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
+func UpdateTicket(db *sql.DB, id int64, params TicketUpdateParams) (Ticket, error) {
 	title := strings.TrimSpace(params.Title)
 	if title == "" {
-		return Task{}, errors.New("ticket title is required")
+		return Ticket{}, errors.New("ticket title is required")
 	}
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	current, err := GetTask(db, id)
+	current, err := GetTicket(db, id)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	hasChildren, err := taskHasChildren(db, current.ID)
+	hasChildren, err := ticketHasChildren(db, current.ID)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if params.ParentID != nil {
-		parent, err := GetTask(db, *params.ParentID)
+		parent, err := GetTicket(db, *params.ParentID)
 		if err != nil {
-			return Task{}, err
+			return Ticket{}, err
 		}
 		if parent.ID == current.ID {
-			return Task{}, errors.New("cannot set ticket as its own parent")
+			return Ticket{}, errors.New("cannot set ticket as its own parent")
 		}
 		if parent.ProjectID != current.ProjectID {
-			return Task{}, errors.New("parent ticket must be in the same project")
+			return Ticket{}, errors.New("parent ticket must be in the same project")
 		}
-		if err := validateTaskParenting(parent.Type, current.Type); err != nil {
-			return Task{}, err
+		if err := validateTicketParenting(parent.Type, current.Type); err != nil {
+			return Ticket{}, err
 		}
 	}
 	assignee := strings.TrimSpace(params.Assignee)
-	if err := validateTaskAssignmentChange(current.Assignee, assignee, params.ActorUsername, params.ActorRole); err != nil {
-		return Task{}, err
+	if err := validateTicketAssignmentChange(current.Assignee, assignee, params.ActorUsername, params.ActorRole); err != nil {
+		return Ticket{}, err
 	}
 	if assignee != "" {
 		target, err := GetUserByUsername(db, assignee)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return Task{}, errors.New("user not found")
+				return Ticket{}, errors.New("user not found")
 			}
-			return Task{}, err
+			return Ticket{}, err
 		}
 		if !target.Enabled {
-			return Task{}, errors.New("user is disabled")
+			return Ticket{}, errors.New("user is disabled")
 		}
 	}
 
 	explicitLifecycle := normalizeOptional(params.Stage) != "" || normalizeOptional(params.State) != ""
 	if hasChildren && explicitLifecycle {
-		return Task{}, errors.New("ticket has children; stage/state is derived from descendants")
+		return Ticket{}, errors.New("ticket has children; stage/state is derived from descendants")
 	}
 	stage, state, err := resolveLifecycleForUpdate(current, params.Stage, params.State, assignee)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if explicitLifecycle && (stage != current.Stage || state != current.State) {
 		if params.ActorRole != "admin" && strings.TrimSpace(current.Assignee) != strings.TrimSpace(params.ActorUsername) {
-			return Task{}, ErrForbidden
+			return Ticket{}, ErrForbidden
 		}
 		if current.Stage == StageDone {
-			return Task{}, errors.New("done ticket cannot be reopened")
+			return Ticket{}, errors.New("done ticket cannot be reopened")
 		}
 	}
 
@@ -255,47 +255,47 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 		WHERE task_id = ?
 	`, title, params.Description, strings.TrimSpace(params.AcceptanceCriteria), nullableInt64(params.ParentID), assignee, stage, state, RenderLifecycleStatus(stage, state), params.Priority, params.Order, params.EstimateEffort, strings.TrimSpace(params.EstimateComplete), id)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if affected == 0 {
-		return Task{}, ErrTaskNotFound
+		return Ticket{}, ErrTicketNotFound
 	}
-	task, err := GetTask(db, id)
+	ticket, err := GetTicket(db, id)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	if err := AddHistoryEvent(db, task.ProjectID, task.ID, "ticket_updated", map[string]any{
-		"key":                 task.Key,
-		"title":               task.Title,
-		"description":         task.Description,
-		"acceptance_criteria": task.AcceptanceCriteria,
-		"assignee":            task.Assignee,
-		"stage":               task.Stage,
-		"state":               task.State,
-		"status":              task.Status,
-		"priority":            task.Priority,
-		"order":               task.Order,
-		"estimate_effort":     task.EstimateEffort,
-		"estimate_complete":   task.EstimateComplete,
-		"parent_id":           task.ParentID,
+	if err := AddHistoryEvent(db, ticket.ProjectID, ticket.ID, "ticket_updated", map[string]any{
+		"key":                 ticket.Key,
+		"title":               ticket.Title,
+		"description":         ticket.Description,
+		"acceptance_criteria": ticket.AcceptanceCriteria,
+		"assignee":            ticket.Assignee,
+		"stage":               ticket.Stage,
+		"state":               ticket.State,
+		"status":              ticket.Status,
+		"priority":            ticket.Priority,
+		"order":               ticket.Order,
+		"estimate_effort":     ticket.EstimateEffort,
+		"estimate_complete":   ticket.EstimateComplete,
+		"parent_id":           ticket.ParentID,
 	}, params.UpdatedBy); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if err := syncRelatedLifecycle(db, params.UpdatedBy, current.ParentID, params.ParentID, &current.ID); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return GetTask(db, id)
+	return GetTicket(db, id)
 }
 
-func ListTasksByProject(db *sql.DB, projectID int64) ([]Task, error) {
-	return ListTasks(db, TaskListParams{ProjectID: projectID})
+func ListTicketsByProject(db *sql.DB, projectID int64) ([]Ticket, error) {
+	return ListTickets(db, TicketListParams{ProjectID: projectID})
 }
 
-func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
+func ListTickets(db *sql.DB, params TicketListParams) ([]Ticket, error) {
 	if params.ProjectID == 0 {
 		return nil, errors.New("project is required")
 	}
@@ -356,136 +356,136 @@ func ListTasks(db *sql.DB, params TaskListParams) ([]Task, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Task
+	var tickets []Ticket
 	for rows.Next() {
-		task, err := scanTask(rows)
+		ticket, err := scanTicket(rows)
 		if err != nil {
 			return nil, err
 		}
-		tasks = append(tasks, task)
+		tickets = append(tickets, ticket)
 	}
-	return tasks, rows.Err()
+	return tickets, rows.Err()
 }
 
-func SearchTasks(db *sql.DB, projectID int64, query string) ([]Task, error) {
-	return ListTasks(db, TaskListParams{
+func SearchTickets(db *sql.DB, projectID int64, query string) ([]Ticket, error) {
+	return ListTickets(db, TicketListParams{
 		ProjectID: projectID,
 		Search:    query,
 	})
 }
 
-func GetTaskByProject(db *sql.DB, projectID, id int64) (Task, error) {
+func GetTicketByProject(db *sql.DB, projectID, id int64) (Ticket, error) {
 	row := db.QueryRow(`
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE project_id = ? AND task_id = ?
 	`, projectID, id)
-	task, err := scanTask(row)
+	ticket, err := scanTicket(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, ErrTaskNotFound
+			return Ticket{}, ErrTicketNotFound
 		}
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return hydrateTask(db, task)
+	return hydrateTicket(db, ticket)
 }
 
-func GetTask(db *sql.DB, id int64) (Task, error) {
+func GetTicket(db *sql.DB, id int64) (Ticket, error) {
 	row := db.QueryRow(`
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id)
 
-	task, err := scanTask(row)
+	ticket, err := scanTicket(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, ErrTaskNotFound
+			return Ticket{}, ErrTicketNotFound
 		}
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return hydrateTask(db, task)
+	return hydrateTicket(db, ticket)
 }
 
-func GetTaskByRef(db *sql.DB, raw string) (Task, error) {
+func GetTicketByRef(db *sql.DB, raw string) (Ticket, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return Task{}, ErrTaskNotFound
+		return Ticket{}, ErrTicketNotFound
 	}
 	if id, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		return GetTask(db, id)
+		return GetTicket(db, id)
 	}
 	row := db.QueryRow(`
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE key = ?
 	`, strings.ToUpper(raw))
-	task, err := scanTask(row)
+	ticket, err := scanTicket(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, ErrTaskNotFound
+			return Ticket{}, ErrTicketNotFound
 		}
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return hydrateTask(db, task)
+	return hydrateTicket(db, ticket)
 }
 
 type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanTask(s scanner) (Task, error) {
-	var task Task
+func scanTicket(s scanner) (Ticket, error) {
+	var ticket Ticket
 	var parentID sql.NullInt64
 	var cloneOf sql.NullInt64
 	var storedStatus string
 	var archived int
 	if err := s.Scan(
-		&task.ID,
-		&task.Key,
-		&task.ProjectID,
+		&ticket.ID,
+		&ticket.Key,
+		&ticket.ProjectID,
 		&parentID,
 		&cloneOf,
-		&task.Type,
-		&task.Title,
-		&task.Description,
-		&task.AcceptanceCriteria,
-		&task.Stage,
-		&task.State,
+		&ticket.Type,
+		&ticket.Title,
+		&ticket.Description,
+		&ticket.AcceptanceCriteria,
+		&ticket.Stage,
+		&ticket.State,
 		&storedStatus,
-		&task.Priority,
-		&task.Order,
-		&task.EstimateEffort,
-		&task.EstimateComplete,
-		&task.Assignee,
+		&ticket.Priority,
+		&ticket.Order,
+		&ticket.EstimateEffort,
+		&ticket.EstimateComplete,
+		&ticket.Assignee,
 		&archived,
-		&task.CreatedBy,
-		&task.CreatedAt,
-		&task.UpdatedAt,
+		&ticket.CreatedBy,
+		&ticket.CreatedAt,
+		&ticket.UpdatedAt,
 	); err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if parentID.Valid {
-		task.ParentID = &parentID.Int64
+		ticket.ParentID = &parentID.Int64
 	}
 	if cloneOf.Valid {
-		task.CloneOf = &cloneOf.Int64
+		ticket.CloneOf = &cloneOf.Int64
 	}
-	task.Status = RenderLifecycleStatus(task.Stage, task.State)
-	task.Archived = archived == 1
-	return task, nil
+	ticket.Status = RenderLifecycleStatus(ticket.Stage, ticket.State)
+	ticket.Archived = archived == 1
+	return ticket, nil
 }
 
-func hydrateTask(db *sql.DB, task Task) (Task, error) {
-	comments, err := ListComments(db, task.ID)
+func hydrateTicket(db *sql.DB, ticket Ticket) (Ticket, error) {
+	comments, err := ListComments(db, ticket.ID)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	task.Comments = comments
-	return task, nil
+	ticket.Comments = comments
+	return ticket, nil
 }
 
-func taskHasChildren(db *sql.DB, id int64) (bool, error) {
+func ticketHasChildren(db *sql.DB, id int64) (bool, error) {
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ?`, id).Scan(&count); err != nil {
 		return false, err
@@ -500,7 +500,7 @@ func syncRelatedLifecycle(db *sql.DB, actorID int64, ids ...*int64) error {
 			continue
 		}
 		seen[*rawID] = true
-		if err := syncTaskAndAncestors(db, *rawID, actorID); err != nil {
+		if err := syncTicketAndAncestors(db, *rawID, actorID); err != nil {
 			return err
 		}
 	}
@@ -511,10 +511,10 @@ func syncAncestorLifecycle(db *sql.DB, parentID *int64, actorID int64) error {
 	if parentID == nil {
 		return nil
 	}
-	return syncTaskAndAncestors(db, *parentID, actorID)
+	return syncTicketAndAncestors(db, *parentID, actorID)
 }
 
-func syncTaskAndAncestors(db *sql.DB, id int64, actorID int64) error {
+func syncTicketAndAncestors(db *sql.DB, id int64, actorID int64) error {
 	currentID := &id
 	for currentID != nil {
 		parentID, err := recalculateParentLifecycle(db, *currentID, actorID)
@@ -527,11 +527,11 @@ func syncTaskAndAncestors(db *sql.DB, id int64, actorID int64) error {
 }
 
 func recalculateParentLifecycle(db *sql.DB, id int64, actorID int64) (*int64, error) {
-	task, err := getStoredTask(db, id)
+	task, err := getStoredTicket(db, id)
 	if err != nil {
 		return nil, err
 	}
-	children, err := listStoredChildTasks(db, id)
+	children, err := listStoredChildTickets(db, id)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func recalculateParentLifecycle(db *sql.DB, id int64, actorID int64) (*int64, er
 	return task.ParentID, nil
 }
 
-func listStoredChildTasks(db *sql.DB, parentID int64) ([]Task, error) {
+func listStoredChildTickets(db *sql.DB, parentID int64) ([]Ticket, error) {
 	rows, err := db.Query(`
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
@@ -598,38 +598,38 @@ func listStoredChildTasks(db *sql.DB, parentID int64) ([]Task, error) {
 	}
 	defer rows.Close()
 
-	var tasks []Task
+	var tickets []Ticket
 	for rows.Next() {
-		task, err := scanTask(rows)
+		ticket, err := scanTicket(rows)
 		if err != nil {
 			return nil, err
 		}
-		tasks = append(tasks, task)
+		tickets = append(tickets, ticket)
 	}
-	return tasks, rows.Err()
+	return tickets, rows.Err()
 }
 
-func getStoredTask(db *sql.DB, id int64) (Task, error) {
-	task, err := scanTask(db.QueryRow(`
+func getStoredTicket(db *sql.DB, id int64) (Ticket, error) {
+	ticket, err := scanTicket(db.QueryRow(`
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
 		WHERE task_id = ?
 	`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, ErrTaskNotFound
+			return Ticket{}, ErrTicketNotFound
 		}
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return task, nil
+	return ticket, nil
 }
 
-func normalizeTaskType(taskType string) string {
-	taskType = strings.TrimSpace(strings.ToLower(taskType))
-	if taskType == "" {
+func normalizeTicketType(ticketType string) string {
+	ticketType = strings.TrimSpace(strings.ToLower(ticketType))
+	if ticketType == "" {
 		return "task"
 	}
-	return taskType
+	return ticketType
 }
 
 func parseRenderedLifecycle(status string) (string, string, error) {
@@ -655,8 +655,8 @@ func normalizeOptional(v string) string {
 	return strings.TrimSpace(strings.ToLower(v))
 }
 
-func validTaskType(taskType string) bool {
-	switch taskType {
+func validTicketType(ticketType string) bool {
+	switch ticketType {
 	case "task", "bug", "epic", "spike", "chore":
 		return true
 	default:
@@ -664,12 +664,12 @@ func validTaskType(taskType string) bool {
 	}
 }
 
-func validateTaskParenting(parentType, childType string) error {
-	parentType = normalizeTaskType(parentType)
-	childType = normalizeTaskType(childType)
+func validateTicketParenting(parentType, childType string) error {
+	parentType = normalizeTicketType(parentType)
+	childType = normalizeTicketType(childType)
 	switch parentType {
 	case "epic":
-		if validTaskType(childType) {
+		if validTicketType(childType) {
 			return nil
 		}
 	case "task":
@@ -706,7 +706,7 @@ func resolveLifecycleForCreate(stage, state, assignee string) (string, string, e
 	return rawStage, rawState, nil
 }
 
-func resolveLifecycleForUpdate(current Task, stage, state, assignee string) (string, string, error) {
+func resolveLifecycleForUpdate(current Ticket, stage, state, assignee string) (string, string, error) {
 	nextStage := current.Stage
 	nextState := current.State
 	rawStage := normalizeOptional(stage)
@@ -727,7 +727,7 @@ func resolveLifecycleForUpdate(current Task, stage, state, assignee string) (str
 	return nextStage, nextState, nil
 }
 
-func validateTaskAssignmentChange(currentAssignee, nextAssignee, actorUsername, actorRole string) error {
+func validateTicketAssignmentChange(currentAssignee, nextAssignee, actorUsername, actorRole string) error {
 	currentAssignee = strings.TrimSpace(currentAssignee)
 	nextAssignee = strings.TrimSpace(nextAssignee)
 	actorUsername = strings.TrimSpace(actorUsername)
@@ -760,37 +760,37 @@ func validateTaskAssignmentChange(currentAssignee, nextAssignee, actorUsername, 
 	return ErrAdminRequired
 }
 
-func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
+func RequestTicket(db *sql.DB, params TicketRequestParams) (Ticket, string, error) {
 	username := strings.TrimSpace(params.Username)
 	if username == "" {
-		return Task{}, "", errors.New("username is required")
+		return Ticket{}, "", errors.New("username is required")
 	}
 
-	if task, ok, err := findAssignedTaskForUser(db, params.ProjectID, username, StageDevelop, StateActive); err != nil {
-		return Task{}, "", err
+	if task, ok, err := findAssignedTicketForUser(db, params.ProjectID, username, StageDevelop, StateActive); err != nil {
+		return Ticket{}, "", err
 	} else if ok {
 		return task, "ASSIGNED", nil
 	}
 
-	if params.TaskID != nil || strings.TrimSpace(params.TaskRef) != "" {
-		task, err := resolveRequestedTask(db, params)
+	if params.TicketID != nil || strings.TrimSpace(params.TicketRef) != "" {
+		task, err := resolveRequestedTicket(db, params)
 		if err != nil {
-			return Task{}, "", err
+			return Ticket{}, "", err
 		}
 		if strings.TrimSpace(task.Assignee) == username {
 			return task, "ASSIGNED", nil
 		}
 		ok, err := ticketClaimable(db, task, params.ProjectID)
 		if err != nil {
-			return Task{}, "", err
+			return Ticket{}, "", err
 		}
 		if !ok {
-			return Task{}, "REJECTED", nil
+			return Ticket{}, "REJECTED", nil
 		}
 		if params.DryRun {
 			return withClaimPreview(task, username), "AVAILABLE", nil
 		}
-		assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
+		assigned, err := UpdateTicket(db, task.ID, TicketUpdateParams{
 			Title:              task.Title,
 			Description:        task.Description,
 			AcceptanceCriteria: task.AcceptanceCriteria,
@@ -805,22 +805,22 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 			ActorRole:          "admin",
 		})
 		if err != nil {
-			return Task{}, "", err
+			return Ticket{}, "", err
 		}
 		return assigned, "ASSIGNED", nil
 	}
 
 	task, ok, err := findClaimCandidate(db, params.ProjectID)
 	if err != nil {
-		return Task{}, "", err
+		return Ticket{}, "", err
 	}
 	if !ok {
-		return Task{}, "NO-WORK", nil
+		return Ticket{}, "NO-WORK", nil
 	}
 	if params.DryRun {
 		return withClaimPreview(task, username), "AVAILABLE", nil
 	}
-	assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
+	assigned, err := UpdateTicket(db, task.ID, TicketUpdateParams{
 		Title:              task.Title,
 		Description:        task.Description,
 		AcceptanceCriteria: task.AcceptanceCriteria,
@@ -835,54 +835,54 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 		ActorRole:          "admin",
 	})
 	if err != nil {
-		return Task{}, "", err
+		return Ticket{}, "", err
 	}
 	return assigned, "ASSIGNED", nil
 }
 
-func resolveRequestedTask(db *sql.DB, params TaskRequestParams) (Task, error) {
-	if params.TaskID != nil {
-		return GetTask(db, *params.TaskID)
+func resolveRequestedTicket(db *sql.DB, params TicketRequestParams) (Ticket, error) {
+	if params.TicketID != nil {
+		return GetTicket(db, *params.TicketID)
 	}
-	task, err := GetTaskByRef(db, params.TaskRef)
+	ticket, err := GetTicketByRef(db, params.TicketRef)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	return task, nil
+	return ticket, nil
 }
 
-func withClaimPreview(task Task, username string) Task {
-	task.Assignee = username
-	task.State = StateActive
-	task.Status = RenderLifecycleStatus(task.Stage, task.State)
-	return task
+func withClaimPreview(ticket Ticket, username string) Ticket {
+	ticket.Assignee = username
+	ticket.State = StateActive
+	ticket.Status = RenderLifecycleStatus(ticket.Stage, ticket.State)
+	return ticket
 }
 
-func ticketClaimable(db *sql.DB, task Task, projectID int64) (bool, error) {
-	if projectID != 0 && task.ProjectID != projectID {
+func ticketClaimable(db *sql.DB, ticket Ticket, projectID int64) (bool, error) {
+	if projectID != 0 && ticket.ProjectID != projectID {
 		return false, nil
 	}
-	project, err := GetProjectByID(db, task.ProjectID)
+	project, err := GetProjectByID(db, ticket.ProjectID)
 	if err != nil {
 		return false, err
 	}
-	if project.Status != "open" || task.Archived {
+	if project.Status != "open" || ticket.Archived {
 		return false, nil
 	}
-	if strings.TrimSpace(task.Assignee) != "" {
+	if strings.TrimSpace(ticket.Assignee) != "" {
 		return false, nil
 	}
-	if task.Stage != StageDevelop || task.State != StateIdle {
+	if ticket.Stage != StageDevelop || ticket.State != StateIdle {
 		return false, nil
 	}
-	hasChildren, err := taskHasChildren(db, task.ID)
+	hasChildren, err := ticketHasChildren(db, ticket.ID)
 	if err != nil {
 		return false, err
 	}
 	return !hasChildren, nil
 }
 
-func findAssignedTaskForUser(db *sql.DB, projectID int64, username, stage, state string) (Task, bool, error) {
+func findAssignedTicketForUser(db *sql.DB, projectID int64, username, stage, state string) (Ticket, bool, error) {
 	query := `
 		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
 		FROM tasks
@@ -894,21 +894,21 @@ func findAssignedTaskForUser(db *sql.DB, projectID int64, username, stage, state
 		args = append(args, projectID)
 	}
 	query += ` ORDER BY created_at, task_id LIMIT 1`
-	task, err := scanTask(db.QueryRow(query, args...))
+	task, err := scanTicket(db.QueryRow(query, args...))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, false, nil
+			return Ticket{}, false, nil
 		}
-		return Task{}, false, err
+		return Ticket{}, false, err
 	}
 	return task, true, nil
 }
 
-func findClaimCandidate(db *sql.DB, projectID int64) (Task, bool, error) {
+func findClaimCandidate(db *sql.DB, projectID int64) (Ticket, bool, error) {
 	if projectID == 0 {
-		return Task{}, false, errors.New("project is required")
+		return Ticket{}, false, errors.New("project is required")
 	}
-	task, err := scanTask(db.QueryRow(`
+	task, err := scanTicket(db.QueryRow(`
 		SELECT t.task_id, t.key, t.project_id, t.parent_id, t.clone_of, t.type, t.title, t.description, t.acceptance_criteria, t.stage, t.state, t.status, t.priority, t.sort_order, t.estimate_effort, t.estimate_complete, t.assignee, t.archived, COALESCE(t.created_by, 0), t.created_at, t.updated_at
 		FROM tasks t
 		JOIN projects p ON p.project_id = t.project_id
@@ -919,27 +919,27 @@ func findClaimCandidate(db *sql.DB, projectID int64) (Task, bool, error) {
 	`, projectID, StageDevelop, StateIdle))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Task{}, false, nil
+			return Ticket{}, false, nil
 		}
-		return Task{}, false, err
+		return Ticket{}, false, err
 	}
 	return task, true, nil
 }
 
-func CloneTask(db *sql.DB, id, createdBy int64) (Task, error) {
-	original, err := GetTask(db, id)
+func CloneTicket(db *sql.DB, id, createdBy int64) (Ticket, error) {
+	original, err := GetTicket(db, id)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
-	cloned, err := cloneTaskRecursive(db, original, nil, createdBy)
+	cloned, err := cloneTicketRecursive(db, original, nil, createdBy)
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	return cloned, nil
 }
 
-func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy int64) (Task, error) {
-	cloned, err := CreateTask(db, TaskCreateParams{
+func cloneTicketRecursive(db *sql.DB, original Ticket, parentID *int64, createdBy int64) (Ticket, error) {
+	cloned, err := CreateTicket(db, TicketCreateParams{
 		ProjectID:          original.ProjectID,
 		ParentID:           parentID,
 		CloneOf:            &original.ID,
@@ -957,39 +957,39 @@ func cloneTaskRecursive(db *sql.DB, original Task, parentID *int64, createdBy in
 		CreatedBy:          createdBy,
 	})
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	if original.Type != "epic" {
 		return cloned, nil
 	}
-	children, err := ListTasks(db, TaskListParams{ProjectID: original.ProjectID})
+	children, err := ListTickets(db, TicketListParams{ProjectID: original.ProjectID})
 	if err != nil {
-		return Task{}, err
+		return Ticket{}, err
 	}
 	for _, child := range children {
 		if child.ParentID != nil && *child.ParentID == original.ID {
-			if _, err := cloneTaskRecursive(db, child, &cloned.ID, createdBy); err != nil {
-				return Task{}, err
+			if _, err := cloneTicketRecursive(db, child, &cloned.ID, createdBy); err != nil {
+				return Ticket{}, err
 			}
 		}
 	}
 	return cloned, nil
 }
 
-func DeleteTask(db *sql.DB, id int64) error {
-	task, err := GetTask(db, id)
+func DeleteTicket(db *sql.DB, id int64) error {
+	task, err := GetTicket(db, id)
 	if err != nil {
 		return err
 	}
 	parentID := task.ParentID
 
-	children, err := ListTasks(db, TaskListParams{ProjectID: task.ProjectID})
+	children, err := ListTickets(db, TicketListParams{ProjectID: task.ProjectID})
 	if err != nil {
 		return err
 	}
 	for _, child := range children {
 		if child.ParentID != nil && *child.ParentID == id {
-			return ErrTaskHasChildren
+			return ErrTicketHasChildren
 		}
 	}
 
@@ -1023,7 +1023,7 @@ func DeleteTask(db *sql.DB, id int64) error {
 		return err
 	}
 	if affected == 0 {
-		return ErrTaskNotFound
+		return ErrTicketNotFound
 	}
 	if err := tx.Commit(); err != nil {
 		return err

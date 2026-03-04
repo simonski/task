@@ -8,7 +8,7 @@ import (
 type Dependency struct {
 	ID        int64  `json:"id"`
 	ProjectID int64  `json:"project_id"`
-	TaskID    int64  `json:"task_id"`
+	TicketID  int64  `json:"ticket_id"`
 	DependsOn int64  `json:"depends_on"`
 	CreatedBy int64  `json:"created_by"`
 	CreatedAt string `json:"created_at"`
@@ -32,7 +32,7 @@ func AddDependency(db *sql.DB, projectID, taskID, dependsOn, createdBy int64) (D
 		WHERE id = ?
 	`, id)
 	var dependency Dependency
-	if err := row.Scan(&dependency.ID, &dependency.ProjectID, &dependency.TaskID, &dependency.DependsOn, &dependency.CreatedBy, &dependency.CreatedAt); err != nil {
+	if err := row.Scan(&dependency.ID, &dependency.ProjectID, &dependency.TicketID, &dependency.DependsOn, &dependency.CreatedBy, &dependency.CreatedAt); err != nil {
 		return Dependency{}, err
 	}
 	return dependency, nil
@@ -53,7 +53,7 @@ func ListDependencies(db *sql.DB, taskID int64) ([]Dependency, error) {
 	var dependencies []Dependency
 	for rows.Next() {
 		var dependency Dependency
-		if err := rows.Scan(&dependency.ID, &dependency.ProjectID, &dependency.TaskID, &dependency.DependsOn, &dependency.CreatedBy, &dependency.CreatedAt); err != nil {
+		if err := rows.Scan(&dependency.ID, &dependency.ProjectID, &dependency.TicketID, &dependency.DependsOn, &dependency.CreatedBy, &dependency.CreatedAt); err != nil {
 			return nil, err
 		}
 		dependencies = append(dependencies, dependency)

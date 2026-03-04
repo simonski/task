@@ -386,19 +386,19 @@ func run(args []string) error {
 	case "unset-parent", "detach":
 		return runUnsetParent(trimmedArgs[1:])
 	case "design":
-		return runTaskStageAlias(trimmedArgs[1:], store.StageDesign, "design")
+		return runTicketStageAlias(trimmedArgs[1:], store.StageDesign, "design")
 	case "develop":
-		return runTaskStageAlias(trimmedArgs[1:], store.StageDevelop, "develop")
+		return runTicketStageAlias(trimmedArgs[1:], store.StageDevelop, "develop")
 	case "test":
-		return runTaskStageAlias(trimmedArgs[1:], store.StageTest, "test")
+		return runTicketStageAlias(trimmedArgs[1:], store.StageTest, "test")
 	case "done":
-		return runTaskStageAlias(trimmedArgs[1:], store.StageDone, "done")
+		return runTicketStageAlias(trimmedArgs[1:], store.StageDone, "done")
 	case "idle":
-		return runTaskStateAlias(trimmedArgs[1:], store.StateIdle, "idle")
+		return runTicketStateAlias(trimmedArgs[1:], store.StateIdle, "idle")
 	case "active":
-		return runTaskStateAlias(trimmedArgs[1:], store.StateActive, "active")
+		return runTicketStateAlias(trimmedArgs[1:], store.StateActive, "active")
 	case "complete":
-		return runTaskStateAlias(trimmedArgs[1:], store.StateComplete, "complete")
+		return runTicketStateAlias(trimmedArgs[1:], store.StateComplete, "complete")
 	case "assign":
 		return runAssign(trimmedArgs[1:])
 	case "unassign":
@@ -424,7 +424,7 @@ func run(args []string) error {
 	case "clone", "cp":
 		return runClone(trimmedArgs[1:])
 	case "rm", "delete":
-		return runDeleteTask(trimmedArgs[1:])
+		return runDeleteTicket(trimmedArgs[1:])
 	case "curate":
 		return runCurate(trimmedArgs[1:])
 	case "review":
@@ -440,15 +440,15 @@ func run(args []string) error {
 	case "conversation":
 		return runConversation(trimmedArgs[1:])
 	case "add", "create", "new":
-		return runTaskCreate(trimmedArgs[1:])
+		return runTicketCreate(trimmedArgs[1:])
 	case "note":
-		return runTypedTaskCreate("note", trimmedArgs[1:])
+		return runTypedTicketCreate("note", trimmedArgs[1:])
 	case "question":
-		return runTypedTaskCreate("question", trimmedArgs[1:])
+		return runTypedTicketCreate("question", trimmedArgs[1:])
 	case "bug":
-		return runTypedTaskCreate("bug", trimmedArgs[1:])
+		return runTypedTicketCreate("bug", trimmedArgs[1:])
 	case "epic":
-		return runTypedTaskCreate("epic", trimmedArgs[1:])
+		return runTypedTicketCreate("epic", trimmedArgs[1:])
 	case "config":
 		return runConfig(trimmedArgs[1:])
 	default:
@@ -1268,7 +1268,7 @@ func runList(args []string) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasksFiltered(project.ID, *taskType, resolvedStage, resolvedState, "", "", *assignee, *limit)
+	tasks, err := api.ListTicketsFiltered(project.ID, *taskType, resolvedStage, resolvedState, "", "", *assignee, *limit)
 	if err != nil {
 		return err
 	}
@@ -1283,7 +1283,7 @@ func runList(args []string) error {
 	if outputJSON {
 		return printJSON(tasks)
 	}
-	printTaskTable(tasks, dependenciesByTask, statusUnicode)
+	printTicketTable(tasks, dependenciesByTask, statusUnicode)
 	return nil
 }
 
@@ -1295,11 +1295,11 @@ func runOrphans(args []string) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasks(project.ID)
+	tasks, err := api.ListTickets(project.ID)
 	if err != nil {
 		return err
 	}
-	var orphans []store.Task
+	var orphans []store.Ticket
 	for _, task := range tasks {
 		if task.ParentID == nil && strings.TrimSpace(task.Type) != "epic" {
 			orphans = append(orphans, task)
@@ -1334,7 +1334,7 @@ func runGet(args []string) error {
 	if outputJSON {
 		return printJSON(task)
 	}
-	printTaskDetails(task, dependencies)
+	printTicketDetails(task, dependencies)
 	return nil
 }
 
@@ -1367,9 +1367,9 @@ func runSearch(args []string) error {
 		}
 		projects = []store.Project{project}
 	}
-	var tasks []store.Task
+	var tasks []store.Ticket
 	for _, project := range projects {
-		projectTasks, err := svc.ListTasksFiltered(project.ID, "", "", "", "", "", "", 0)
+		projectTasks, err := svc.ListTicketsFiltered(project.ID, "", "", "", "", "", "", 0)
 		if err != nil {
 			return err
 		}
@@ -1460,7 +1460,7 @@ func parseSearchArgs(args []string) (string, searchFilters, error) {
 	return strings.TrimSpace(strings.Join(terms, " ")), filters, nil
 }
 
-func taskMatchesSearch(task store.Task, query, stage, state, status, title, description string, priority int, owner string) bool {
+func taskMatchesSearch(task store.Ticket, query, stage, state, status, title, description string, priority int, owner string) bool {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query != "" {
 		haystack := strings.ToLower(strings.Join([]string{
@@ -1529,14 +1529,14 @@ func runSetParent(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.SetTaskParent(child.ID, parent.ID)
+	updated, err := svc.SetTicketParent(child.ID, parent.ID)
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(updated)
 	}
-	printTask(updated)
+	printTicket(updated)
 	return nil
 }
 
@@ -1556,32 +1556,32 @@ func runUnsetParent(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UnsetTaskParent(task.ID)
+	updated, err := svc.UnsetTicketParent(task.ID)
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(updated)
 	}
-	printTask(updated)
+	printTicket(updated)
 	return nil
 }
 
-func runTaskStageAlias(args []string, stage, command string) error {
+func runTicketStageAlias(args []string, stage, command string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: ticket %s <id>", command)
 	}
-	return updateTaskStage(args[0], stage)
+	return updateTicketStage(args[0], stage)
 }
 
-func runTaskStateAlias(args []string, state, command string) error {
+func runTicketStateAlias(args []string, state, command string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: ticket %s <id>", command)
 	}
-	return updateTaskState(args[0], state)
+	return updateTicketState(args[0], state)
 }
 
-func updateTaskStage(idArg, stage string) error {
+func updateTicketStage(idArg, stage string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1598,10 +1598,10 @@ func updateTaskStage(idArg, stage string) error {
 	if stage == store.StageDone {
 		nextState = store.StateComplete
 	}
-	return updateTaskLifecycleRequest(svc, current.ID, current, stage, nextState)
+	return updateTicketLifecycleRequest(svc, current.ID, current, stage, nextState)
 }
 
-func updateTaskState(idArg, state string) error {
+func updateTicketState(idArg, state string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1614,10 +1614,10 @@ func updateTaskState(idArg, state string) error {
 	if err != nil {
 		return err
 	}
-	return updateTaskLifecycleRequest(svc, current.ID, current, current.Stage, state)
+	return updateTicketLifecycleRequest(svc, current.ID, current, current.Stage, state)
 }
 
-func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.Task, stage, state string) error {
+func updateTicketLifecycleRequest(svc libticket.Service, id int64, current store.Ticket, stage, state string) error {
 	assignee := current.Assignee
 	if state == store.StateActive && strings.TrimSpace(assignee) == "" {
 		status, err := svc.Status()
@@ -1627,7 +1627,7 @@ func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.T
 			assignee = currentOSUser()
 		}
 	}
-	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(id, libticket.TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1646,7 +1646,7 @@ func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.T
 	if outputJSON {
 		return printJSON(updated)
 	}
-	printTask(updated)
+	printTicket(updated)
 	return nil
 }
 
@@ -1701,7 +1701,7 @@ func runUpdate(args []string) error {
 	if err != nil {
 		return err
 	}
-	next := libticket.TaskUpdateRequest{
+	next := libticket.TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1767,7 +1767,7 @@ func runUpdate(args []string) error {
 		}
 		next.ParentID = &parent.ID
 	}
-	updated, err := svc.UpdateTask(current.ID, next)
+	updated, err := svc.UpdateTicket(current.ID, next)
 	if err != nil {
 		return err
 	}
@@ -1775,7 +1775,7 @@ func runUpdate(args []string) error {
 		return printJSON(updated)
 	}
 	dependencies, _ := svc.ListDependencies(current.ID)
-	printTaskDetails(updated, dependencies)
+	printTicketDetails(updated, dependencies)
 	return nil
 }
 
@@ -1783,14 +1783,14 @@ func runAssign(args []string) error {
 	if len(args) != 2 {
 		return errors.New("usage: ticket assign <id> <name>")
 	}
-	return assignTask(args[0], args[1], true)
+	return assignTicket(args[0], args[1], true)
 }
 
 func runUnassign(args []string) error {
 	if len(args) != 2 {
 		return errors.New("usage: ticket unassign <id> <name>")
 	}
-	return unassignTask(args[0], args[1], true)
+	return unassignTicket(args[0], args[1], true)
 }
 
 func runClaim(args []string) error {
@@ -1827,10 +1827,10 @@ func runUnclaim(args []string) error {
 	if strings.TrimSpace(username) == "" {
 		return errors.New("no current username; log in first")
 	}
-	return unassignTask(args[0], username, false)
+	return unassignTicket(args[0], username, false)
 }
 
-func parseTaskID(idArg string) (int64, error) {
+func parseTicketID(idArg string) (int64, error) {
 	var id int64
 	if _, err := fmt.Sscan(idArg, &id); err != nil {
 		return 0, errors.New("ticket id must be numeric")
@@ -1838,7 +1838,7 @@ func parseTaskID(idArg string) (int64, error) {
 	return id, nil
 }
 
-func assignTask(idArg, assignee string, requireAdmin bool) error {
+func assignTicket(idArg, assignee string, requireAdmin bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1858,7 +1858,7 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(current.ID, libticket.TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1885,7 +1885,7 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 	return nil
 }
 
-func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
+func unassignTicket(idArg, expectedAssignee string, requireAdmin bool) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1927,7 +1927,7 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 	if strings.TrimSpace(current.Assignee) != strings.TrimSpace(expectedAssignee) {
 		return fmt.Errorf("task is not assigned to %s", expectedAssignee)
 	}
-	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(current.ID, libticket.TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1979,7 +1979,7 @@ func runHistory(args []string) error {
 	}
 	for _, event := range events {
 		fmt.Printf("ID         : %d\n", event.ID)
-		fmt.Printf("TaskID     : %d\n", event.TaskID)
+		fmt.Printf("TicketID     : %d\n", event.TicketID)
 		fmt.Printf("Event      : %s\n", event.EventType)
 		fmt.Printf("Created    : %s\n", event.CreatedAt)
 		fmt.Printf("Created By : %d\n", event.CreatedBy)
@@ -2015,7 +2015,7 @@ func runDependencyCommand(args []string, add bool) error {
 		}
 		dependencyRequest := libticket.DependencyRequest{
 			ProjectID: project.ID,
-			TaskID:    task.ID,
+			TicketID:  task.ID,
 			DependsOn: dependencyTicket.ID,
 		}
 		if add {
@@ -2085,19 +2085,19 @@ func runRequest(args []string) error {
 	if err != nil {
 		return err
 	}
-	taskRequest := libticket.TaskRequest{ProjectID: project.ID}
+	taskRequest := libticket.TicketRequest{ProjectID: project.ID}
 	if requestedRef != "" {
-		taskRequest.TaskRef = requestedRef
+		taskRequest.TicketRef = requestedRef
 	}
-	response, err := api.RequestTask(taskRequest)
+	response, err := api.RequestTicket(taskRequest)
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(response)
 	}
-	if response.Task != nil {
-		printTask(*response.Task)
+	if response.Ticket != nil {
+		printTicket(*response.Ticket)
 		return nil
 	}
 	fmt.Println(response.Status)
@@ -2119,9 +2119,9 @@ func runRequestDryRun(args []string) error {
 		requestedRef = args[0]
 	}
 
-	response, err := api.RequestTask(libticket.TaskRequest{
+	response, err := api.RequestTicket(libticket.TicketRequest{
 		ProjectID: project.ID,
-		TaskRef:   requestedRef,
+		TicketRef: requestedRef,
 		DryRun:    true,
 	})
 	if err != nil {
@@ -2131,15 +2131,15 @@ func runRequestDryRun(args []string) error {
 		return printJSON(map[string]any{
 			"dryrun": true,
 			"status": response.Status,
-			"task":   response.Task,
+			"task":   response.Ticket,
 		})
 	}
 	fmt.Printf("dry run: %s\n", response.Status)
-	if response.Task == nil {
+	if response.Ticket == nil {
 		return nil
 	}
-	fmt.Printf("would assign ticket: %s\n", ticketLabel(*response.Task))
-	printTask(*response.Task)
+	fmt.Printf("would assign ticket: %s\n", ticketLabel(*response.Ticket))
+	printTicket(*response.Ticket)
 	return nil
 }
 
@@ -2244,18 +2244,18 @@ func runClone(args []string) error {
 	if err != nil {
 		return err
 	}
-	task, err := svc.CloneTask(taskRef.ID)
+	task, err := svc.CloneTicket(taskRef.ID)
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(task)
 	}
-	printTask(task)
+	printTicket(task)
 	return nil
 }
 
-func runDeleteTask(args []string) error {
+func runDeleteTicket(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket rm|delete <id>")
 	}
@@ -2271,7 +2271,7 @@ func runDeleteTask(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.DeleteTask(task.ID); err != nil {
+	if err := svc.DeleteTicket(task.ID); err != nil {
 		return err
 	}
 	if outputJSON {
@@ -2303,7 +2303,7 @@ func runCurate(args []string) error {
 	if len(titles) > 0 {
 		title = titles[0]
 	}
-	requirement, err := api.CreateTask(libticket.TaskCreateRequest{
+	requirement, err := api.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID:   project.ID,
 		Type:        "requirement",
 		Title:       title,
@@ -2312,7 +2312,7 @@ func runCurate(args []string) error {
 	if err != nil {
 		return err
 	}
-	printTask(requirement)
+	printTicket(requirement)
 	return nil
 }
 
@@ -2327,7 +2327,7 @@ func runReview(args []string) error {
 	if err != nil {
 		return err
 	}
-	tasks, err := api.ListTasksFiltered(project.ID, "requirement", "", "", *status, "", "", 0)
+	tasks, err := api.ListTicketsFiltered(project.ID, "requirement", "", "", *status, "", "", 0)
 	if err != nil {
 		return err
 	}
@@ -2354,7 +2354,7 @@ func runRequirementStatus(status string, args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(current.ID, libticket.TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2370,7 +2370,7 @@ func runRequirementStatus(status string, args []string) error {
 	if err != nil {
 		return err
 	}
-	printTask(updated)
+	printTicket(updated)
 	return nil
 }
 
@@ -2390,7 +2390,7 @@ func runRevise(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(current.ID, libticket.TicketUpdateRequest{
 		Title:              current.Title + " (revised)",
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2406,7 +2406,7 @@ func runRevise(args []string) error {
 	if err != nil {
 		return err
 	}
-	printTask(updated)
+	printTicket(updated)
 	return nil
 }
 
@@ -2423,7 +2423,7 @@ func runDecision(args []string) error {
 		if err != nil {
 			return err
 		}
-		task, err := api.CreateTask(libticket.TaskCreateRequest{
+		task, err := api.CreateTicket(libticket.TicketCreateRequest{
 			ProjectID:   project.ID,
 			Type:        "decision",
 			Title:       args[1],
@@ -2432,14 +2432,14 @@ func runDecision(args []string) error {
 		if err != nil {
 			return err
 		}
-		printTask(task)
+		printTicket(task)
 		return nil
 	case "list":
 		_, api, project, err := resolveCurrentProjectClient()
 		if err != nil {
 			return err
 		}
-		tasks, err := api.ListTasksFiltered(project.ID, "decision", "", "", "", "", "", 0)
+		tasks, err := api.ListTicketsFiltered(project.ID, "decision", "", "", "", "", "", 0)
 		if err != nil {
 			return err
 		}
@@ -2459,12 +2459,12 @@ func runConversation(args []string) error {
 	return runHistory(args[1:])
 }
 
-func runTypedTaskCreate(taskType string, args []string) error {
-	return runTaskCreate(append([]string{"-type", taskType}, args...))
+func runTypedTicketCreate(ticketType string, args []string) error {
+	return runTicketCreate(append([]string{"-type", ticketType}, args...))
 }
 
-type taskCreateOptions struct {
-	TaskType           string
+type ticketCreateOptions struct {
+	TicketType         string
 	Title              string
 	Description        string
 	AcceptanceCriteria string
@@ -2476,8 +2476,8 @@ type taskCreateOptions struct {
 	Project            string
 }
 
-func runTaskCreate(args []string) error {
-	normalizedArgs, err := normalizeTaskCreateArgs(args)
+func runTicketCreate(args []string) error {
+	normalizedArgs, err := normalizeTicketCreateArgs(args)
 	if err != nil {
 		return err
 	}
@@ -2507,8 +2507,8 @@ func runTaskCreate(args []string) error {
 	if title == "" {
 		return errors.New("usage: ticket add|create|new [-title title] [-t type] [-p priority] [-a assignee] [-d description] [-ac criteria] [-parent id] [-project project] [-estimate_effort n] [-estimate_complete rfc3339] [title words]")
 	}
-	opts := taskCreateOptions{
-		TaskType:           *taskType,
+	opts := ticketCreateOptions{
+		TicketType:         *taskType,
 		Title:              title,
 		Description:        *description,
 		AcceptanceCriteria: *acceptanceCriteria,
@@ -2521,10 +2521,10 @@ func runTaskCreate(args []string) error {
 	if *parent != 0 {
 		opts.ParentID = parent
 	}
-	return createTask(opts)
+	return createTicket(opts)
 }
 
-func normalizeTaskCreateArgs(args []string) ([]string, error) {
+func normalizeTicketCreateArgs(args []string) ([]string, error) {
 	knownValueFlags := map[string]bool{
 		"-type":              true,
 		"-t":                 true,
@@ -2559,7 +2559,7 @@ func normalizeTaskCreateArgs(args []string) ([]string, error) {
 	return append(flagArgs, positional...), nil
 }
 
-func createTask(opts taskCreateOptions) error {
+func createTicket(opts ticketCreateOptions) error {
 	cfg, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
@@ -2570,10 +2570,10 @@ func createTask(opts taskCreateOptions) error {
 			return err
 		}
 	}
-	task, err := api.CreateTask(libticket.TaskCreateRequest{
+	task, err := api.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID:          project.ID,
 		ParentID:           opts.ParentID,
-		Type:               opts.TaskType,
+		Type:               opts.TicketType,
 		Title:              opts.Title,
 		Description:        opts.Description,
 		AcceptanceCriteria: opts.AcceptanceCriteria,
@@ -2670,19 +2670,19 @@ func printProjectTable(projects []store.Project, currentProjectID string) {
 	_ = w.Flush()
 }
 
-func ticketLabel(task store.Task) string {
+func ticketLabel(task store.Ticket) string {
 	if strings.TrimSpace(task.Key) != "" {
 		return task.Key
 	}
 	return strconv.FormatInt(task.ID, 10)
 }
 
-func printTask(task store.Task) {
+func printTicket(task store.Ticket) {
 	if outputJSON {
 		_ = printJSON(task)
 		return
 	}
-	fmt.Printf("task: %s\n", task.Title)
+	fmt.Printf("ticket: %s\n", task.Title)
 	fmt.Printf("id: %d\n", task.ID)
 	fmt.Printf("key: %s\n", task.Key)
 	fmt.Printf("type: %s\n", task.Type)
@@ -2705,7 +2705,7 @@ func printTask(task store.Task) {
 	}
 }
 
-func printTaskDetails(task store.Task, dependencies []store.Dependency) {
+func printTicketDetails(task store.Ticket, dependencies []store.Dependency) {
 	parentID := ""
 	if task.ParentID != nil {
 		parentID = fmt.Sprintf("%d", *task.ParentID)
@@ -3216,7 +3216,7 @@ func printCountSummary(summary store.CountSummary, scopedToProject bool) {
 	}
 }
 
-func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUnicode bool) {
+func printTicketTable(tasks []store.Ticket, dependencies map[int64]string, statusUnicode bool) {
 	if len(tasks) == 0 {
 		fmt.Println("no tasks")
 		return
@@ -3224,7 +3224,7 @@ func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUni
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "MOON\tKEY\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tTITLE")
 	for _, task := range tasks {
-		symbol := formatTaskStatusSymbol(task.Status, statusUnicode)
+		symbol := formatTicketStatusSymbol(task.Status, statusUnicode)
 		assignee := task.Assignee
 		if strings.TrimSpace(assignee) == "" {
 			assignee = "-"
@@ -3246,7 +3246,7 @@ func printTaskTable(tasks []store.Task, dependencies map[int64]string, statusUni
 	_ = w.Flush()
 }
 
-func formatTaskStatusSymbol(status string, useUnicode bool) string {
+func formatTicketStatusSymbol(status string, useUnicode bool) string {
 	if !useUnicode {
 		return ""
 	}

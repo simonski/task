@@ -717,7 +717,7 @@ func TestRunStatusLocalSuccess(t *testing.T) {
 
 func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 	output := captureStdout(t, func() {
-		printTaskDetails(store.Task{
+		printTicketDetails(store.Ticket{
 			ID:                 42,
 			Title:              "Example Task",
 			Type:               "task",
@@ -757,7 +757,7 @@ func TestPrintTaskDetailsIncludesAcceptanceCriteria(t *testing.T) {
 		"[2026-03-02 10:00:00] alice: latest comment",
 	} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("printTaskDetails() missing %q:\n%s", want, output)
+			t.Fatalf("printTicketDetails() missing %q:\n%s", want, output)
 		}
 	}
 }
@@ -892,8 +892,8 @@ func TestRunUserListShowsUserTable(t *testing.T) {
 func TestRunTaskCommandsInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
-	taskID := createLocalTask(t, []string{"add", "-d", "findable description", "-ac", "ship it", "-estimate_effort", "8", "-estimate_complete", "2026-04-20T17:00:00Z", "Task Alpha"})
-	depID := createLocalTask(t, []string{"add", "Task Beta"})
+	taskID := createLocalTask(t, []string{"add", "-d", "findable description", "-ac", "ship it", "-estimate_effort", "8", "-estimate_complete", "2026-04-20T17:00:00Z", "Ticket Alpha"})
+	depID := createLocalTask(t, []string{"add", "Ticket Beta"})
 	if err := run([]string{"develop", strconv.FormatInt(taskID, 10)}); err != nil {
 		t.Fatalf("develop task alpha error = %v", err)
 	}
@@ -909,7 +909,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("get error = %v", err)
 		}
 	})
-	for _, want := range []string{"Title        : Task Alpha", "Description  : findable description", "Acceptance Criteria : ship it", "EstimateEffort   : 8", "EstimateComplete : 2026-04-20T17:00:00Z", "latest note"} {
+	for _, want := range []string{"Title        : Ticket Alpha", "Description  : findable description", "Acceptance Criteria : ship it", "EstimateEffort   : 8", "EstimateComplete : 2026-04-20T17:00:00Z", "latest note"} {
 		if !strings.Contains(getOutput, want) {
 			t.Fatalf("get output missing %q:\n%s", want, getOutput)
 		}
@@ -920,7 +920,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("search error = %v", err)
 		}
 	})
-	if !strings.Contains(searchOutput, "Task Alpha") {
+	if !strings.Contains(searchOutput, "Ticket Alpha") {
 		t.Fatalf("search output = %q", searchOutput)
 	}
 
@@ -938,7 +938,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("list error = %v", err)
 		}
 	})
-	if !strings.Contains(listOutput, "Task Alpha") || !strings.Contains(listOutput, "Task Beta") {
+	if !strings.Contains(listOutput, "Ticket Alpha") || !strings.Contains(listOutput, "Ticket Beta") {
 		t.Fatalf("list output = %q", listOutput)
 	}
 
@@ -947,7 +947,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("request error = %v", err)
 		}
 	})
-	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: develop/active") {
+	if !strings.Contains(requestOutput, "ticket: Ticket Alpha") || !strings.Contains(requestOutput, "status: develop/active") {
 		t.Fatalf("request output = %q", requestOutput)
 	}
 
@@ -1089,7 +1089,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 	setupLocalCLI(t)
 
 	parentID := createLocalTask(t, []string{"add", "-type", "epic", "Parent Epic"})
-	taskID := createLocalTask(t, []string{"add", "-d", "old description", "-ac", "old ac", "Task Alpha"})
+	taskID := createLocalTask(t, []string{"add", "-d", "old description", "-ac", "old ac", "Ticket Alpha"})
 	if err := run([]string{"claim", strconv.FormatInt(taskID, 10)}); err != nil {
 		t.Fatalf("claim error = %v", err)
 	}
@@ -1098,7 +1098,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		if err := run([]string{
 			"update",
 			strconv.FormatInt(taskID, 10),
-			"-title", "Task Beta",
+			"-title", "Ticket Beta",
 			"-desc", "new description",
 			"-ac", "new ac",
 			"-priority", "3",
@@ -1112,7 +1112,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"Title        : Task Beta",
+		"Title        : Ticket Beta",
 		"Description  : new description",
 		"ParentID     : " + strconv.FormatInt(parentID, 10),
 		"Order        : 7",
@@ -1133,7 +1133,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 		}
 	})
 	for _, want := range []string{
-		"Title        : Task Beta",
+		"Title        : Ticket Beta",
 		"Description  : new description",
 		"ParentID     : " + strconv.FormatInt(parentID, 10),
 		"Order        : 7",
@@ -1152,7 +1152,7 @@ func TestRunUpdateSupportsCombinedFields(t *testing.T) {
 func TestRunUpdateSupportsDescriptionAlias(t *testing.T) {
 	setupLocalCLI(t)
 
-	taskID := createLocalTask(t, []string{"add", "-d", "old description", "Task Alpha"})
+	taskID := createLocalTask(t, []string{"add", "-d", "old description", "Ticket Alpha"})
 
 	if err := run([]string{"update", strconv.FormatInt(taskID, 10), "-description", "updated description"}); err != nil {
 		t.Fatalf("update with -description error = %v", err)
@@ -1301,7 +1301,7 @@ func TestRunStatusChangeInLocalModeDoesNotRequireOwnership(t *testing.T) {
 	}
 }
 
-func TestRunDeleteTaskInLocalMode(t *testing.T) {
+func TestRunDeleteTicketInLocalMode(t *testing.T) {
 	setupLocalCLI(t)
 
 	taskID := createLocalTask(t, []string{"add", "Delete me"})
@@ -1318,7 +1318,7 @@ func TestRunDeleteTaskInLocalMode(t *testing.T) {
 	}
 }
 
-func TestRunDeleteTaskFailsWhenTaskHasChildren(t *testing.T) {
+func TestRunDeleteTicketFailsWhenTaskHasChildren(t *testing.T) {
 	setupLocalCLI(t)
 
 	parentID := createLocalTask(t, []string{"add", "-t", "epic", "Parent"})
@@ -1326,8 +1326,8 @@ func TestRunDeleteTaskFailsWhenTaskHasChildren(t *testing.T) {
 	if childID == 0 {
 		t.Fatal("child task id = 0")
 	}
-	if err := run([]string{"rm", strconv.FormatInt(parentID, 10)}); err == nil || err.Error() != "task has child tasks" {
-		t.Fatalf("delete parent error = %v, want task has child tasks", err)
+	if err := run([]string{"rm", strconv.FormatInt(parentID, 10)}); err == nil || err.Error() != "ticket has child tickets" {
+		t.Fatalf("delete parent error = %v, want ticket has child tickets", err)
 	}
 }
 

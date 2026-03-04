@@ -98,7 +98,7 @@ func nextUniqueProjectPrefix(db *sql.DB, desired string) (string, error) {
 }
 
 func ticketTypeCode(ticketType string) (string, error) {
-	switch normalizeTaskType(ticketType) {
+	switch normalizeTicketType(ticketType) {
 	case "epic":
 		return "E", nil
 	case "task":

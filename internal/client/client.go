@@ -53,7 +53,7 @@ type ProjectUpdateRequest struct {
 	Notes              string `json:"notes"`
 }
 
-type TaskCreateRequest struct {
+type TicketCreateRequest struct {
 	ProjectID          int64  `json:"project_id"`
 	ParentID           *int64 `json:"parent_id,omitempty"`
 	CloneOf            *int64 `json:"clone_of,omitempty"`
@@ -70,7 +70,7 @@ type TaskCreateRequest struct {
 	State              string `json:"state,omitempty"`
 }
 
-type TaskUpdateRequest struct {
+type TicketUpdateRequest struct {
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
@@ -91,20 +91,20 @@ type CommentCreateRequest struct {
 
 type DependencyRequest struct {
 	ProjectID int64 `json:"project_id"`
-	TaskID    int64 `json:"task_id"`
+	TicketID  int64 `json:"ticket_id"`
 	DependsOn int64 `json:"depends_on"`
 }
 
-type TaskRequest struct {
+type TicketRequest struct {
 	ProjectID int64  `json:"project_id,omitempty"`
-	TaskID    *int64 `json:"task_id,omitempty"`
-	TaskRef   string `json:"task_ref,omitempty"`
+	TicketID  *int64 `json:"ticket_id,omitempty"`
+	TicketRef string `json:"ticket_ref,omitempty"`
 	DryRun    bool   `json:"dry_run,omitempty"`
 }
 
-type TaskRequestResponse struct {
-	Status string      `json:"status"`
-	Task   *store.Task `json:"task,omitempty"`
+type TicketRequestResponse struct {
+	Status string        `json:"status"`
+	Ticket *store.Ticket `json:"ticket,omitempty"`
 }
 
 func resolveRequestLifecycle(status, stage, state string) (string, string, error) {
@@ -352,22 +352,22 @@ func (c *Client) SetProjectEnabled(id int64, enabled bool) (store.Project, error
 	return project, err
 }
 
-func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
+func (c *Client) CreateTicket(request TicketCreateRequest) (store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		defer db.Close()
 		user, err := c.localUser(db)
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
-		return store.CreateTask(db, store.TaskCreateParams{
+		return store.CreateTicket(db, store.TicketCreateParams{
 			ProjectID:          request.ProjectID,
 			ParentID:           request.ParentID,
 			CloneOf:            request.CloneOf,
@@ -384,23 +384,23 @@ func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 			CreatedBy:          user.ID,
 		})
 	}
-	var task store.Task
+	var task store.Ticket
 	err := c.doJSON(http.MethodPost, "/api/tickets", request, &task)
 	return task, err
 }
 
-func (c *Client) ListTasks(projectID int64) ([]store.Task, error) {
-	return c.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
+func (c *Client) ListTickets(projectID int64) ([]store.Ticket, error) {
+	return c.ListTicketsFiltered(projectID, "", "", "", "", "", "", 0)
 }
 
-func (c *Client) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
+func (c *Client) ListTicketsFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
 			return nil, err
 		}
 		defer db.Close()
-		return store.ListTasks(db, store.TaskListParams{
+		return store.ListTickets(db, store.TicketListParams{
 			ProjectID: projectID,
 			Type:      taskType,
 			Stage:     stage,
@@ -411,7 +411,7 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, stage, state, stat
 			Limit:     limit,
 		})
 	}
-	var tasks []store.Task
+	var tasks []store.Ticket
 	values := url.Values{}
 	if taskType != "" {
 		values.Set("type", taskType)
@@ -442,22 +442,22 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, stage, state, stat
 	return tasks, err
 }
 
-func (c *Client) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error) {
+func (c *Client) UpdateTicket(id int64, request TicketUpdateRequest) (store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		defer db.Close()
 		user, err := c.localUser(db)
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
-		return store.UpdateTask(db, id, store.TaskUpdateParams{
+		return store.UpdateTicket(db, id, store.TicketUpdateParams{
 			Title:              request.Title,
 			Description:        request.Description,
 			AcceptanceCriteria: request.AcceptanceCriteria,
@@ -475,29 +475,29 @@ func (c *Client) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, er
 			ActorRole: "admin",
 		})
 	}
-	var task store.Task
+	var task store.Ticket
 	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tickets/%d", id), request, &task)
 	return task, err
 }
 
-func (c *Client) DeleteTask(id int64) error {
+func (c *Client) DeleteTicket(id int64) error {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
 			return err
 		}
 		defer db.Close()
-		return store.DeleteTask(db, id)
+		return store.DeleteTicket(db, id)
 	}
 	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/tickets/%d", id), nil, nil)
 }
 
-func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
-	current, err := c.GetTask(id)
+func (c *Client) SetTicketParent(id, parentID int64) (store.Ticket, error) {
+	current, err := c.GetTicketByID(id)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return c.UpdateTask(id, TaskUpdateRequest{
+	return c.UpdateTicket(id, TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -512,12 +512,12 @@ func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
 	})
 }
 
-func (c *Client) UnsetTaskParent(id int64) (store.Task, error) {
-	current, err := c.GetTask(id)
+func (c *Client) UnsetTicketParent(id int64) (store.Ticket, error) {
+	current, err := c.GetTicketByID(id)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return c.UpdateTask(id, TaskUpdateRequest{
+	return c.UpdateTicket(id, TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -532,48 +532,48 @@ func (c *Client) UnsetTaskParent(id int64) (store.Task, error) {
 	})
 }
 
-func (c *Client) GetTask(id int64) (store.Task, error) {
+func (c *Client) GetTicketByID(id int64) (store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		defer db.Close()
-		return store.GetTask(db, id)
+		return store.GetTicket(db, id)
 	}
-	var task store.Task
+	var task store.Ticket
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d", id), nil, &task)
 	return task, err
 }
 
-func (c *Client) GetTicket(ref string) (store.Task, error) {
+func (c *Client) GetTicket(ref string) (store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		defer db.Close()
-		return store.GetTaskByRef(db, ref)
+		return store.GetTicketByRef(db, ref)
 	}
-	var task store.Task
+	var task store.Ticket
 	err := c.doJSON(http.MethodGet, "/api/tickets/"+url.PathEscape(strings.TrimSpace(ref)), nil, &task)
 	return task, err
 }
 
-func (c *Client) CloneTask(id int64) (store.Task, error) {
+func (c *Client) CloneTicket(id int64) (store.Ticket, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
 		defer db.Close()
 		user, err := c.localUser(db)
 		if err != nil {
-			return store.Task{}, err
+			return store.Ticket{}, err
 		}
-		return store.CloneTask(db, id, user.ID)
+		return store.CloneTicket(db, id, user.ID)
 	}
-	var task store.Task
+	var task store.Ticket
 	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tickets/%d/clone", id), nil, &task)
 	return task, err
 }
@@ -635,7 +635,7 @@ func (c *Client) AddDependency(request DependencyRequest) (store.Dependency, err
 		if err != nil {
 			return store.Dependency{}, err
 		}
-		return store.AddDependency(db, request.ProjectID, request.TaskID, request.DependsOn, user.ID)
+		return store.AddDependency(db, request.ProjectID, request.TicketID, request.DependsOn, user.ID)
 	}
 	var dependency store.Dependency
 	err := c.doJSON(http.MethodPost, "/api/dependencies", request, &dependency)
@@ -649,9 +649,9 @@ func (c *Client) RemoveDependency(request DependencyRequest) error {
 			return err
 		}
 		defer db.Close()
-		return store.DeleteDependency(db, request.ProjectID, request.TaskID, request.DependsOn)
+		return store.DeleteDependency(db, request.ProjectID, request.TicketID, request.DependsOn)
 	}
-	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/dependencies?project_id=%d&task_id=%d&depends_on=%d", request.ProjectID, request.TaskID, request.DependsOn), nil, nil)
+	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/dependencies?project_id=%d&ticket_id=%d&depends_on=%d", request.ProjectID, request.TicketID, request.DependsOn), nil, nil)
 }
 
 func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
@@ -668,44 +668,44 @@ func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
 	return dependencies, err
 }
 
-func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
+func (c *Client) RequestTicket(request TicketRequest) (TicketRequestResponse, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
 		if err != nil {
-			return TaskRequestResponse{}, err
+			return TicketRequestResponse{}, err
 		}
 		defer db.Close()
 		user, err := c.localUser(db)
 		if err != nil {
-			return TaskRequestResponse{}, err
+			return TicketRequestResponse{}, err
 		}
-		task, status, err := store.RequestTask(db, store.TaskRequestParams{
+		ticket, status, err := store.RequestTicket(db, store.TicketRequestParams{
 			ProjectID: request.ProjectID,
-			TaskID:    request.TaskID,
-			TaskRef:   request.TaskRef,
+			TicketID:  request.TicketID,
+			TicketRef: request.TicketRef,
 			Username:  user.Username,
 			UserID:    user.ID,
 			DryRun:    request.DryRun,
 		})
 		if err != nil {
-			return TaskRequestResponse{}, err
+			return TicketRequestResponse{}, err
 		}
-		response := TaskRequestResponse{Status: status}
+		response := TicketRequestResponse{Status: status}
 		if status == "ASSIGNED" || status == "AVAILABLE" {
-			response.Task = &task
+			response.Ticket = &ticket
 		}
 		return response, nil
 	}
 	var reader *bytes.Reader
 	payload, err := json.Marshal(request)
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
 	reader = bytes.NewReader(payload)
 
 	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/tickets/claim", reader)
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
@@ -714,7 +714,7 @@ func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
 	defer resp.Body.Close()
 
@@ -723,18 +723,18 @@ func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 			Error string `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err == nil && apiErr.Error != "" {
-			return TaskRequestResponse{}, errors.New(apiErr.Error)
+			return TicketRequestResponse{}, errors.New(apiErr.Error)
 		}
-		return TaskRequestResponse{}, fmt.Errorf("request failed with status %s", resp.Status)
+		return TicketRequestResponse{}, fmt.Errorf("request failed with status %s", resp.Status)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
-	var response TaskRequestResponse
+	var response TicketRequestResponse
 	if err := json.Unmarshal(body, &response); err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
 	return response, nil
 }

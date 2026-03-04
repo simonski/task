@@ -79,44 +79,44 @@ func (s *Service) SetProjectEnabled(id int64, enabled bool) (store.Project, erro
 	return s.client.SetProjectEnabled(id, enabled)
 }
 
-func (s *Service) CreateTask(request libticket.TaskCreateRequest) (store.Task, error) {
-	return s.client.CreateTask(client.TaskCreateRequest(request))
+func (s *Service) CreateTicket(request libticket.TicketCreateRequest) (store.Ticket, error) {
+	return s.client.CreateTicket(client.TicketCreateRequest(request))
 }
 
-func (s *Service) ListTasks(projectID int64) ([]store.Task, error) {
-	return s.client.ListTasks(projectID)
+func (s *Service) ListTickets(projectID int64) ([]store.Ticket, error) {
+	return s.client.ListTickets(projectID)
 }
 
-func (s *Service) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
-	return s.client.ListTasksFiltered(projectID, taskType, stage, state, status, search, assignee, limit)
+func (s *Service) ListTicketsFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Ticket, error) {
+	return s.client.ListTicketsFiltered(projectID, taskType, stage, state, status, search, assignee, limit)
 }
 
-func (s *Service) UpdateTask(id int64, request libticket.TaskUpdateRequest) (store.Task, error) {
-	return s.client.UpdateTask(id, client.TaskUpdateRequest(request))
+func (s *Service) UpdateTicket(id int64, request libticket.TicketUpdateRequest) (store.Ticket, error) {
+	return s.client.UpdateTicket(id, client.TicketUpdateRequest(request))
 }
 
-func (s *Service) DeleteTask(id int64) error {
-	return s.client.DeleteTask(id)
+func (s *Service) DeleteTicket(id int64) error {
+	return s.client.DeleteTicket(id)
 }
 
-func (s *Service) SetTaskParent(id, parentID int64) (store.Task, error) {
-	return s.client.SetTaskParent(id, parentID)
+func (s *Service) SetTicketParent(id, parentID int64) (store.Ticket, error) {
+	return s.client.SetTicketParent(id, parentID)
 }
 
-func (s *Service) UnsetTaskParent(id int64) (store.Task, error) {
-	return s.client.UnsetTaskParent(id)
+func (s *Service) UnsetTicketParent(id int64) (store.Ticket, error) {
+	return s.client.UnsetTicketParent(id)
 }
 
-func (s *Service) GetTask(id int64) (store.Task, error) {
-	return s.client.GetTask(id)
+func (s *Service) GetTicketByID(id int64) (store.Ticket, error) {
+	return s.client.GetTicketByID(id)
 }
 
-func (s *Service) GetTicket(ref string) (store.Task, error) {
+func (s *Service) GetTicket(ref string) (store.Ticket, error) {
 	return s.client.GetTicket(ref)
 }
 
-func (s *Service) CloneTask(id int64) (store.Task, error) {
-	return s.client.CloneTask(id)
+func (s *Service) CloneTicket(id int64) (store.Ticket, error) {
+	return s.client.CloneTicket(id)
 }
 
 func (s *Service) ListHistory(id int64) ([]store.HistoryEvent, error) {
@@ -143,10 +143,10 @@ func (s *Service) ListDependencies(id int64) ([]store.Dependency, error) {
 	return s.client.ListDependencies(id)
 }
 
-func (s *Service) RequestTask(request libticket.TaskRequest) (libticket.TaskRequestResponse, error) {
-	response, err := s.client.RequestTask(client.TaskRequest(request))
+func (s *Service) RequestTicket(request libticket.TicketRequest) (libticket.TicketRequestResponse, error) {
+	response, err := s.client.RequestTicket(client.TicketRequest(request))
 	if err != nil {
-		return libticket.TaskRequestResponse{}, err
+		return libticket.TicketRequestResponse{}, err
 	}
-	return libticket.TaskRequestResponse(response), nil
+	return libticket.TicketRequestResponse(response), nil
 }

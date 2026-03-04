@@ -73,74 +73,74 @@ func TestHTTPServiceRegisterLoginLogoutRoundTrip(t *testing.T) {
 	}
 }
 
-func TestHTTPServiceSetTaskParent(t *testing.T) {
+func TestHTTPServiceSetTicketParent(t *testing.T) {
 	_, svc := newRemoteFixture(t)
 
-	parent, err := svc.CreateTask(libticket.TaskCreateRequest{
+	parent, err := svc.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "epic",
 		Title:     "Parent",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(parent) error = %v", err)
+		t.Fatalf("CreateTicket(parent) error = %v", err)
 	}
-	child, err := svc.CreateTask(libticket.TaskCreateRequest{
+	child, err := svc.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Child",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(child) error = %v", err)
+		t.Fatalf("CreateTicket(child) error = %v", err)
 	}
 
-	updated, err := svc.SetTaskParent(child.ID, parent.ID)
+	updated, err := svc.SetTicketParent(child.ID, parent.ID)
 	if err != nil {
-		t.Fatalf("SetTaskParent() error = %v", err)
+		t.Fatalf("SetTicketParent() error = %v", err)
 	}
 	if updated.ParentID == nil || *updated.ParentID != parent.ID {
-		t.Fatalf("SetTaskParent() = %#v", updated)
+		t.Fatalf("SetTicketParent() = %#v", updated)
 	}
 
-	detached, err := svc.UnsetTaskParent(child.ID)
+	detached, err := svc.UnsetTicketParent(child.ID)
 	if err != nil {
-		t.Fatalf("UnsetTaskParent() error = %v", err)
+		t.Fatalf("UnsetTicketParent() error = %v", err)
 	}
 	if detached.ParentID != nil {
-		t.Fatalf("UnsetTaskParent() = %#v", detached)
+		t.Fatalf("UnsetTicketParent() = %#v", detached)
 	}
 }
 
-func TestHTTPServiceDeleteTask(t *testing.T) {
+func TestHTTPServiceDeleteTicket(t *testing.T) {
 	_, svc := newRemoteFixture(t)
 
-	task, err := svc.CreateTask(libticket.TaskCreateRequest{
+	task, err := svc.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Delete me",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
-	if err := svc.DeleteTask(task.ID); err != nil {
-		t.Fatalf("DeleteTask() error = %v", err)
+	if err := svc.DeleteTicket(task.ID); err != nil {
+		t.Fatalf("DeleteTicket() error = %v", err)
 	}
-	if _, err := svc.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) && (err == nil || err.Error() != "ticket not found") {
-		t.Fatalf("GetTask(deleted) error = %v, want ticket not found", err)
+	if _, err := svc.GetTicketByID(task.ID); !errors.Is(err, store.ErrTicketNotFound) && (err == nil || err.Error() != "ticket not found") {
+		t.Fatalf("GetTicket(deleted) error = %v, want ticket not found", err)
 	}
 }
 
-func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
+func TestHTTPServiceUpdateTicketSupportsExpandedFields(t *testing.T) {
 	_, svc := newRemoteFixture(t)
 
-	parent, err := svc.CreateTask(libticket.TaskCreateRequest{
+	parent, err := svc.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "epic",
 		Title:     "Parent",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(parent) error = %v", err)
+		t.Fatalf("CreateTicket(parent) error = %v", err)
 	}
-	task, err := svc.CreateTask(libticket.TaskCreateRequest{
+	task, err := svc.CreateTicket(libticket.TicketCreateRequest{
 		ProjectID:          1,
 		Type:               "task",
 		Title:              "Child",
@@ -153,19 +153,19 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		State:              "idle",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(task) error = %v", err)
+		t.Fatalf("CreateTicket(task) error = %v", err)
 	}
-	requested, err := svc.RequestTask(libticket.TaskRequest{ProjectID: 1, TaskID: &task.ID})
+	requested, err := svc.RequestTicket(libticket.TicketRequest{ProjectID: 1, TicketID: &task.ID})
 	if err != nil {
-		t.Fatalf("RequestTask() error = %v", err)
+		t.Fatalf("RequestTicket() error = %v", err)
 	}
 
-	updated, err := svc.UpdateTask(task.ID, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTicket(task.ID, libticket.TicketUpdateRequest{
 		Title:              "Updated Child",
 		Description:        "new description",
 		AcceptanceCriteria: "new ac",
 		ParentID:           &parent.ID,
-		Assignee:           requested.Task.Assignee,
+		Assignee:           requested.Ticket.Assignee,
 		Status:             "develop/active",
 		Priority:           3,
 		Order:              7,
@@ -173,13 +173,13 @@ func TestHTTPServiceUpdateTaskSupportsExpandedFields(t *testing.T) {
 		EstimateComplete:   "2026-04-15T12:00:00Z",
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask() error = %v", err)
+		t.Fatalf("UpdateTicket() error = %v", err)
 	}
 	if updated.Title != "Updated Child" || updated.Description != "new description" || updated.AcceptanceCriteria != "new ac" || updated.Status != "develop/active" || updated.Priority != 3 || updated.Order != 7 || updated.EstimateEffort != 5 || updated.EstimateComplete != "2026-04-15T12:00:00Z" {
-		t.Fatalf("UpdateTask() = %#v", updated)
+		t.Fatalf("UpdateTicket() = %#v", updated)
 	}
 	if updated.ParentID == nil || *updated.ParentID != parent.ID {
-		t.Fatalf("UpdateTask() parent = %#v", updated)
+		t.Fatalf("UpdateTicket() parent = %#v", updated)
 	}
 }
 

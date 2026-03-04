@@ -8,14 +8,14 @@ func TestHistoryAndComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
-	task, err := CreateTask(db, TaskCreateParams{
+	task, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Add login",
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
 
 	events, err := ListHistoryEvents(db, task.ID)
@@ -26,14 +26,14 @@ func TestHistoryAndComments(t *testing.T) {
 		t.Fatalf("history after create = %#v", events)
 	}
 
-	_, err = UpdateTask(db, task.ID, TaskUpdateParams{
+	_, err = UpdateTicket(db, task.ID, TicketUpdateParams{
 		Title:       task.Title,
 		Description: "Updated description",
 		ParentID:    task.ParentID,
 		UpdatedBy:   1,
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask() error = %v", err)
+		t.Fatalf("UpdateTicket() error = %v", err)
 	}
 
 	events, err = ListHistoryEvents(db, task.ID)
@@ -63,11 +63,11 @@ func TestHistoryAndComments(t *testing.T) {
 		t.Fatalf("ListComments() = %#v", comments)
 	}
 
-	taskWithComments, err := GetTask(db, task.ID)
+	taskWithComments, err := GetTicket(db, task.ID)
 	if err != nil {
-		t.Fatalf("GetTask() error = %v", err)
+		t.Fatalf("GetTicket() error = %v", err)
 	}
 	if len(taskWithComments.Comments) != 1 || taskWithComments.Comments[0].Author != "admin" {
-		t.Fatalf("GetTask().Comments = %#v", taskWithComments.Comments)
+		t.Fatalf("GetTicket().Comments = %#v", taskWithComments.Comments)
 	}
 }

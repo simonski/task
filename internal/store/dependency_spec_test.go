@@ -8,16 +8,16 @@ func TestDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject() error = %v", err)
 	}
-	source, err := CreateTask(db, TaskCreateParams{
+	source, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Prepare password reset flow",
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(source) error = %v", err)
+		t.Fatalf("CreateTicket(source) error = %v", err)
 	}
-	blocker, err := CreateTask(db, TaskCreateParams{
+	blocker, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "epic",
 		Title:     "Password Reset",
@@ -26,16 +26,16 @@ func TestDependencies(t *testing.T) {
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(blocker) error = %v", err)
+		t.Fatalf("CreateTicket(blocker) error = %v", err)
 	}
-	dependent, err := CreateTask(db, TaskCreateParams{
+	dependent, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "bug",
 		Title:     "Reset link expires immediately.",
 		CreatedBy: 1,
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(dependent) error = %v", err)
+		t.Fatalf("CreateTicket(dependent) error = %v", err)
 	}
 	if _, err := AddDependency(db, project.ID, dependent.ID, blocker.ID, 1); err != nil {
 		t.Fatalf("AddDependency() error = %v", err)

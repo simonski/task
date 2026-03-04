@@ -26,7 +26,7 @@ type ProjectUpdateRequest struct {
 	Notes              string `json:"notes"`
 }
 
-type TaskCreateRequest struct {
+type TicketCreateRequest struct {
 	ProjectID          int64  `json:"project_id"`
 	ParentID           *int64 `json:"parent_id,omitempty"`
 	CloneOf            *int64 `json:"clone_of,omitempty"`
@@ -43,7 +43,7 @@ type TaskCreateRequest struct {
 	State              string `json:"state,omitempty"`
 }
 
-type TaskUpdateRequest struct {
+type TicketUpdateRequest struct {
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	AcceptanceCriteria string `json:"acceptance_criteria"`
@@ -64,18 +64,18 @@ type CommentCreateRequest struct {
 
 type DependencyRequest struct {
 	ProjectID int64 `json:"project_id"`
-	TaskID    int64 `json:"task_id"`
+	TicketID  int64 `json:"ticket_id"`
 	DependsOn int64 `json:"depends_on"`
 }
 
-type TaskRequest struct {
+type TicketRequest struct {
 	ProjectID int64  `json:"project_id,omitempty"`
-	TaskID    *int64 `json:"task_id,omitempty"`
-	TaskRef   string `json:"task_ref,omitempty"`
+	TicketID  *int64 `json:"ticket_id,omitempty"`
+	TicketRef string `json:"ticket_ref,omitempty"`
 	DryRun    bool   `json:"dry_run,omitempty"`
 }
 
-type TaskRequestResponse struct {
-	Status string      `json:"status"`
-	Task   *store.Task `json:"task,omitempty"`
+type TicketRequestResponse struct {
+	Status string        `json:"status"`
+	Ticket *store.Ticket `json:"ticket,omitempty"`
 }

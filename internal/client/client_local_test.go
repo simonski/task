@@ -29,7 +29,7 @@ func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 		t.Fatalf("ListProjects() = %#v", projects)
 	}
 
-	task, err := api.CreateTask(TaskCreateRequest{
+	task, err := api.CreateTicket(TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Local task",
@@ -37,57 +37,57 @@ func TestLocalModeClientUsesSQLiteDirectly(t *testing.T) {
 		State:     "idle",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
 	if strings.TrimSpace(task.Assignee) != "" || task.Status != "develop/idle" {
-		t.Fatalf("CreateTask() = %#v", task)
+		t.Fatalf("CreateTicket() = %#v", task)
 	}
 
-	requested, err := api.RequestTask(TaskRequest{ProjectID: 1})
+	requested, err := api.RequestTicket(TicketRequest{ProjectID: 1})
 	if err != nil {
-		t.Fatalf("RequestTask() error = %v", err)
+		t.Fatalf("RequestTicket() error = %v", err)
 	}
-	if requested.Status != "ASSIGNED" || requested.Task == nil {
-		t.Fatalf("RequestTask() = %#v", requested)
+	if requested.Status != "ASSIGNED" || requested.Ticket == nil {
+		t.Fatalf("RequestTicket() = %#v", requested)
 	}
 
-	updated, err := api.UpdateTask(task.ID, TaskUpdateRequest{
+	updated, err := api.UpdateTicket(task.ID, TicketUpdateRequest{
 		Title:       task.Title,
 		Description: task.Description,
 		ParentID:    task.ParentID,
-		Assignee:    requested.Task.Assignee,
+		Assignee:    requested.Ticket.Assignee,
 		Stage:       "develop",
 		State:       "active",
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask() error = %v", err)
+		t.Fatalf("UpdateTicket() error = %v", err)
 	}
 	if updated.Status != "develop/active" {
-		t.Fatalf("UpdateTask().Status = %q, want develop/active", updated.Status)
+		t.Fatalf("UpdateTicket().Status = %q, want develop/active", updated.Status)
 	}
 
-	parent, err := api.CreateTask(TaskCreateRequest{
+	parent, err := api.CreateTicket(TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "epic",
 		Title:     "Parent epic",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask(parent) error = %v", err)
+		t.Fatalf("CreateTicket(parent) error = %v", err)
 	}
-	reparented, err := api.SetTaskParent(task.ID, parent.ID)
+	reparented, err := api.SetTicketParent(task.ID, parent.ID)
 	if err != nil {
-		t.Fatalf("SetTaskParent() error = %v", err)
+		t.Fatalf("SetTicketParent() error = %v", err)
 	}
 	if reparented.ParentID == nil || *reparented.ParentID != parent.ID {
-		t.Fatalf("SetTaskParent() = %#v", reparented)
+		t.Fatalf("SetTicketParent() = %#v", reparented)
 	}
 
-	detached, err := api.UnsetTaskParent(task.ID)
+	detached, err := api.UnsetTicketParent(task.ID)
 	if err != nil {
-		t.Fatalf("UnsetTaskParent() error = %v", err)
+		t.Fatalf("UnsetTicketParent() error = %v", err)
 	}
 	if detached.ParentID != nil {
-		t.Fatalf("UnsetTaskParent() = %#v", detached)
+		t.Fatalf("UnsetTicketParent() = %#v", detached)
 	}
 
 	comment, err := api.AddComment(task.ID, "hello")
@@ -110,19 +110,19 @@ func TestLocalModeClientIgnoresOwnershipForStatusChanges(t *testing.T) {
 	}
 
 	api := New(config.Config{})
-	task, err := api.CreateTask(TaskCreateRequest{
+	task, err := api.CreateTicket(TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Unassigned local task",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
 	if strings.TrimSpace(task.Assignee) != "" {
-		t.Fatalf("CreateTask().Assignee = %q, want unassigned", task.Assignee)
+		t.Fatalf("CreateTicket().Assignee = %q, want unassigned", task.Assignee)
 	}
 
-	updated, err := api.UpdateTask(task.ID, TaskUpdateRequest{
+	updated, err := api.UpdateTicket(task.ID, TicketUpdateRequest{
 		Title:       task.Title,
 		Description: task.Description,
 		ParentID:    task.ParentID,
@@ -131,14 +131,14 @@ func TestLocalModeClientIgnoresOwnershipForStatusChanges(t *testing.T) {
 		State:       "complete",
 	})
 	if err != nil {
-		t.Fatalf("UpdateTask() error = %v", err)
+		t.Fatalf("UpdateTicket() error = %v", err)
 	}
 	if updated.Status != "done/complete" {
-		t.Fatalf("UpdateTask().Status = %q, want done/complete", updated.Status)
+		t.Fatalf("UpdateTicket().Status = %q, want done/complete", updated.Status)
 	}
 }
 
-func TestLocalModeClientDeleteTask(t *testing.T) {
+func TestLocalModeClientDeleteTicket(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
 	t.Setenv("TICKET_HOME", tempDir)
@@ -149,18 +149,18 @@ func TestLocalModeClientDeleteTask(t *testing.T) {
 	}
 
 	api := New(config.Config{})
-	task, err := api.CreateTask(TaskCreateRequest{
+	task, err := api.CreateTicket(TicketCreateRequest{
 		ProjectID: 1,
 		Type:      "task",
 		Title:     "Delete me",
 	})
 	if err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
-	if err := api.DeleteTask(task.ID); err != nil {
-		t.Fatalf("DeleteTask() error = %v", err)
+	if err := api.DeleteTicket(task.ID); err != nil {
+		t.Fatalf("DeleteTicket() error = %v", err)
 	}
-	if _, err := api.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) {
-		t.Fatalf("GetTask(deleted) error = %v, want ErrTaskNotFound", err)
+	if _, err := api.GetTicketByID(task.ID); !errors.Is(err, store.ErrTicketNotFound) {
+		t.Fatalf("GetTicket(deleted) error = %v, want ErrTicketNotFound", err)
 	}
 }

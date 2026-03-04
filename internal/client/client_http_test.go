@@ -46,7 +46,7 @@ func TestRemoteClientSendsAuthHeaderAndParsesStatus(t *testing.T) {
 	}
 }
 
-func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
+func TestRemoteClientListTicketsFilteredBuildsQuery(t *testing.T) {
 	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,12 +66,12 @@ func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
 	defer server.Close()
 
 	api := New(config.Config{ServerURL: server.URL})
-	if _, err := api.ListTasksFiltered(7, "bug", "", "", "develop/idle", "needle", "alice", 25); err != nil {
-		t.Fatalf("ListTasksFiltered() error = %v", err)
+	if _, err := api.ListTicketsFiltered(7, "bug", "", "", "develop/idle", "needle", "alice", 25); err != nil {
+		t.Fatalf("ListTicketsFiltered() error = %v", err)
 	}
 }
 
-func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
+func TestRemoteClientRequestTicketPostsJSON(t *testing.T) {
 	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,11 +81,11 @@ func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer token-123" {
 			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
 		}
-		var payload TaskRequest
+		var payload TicketRequest
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("Decode() error = %v", err)
 		}
-		if payload.ProjectID != 3 || payload.TaskID == nil || *payload.TaskID != 9 {
+		if payload.ProjectID != 3 || payload.TicketID == nil || *payload.TicketID != 9 {
 			t.Fatalf("payload = %#v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -95,12 +95,12 @@ func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
 
 	taskID := int64(9)
 	api := New(config.Config{ServerURL: server.URL, Token: "token-123"})
-	resp, err := api.RequestTask(TaskRequest{ProjectID: 3, TaskID: &taskID})
+	resp, err := api.RequestTicket(TicketRequest{ProjectID: 3, TicketID: &taskID})
 	if err != nil {
-		t.Fatalf("RequestTask() error = %v", err)
+		t.Fatalf("RequestTicket() error = %v", err)
 	}
 	if resp.Status != "REJECTED" {
-		t.Fatalf("RequestTask() = %#v", resp)
+		t.Fatalf("RequestTicket() = %#v", resp)
 	}
 }
 
@@ -209,13 +209,13 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/7/disable":
 			_, _ = w.Write([]byte(`{"project_id":7,"title":"P2","status":"disabled"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets":
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
+			_, _ = w.Write([]byte(`{"ticket_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11":
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
+			_, _ = w.Write([]byte(`{"ticket_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/tickets/11":
 			_, _ = w.Write([]byte(`{"status":"deleted"}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/api/tickets/11":
-			var payload TaskUpdateRequest
+			var payload TicketUpdateRequest
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("Decode(task update) error = %v", err)
 			}
@@ -223,24 +223,24 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 			if payload.ParentID != nil {
 				parentJSON = `,"parent_id":` + strconv.FormatInt(*payload.ParentID, 10)
 			}
-			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"develop","state":"active","status":"develop/active"` + parentJSON + `}`))
+			_, _ = w.Write([]byte(`{"ticket_id":11,"project_id":7,"title":"T","type":"task","stage":"develop","state":"active","status":"develop/active"` + parentJSON + `}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets/11/clone":
-			_, _ = w.Write([]byte(`{"task_id":21,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle","clone_of":11}`))
+			_, _ = w.Write([]byte(`{"ticket_id":21,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle","clone_of":11}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/history":
-			_, _ = w.Write([]byte(`[{"id":1,"task_id":11,"event_type":"task_updated"}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"ticket_id":11,"event_type":"ticket_updated"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets/11/comments":
 			_, _ = w.Write([]byte(`{"id":1,"item_id":11,"comment":"hello"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/comments":
 			_, _ = w.Write([]byte(`[{"id":1,"item_id":11,"comment":"hello"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/dependencies":
-			_, _ = w.Write([]byte(`{"id":1,"project_id":7,"task_id":11,"depends_on":12}`))
+			_, _ = w.Write([]byte(`{"id":1,"project_id":7,"ticket_id":11,"depends_on":12}`))
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/dependencies"):
-			if r.URL.Query().Get("project_id") != "7" || r.URL.Query().Get("task_id") != "11" || r.URL.Query().Get("depends_on") != "12" {
+			if r.URL.Query().Get("project_id") != "7" || r.URL.Query().Get("ticket_id") != "11" || r.URL.Query().Get("depends_on") != "12" {
 				t.Fatalf("dependency delete query = %q", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(`{}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/dependencies":
-			_, _ = w.Write([]byte(`[{"id":1,"project_id":7,"task_id":11,"depends_on":12}]`))
+			_, _ = w.Write([]byte(`[{"id":1,"project_id":7,"ticket_id":11,"depends_on":12}]`))
 		default:
 			t.Fatalf("unexpected route: %s %s", r.Method, r.URL.String())
 		}
@@ -276,26 +276,26 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 	if _, err := api.SetProjectEnabled(projectID, false); err != nil {
 		t.Fatalf("SetProjectEnabled() error = %v", err)
 	}
-	if _, err := api.CreateTask(TaskCreateRequest{ProjectID: projectID, Type: "task", Title: "T"}); err != nil {
-		t.Fatalf("CreateTask() error = %v", err)
+	if _, err := api.CreateTicket(TicketCreateRequest{ProjectID: projectID, Type: "task", Title: "T"}); err != nil {
+		t.Fatalf("CreateTicket() error = %v", err)
 	}
-	if _, err := api.GetTask(taskID); err != nil {
-		t.Fatalf("GetTask() error = %v", err)
+	if _, err := api.GetTicketByID(taskID); err != nil {
+		t.Fatalf("GetTicket() error = %v", err)
 	}
-	if err := api.DeleteTask(taskID); err != nil {
-		t.Fatalf("DeleteTask() error = %v", err)
+	if err := api.DeleteTicket(taskID); err != nil {
+		t.Fatalf("DeleteTicket() error = %v", err)
 	}
-	if _, err := api.UpdateTask(taskID, TaskUpdateRequest{Title: "T", Stage: "develop", State: "active"}); err != nil {
-		t.Fatalf("UpdateTask() error = %v", err)
+	if _, err := api.UpdateTicket(taskID, TicketUpdateRequest{Title: "T", Stage: "develop", State: "active"}); err != nil {
+		t.Fatalf("UpdateTicket() error = %v", err)
 	}
-	if _, err := api.SetTaskParent(taskID, dependsOn); err != nil {
-		t.Fatalf("SetTaskParent() error = %v", err)
+	if _, err := api.SetTicketParent(taskID, dependsOn); err != nil {
+		t.Fatalf("SetTicketParent() error = %v", err)
 	}
-	if _, err := api.UnsetTaskParent(taskID); err != nil {
-		t.Fatalf("UnsetTaskParent() error = %v", err)
+	if _, err := api.UnsetTicketParent(taskID); err != nil {
+		t.Fatalf("UnsetTicketParent() error = %v", err)
 	}
-	if _, err := api.CloneTask(taskID); err != nil {
-		t.Fatalf("CloneTask() error = %v", err)
+	if _, err := api.CloneTicket(taskID); err != nil {
+		t.Fatalf("CloneTicket() error = %v", err)
 	}
 	if _, err := api.ListHistory(taskID); err != nil {
 		t.Fatalf("ListHistory() error = %v", err)
@@ -306,10 +306,10 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 	if _, err := api.ListComments(taskID); err != nil {
 		t.Fatalf("ListComments() error = %v", err)
 	}
-	if _, err := api.AddDependency(DependencyRequest{ProjectID: projectID, TaskID: taskID, DependsOn: dependsOn}); err != nil {
+	if _, err := api.AddDependency(DependencyRequest{ProjectID: projectID, TicketID: taskID, DependsOn: dependsOn}); err != nil {
 		t.Fatalf("AddDependency() error = %v", err)
 	}
-	if err := api.RemoveDependency(DependencyRequest{ProjectID: projectID, TaskID: taskID, DependsOn: dependsOn}); err != nil {
+	if err := api.RemoveDependency(DependencyRequest{ProjectID: projectID, TicketID: taskID, DependsOn: dependsOn}); err != nil {
 		t.Fatalf("RemoveDependency() error = %v", err)
 	}
 	if _, err := api.ListDependencies(taskID); err != nil {

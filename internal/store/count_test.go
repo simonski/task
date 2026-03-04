@@ -14,7 +14,7 @@ func TestCountEverything(t *testing.T) {
 		t.Fatalf("CreateProject() other error = %v", err)
 	}
 
-	if _, err := CreateTask(db, TaskCreateParams{
+	if _, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Task A",
@@ -22,9 +22,9 @@ func TestCountEverything(t *testing.T) {
 		State:     StateIdle,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(task design/idle) error = %v", err)
+		t.Fatalf("CreateTicket(task design/idle) error = %v", err)
 	}
-	if _, err := CreateTask(db, TaskCreateParams{
+	if _, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "task",
 		Title:     "Task B",
@@ -32,9 +32,9 @@ func TestCountEverything(t *testing.T) {
 		State:     StateComplete,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(task done/complete) error = %v", err)
+		t.Fatalf("CreateTicket(task done/complete) error = %v", err)
 	}
-	if _, err := CreateTask(db, TaskCreateParams{
+	if _, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: project.ID,
 		Type:      "epic",
 		Title:     "Epic A",
@@ -42,9 +42,9 @@ func TestCountEverything(t *testing.T) {
 		State:     StateComplete,
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(epic done/complete) error = %v", err)
+		t.Fatalf("CreateTicket(epic done/complete) error = %v", err)
 	}
-	if _, err := CreateTask(db, TaskCreateParams{
+	if _, err := CreateTicket(db, TicketCreateParams{
 		ProjectID: otherProject.ID,
 		Type:      "bug",
 		Title:     "Bug A",
@@ -53,7 +53,7 @@ func TestCountEverything(t *testing.T) {
 		Assignee:  "alice",
 		CreatedBy: 1,
 	}); err != nil {
-		t.Fatalf("CreateTask(bug develop/active) error = %v", err)
+		t.Fatalf("CreateTicket(bug develop/active) error = %v", err)
 	}
 
 	all, err := CountEverything(db, nil)

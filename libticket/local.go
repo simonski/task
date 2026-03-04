@@ -164,21 +164,21 @@ func (s *LocalService) SetProjectEnabled(id int64, enabled bool) (store.Project,
 	return store.SetProjectStatus(db, id, enabled)
 }
 
-func (s *LocalService) CreateTask(request TaskCreateRequest) (store.Task, error) {
+func (s *LocalService) CreateTicket(request TicketCreateRequest) (store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	defer db.Close()
 	user, err := s.localUser(db)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return store.CreateTask(db, store.TaskCreateParams{
+	return store.CreateTicket(db, store.TicketCreateParams{
 		ProjectID:          request.ProjectID,
 		ParentID:           request.ParentID,
 		CloneOf:            request.CloneOf,
@@ -196,17 +196,17 @@ func (s *LocalService) CreateTask(request TaskCreateRequest) (store.Task, error)
 	})
 }
 
-func (s *LocalService) ListTasks(projectID int64) ([]store.Task, error) {
-	return s.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
+func (s *LocalService) ListTickets(projectID int64) ([]store.Ticket, error) {
+	return s.ListTicketsFiltered(projectID, "", "", "", "", "", "", 0)
 }
 
-func (s *LocalService) ListTasksFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Task, error) {
+func (s *LocalService) ListTicketsFiltered(projectID int64, taskType, stage, state, status, search, assignee string, limit int) ([]store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	return store.ListTasks(db, store.TaskListParams{
+	return store.ListTickets(db, store.TicketListParams{
 		ProjectID: projectID,
 		Type:      taskType,
 		Stage:     stage,
@@ -218,21 +218,21 @@ func (s *LocalService) ListTasksFiltered(projectID int64, taskType, stage, state
 	})
 }
 
-func (s *LocalService) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, error) {
+func (s *LocalService) UpdateTicket(id int64, request TicketUpdateRequest) (store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	defer db.Close()
 	user, err := s.localUser(db)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	stage, state, err := resolveRequestLifecycle(request.Status, request.Stage, request.State)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return store.UpdateTask(db, id, store.TaskUpdateParams{
+	return store.UpdateTicket(db, id, store.TicketUpdateParams{
 		Title:              request.Title,
 		Description:        request.Description,
 		AcceptanceCriteria: request.AcceptanceCriteria,
@@ -251,21 +251,21 @@ func (s *LocalService) UpdateTask(id int64, request TaskUpdateRequest) (store.Ta
 	})
 }
 
-func (s *LocalService) DeleteTask(id int64) error {
+func (s *LocalService) DeleteTicket(id int64) error {
 	db, err := s.openDB()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	return store.DeleteTask(db, id)
+	return store.DeleteTicket(db, id)
 }
 
-func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {
-	current, err := s.GetTask(id)
+func (s *LocalService) SetTicketParent(id, parentID int64) (store.Ticket, error) {
+	current, err := s.GetTicketByID(id)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return s.UpdateTask(id, TaskUpdateRequest{
+	return s.UpdateTicket(id, TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -280,12 +280,12 @@ func (s *LocalService) SetTaskParent(id, parentID int64) (store.Task, error) {
 	})
 }
 
-func (s *LocalService) UnsetTaskParent(id int64) (store.Task, error) {
-	current, err := s.GetTask(id)
+func (s *LocalService) UnsetTicketParent(id int64) (store.Ticket, error) {
+	current, err := s.GetTicketByID(id)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return s.UpdateTask(id, TaskUpdateRequest{
+	return s.UpdateTicket(id, TicketUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -300,35 +300,35 @@ func (s *LocalService) UnsetTaskParent(id int64) (store.Task, error) {
 	})
 }
 
-func (s *LocalService) GetTask(id int64) (store.Task, error) {
+func (s *LocalService) GetTicketByID(id int64) (store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	defer db.Close()
-	return store.GetTask(db, id)
+	return store.GetTicket(db, id)
 }
 
-func (s *LocalService) GetTicket(ref string) (store.Task, error) {
+func (s *LocalService) GetTicket(ref string) (store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	defer db.Close()
-	return store.GetTaskByRef(db, ref)
+	return store.GetTicketByRef(db, ref)
 }
 
-func (s *LocalService) CloneTask(id int64) (store.Task, error) {
+func (s *LocalService) CloneTicket(id int64) (store.Ticket, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
 	defer db.Close()
 	user, err := s.localUser(db)
 	if err != nil {
-		return store.Task{}, err
+		return store.Ticket{}, err
 	}
-	return store.CloneTask(db, id, user.ID)
+	return store.CloneTicket(db, id, user.ID)
 }
 
 func (s *LocalService) ListHistory(id int64) ([]store.HistoryEvent, error) {
@@ -372,7 +372,7 @@ func (s *LocalService) AddDependency(request DependencyRequest) (store.Dependenc
 	if err != nil {
 		return store.Dependency{}, err
 	}
-	return store.AddDependency(db, request.ProjectID, request.TaskID, request.DependsOn, user.ID)
+	return store.AddDependency(db, request.ProjectID, request.TicketID, request.DependsOn, user.ID)
 }
 
 func (s *LocalService) RemoveDependency(request DependencyRequest) error {
@@ -381,7 +381,7 @@ func (s *LocalService) RemoveDependency(request DependencyRequest) error {
 		return err
 	}
 	defer db.Close()
-	return store.DeleteDependency(db, request.ProjectID, request.TaskID, request.DependsOn)
+	return store.DeleteDependency(db, request.ProjectID, request.TicketID, request.DependsOn)
 }
 
 func (s *LocalService) ListDependencies(id int64) ([]store.Dependency, error) {
@@ -393,30 +393,30 @@ func (s *LocalService) ListDependencies(id int64) ([]store.Dependency, error) {
 	return store.ListDependencies(db, id)
 }
 
-func (s *LocalService) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
+func (s *LocalService) RequestTicket(request TicketRequest) (TicketRequestResponse, error) {
 	db, err := s.openDB()
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
 	defer db.Close()
 	user, err := s.localUser(db)
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
-	task, status, err := store.RequestTask(db, store.TaskRequestParams{
+	task, status, err := store.RequestTicket(db, store.TicketRequestParams{
 		ProjectID: request.ProjectID,
-		TaskID:    request.TaskID,
-		TaskRef:   request.TaskRef,
+		TicketID:  request.TicketID,
+		TicketRef: request.TicketRef,
 		Username:  user.Username,
 		UserID:    user.ID,
 		DryRun:    request.DryRun,
 	})
 	if err != nil {
-		return TaskRequestResponse{}, err
+		return TicketRequestResponse{}, err
 	}
-	response := TaskRequestResponse{Status: status}
+	response := TicketRequestResponse{Status: status}
 	if status == "ASSIGNED" || status == "AVAILABLE" {
-		response.Task = &task
+		response.Ticket = &task
 	}
 	return response, nil
 }

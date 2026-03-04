@@ -8,7 +8,7 @@ import (
 type HistoryEvent struct {
 	ID        int64  `json:"id"`
 	ProjectID int64  `json:"project_id"`
-	TaskID    int64  `json:"task_id"`
+	TicketID    int64  `json:"ticket_id"`
 	EventType string `json:"event_type"`
 	Payload   string `json:"payload"`
 	CreatedBy int64  `json:"created_by"`
@@ -61,7 +61,7 @@ func ListHistoryEvents(db *sql.DB, taskID int64) ([]HistoryEvent, error) {
 	var events []HistoryEvent
 	for rows.Next() {
 		var event HistoryEvent
-		if err := rows.Scan(&event.ID, &event.ProjectID, &event.TaskID, &event.EventType, &event.Payload, &event.CreatedBy, &event.CreatedAt); err != nil {
+		if err := rows.Scan(&event.ID, &event.ProjectID, &event.TicketID, &event.EventType, &event.Payload, &event.CreatedBy, &event.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, event)

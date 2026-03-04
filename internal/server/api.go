@@ -295,7 +295,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 					return
 				}
 			}
-			tasks, err := store.ListTasks(db, store.TaskListParams{
+			tasks, err := store.ListTickets(db, store.TicketListParams{
 				ProjectID: project.ID,
 				Type:      r.URL.Query().Get("type"),
 				Stage:     r.URL.Query().Get("stage"),
@@ -417,7 +417,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		ticket, err := store.CreateTask(db, store.TaskCreateParams{
+		ticket, err := store.CreateTicket(db, store.TicketCreateParams{
 			ProjectID:          ticketPayload.ProjectID,
 			ParentID:           ticketPayload.ParentID,
 			Type:               ticketPayload.Type,
@@ -456,23 +456,17 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 		ticketID := claimRequest.TicketID
-		if ticketID == nil {
-			ticketID = claimRequest.TaskID
-		}
 		ticketRef := strings.TrimSpace(claimRequest.TicketRef)
-		if ticketRef == "" {
-			ticketRef = strings.TrimSpace(claimRequest.TaskRef)
-		}
-		ticket, status, err := store.RequestTask(db, store.TaskRequestParams{
+		ticket, status, err := store.RequestTicket(db, store.TicketRequestParams{
 			ProjectID: claimRequest.ProjectID,
-			TaskID:    ticketID,
-			TaskRef:   ticketRef,
+			TicketID:  ticketID,
+			TicketRef: ticketRef,
 			Username:  user.Username,
 			UserID:    user.ID,
 			DryRun:    claimRequest.DryRun,
 		})
 		if err != nil {
-			if errors.Is(err, store.ErrTaskNotFound) {
+			if errors.Is(err, store.ErrTicketNotFound) {
 				writeError(w, http.StatusNotFound, err.Error())
 				return
 			}
@@ -481,7 +475,6 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		}
 		payload := map[string]any{"status": status}
 		if status == "ASSIGNED" || status == "AVAILABLE" {
-			payload["task"] = ticket
 			payload["ticket"] = ticket
 		}
 		writeJSON(w, http.StatusOK, payload)
@@ -498,7 +491,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 			trimmed := strings.TrimPrefix(r.URL.Path, pathPrefix)
 			parts := strings.Split(trimmed, "/")
-			ticketRef, err := store.GetTaskByRef(db, parts[0])
+			ticketRef, err := store.GetTicketByRef(db, parts[0])
 			if err != nil {
 				writeError(w, http.StatusNotFound, "ticket not found")
 				return
@@ -535,7 +528,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 						writeError(w, http.StatusBadRequest, err.Error())
 						return
 					}
-					ticket, err := store.GetTask(db, id)
+					ticket, err := store.GetTicket(db, id)
 					if err == nil {
 						_ = store.AddHistoryEvent(db, ticket.ProjectID, id, "comment_added", map[string]any{
 							"key":        ticket.Key,
@@ -560,9 +553,9 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			}
 
 			if len(parts) == 2 && parts[1] == "clone" && r.Method == http.MethodPost {
-				cloned, err := store.CloneTask(db, id, user.ID)
+				cloned, err := store.CloneTicket(db, id, user.ID)
 				if err != nil {
-					if errors.Is(err, store.ErrTaskNotFound) {
+					if errors.Is(err, store.ErrTicketNotFound) {
 						writeError(w, http.StatusNotFound, err.Error())
 						return
 					}
@@ -575,9 +568,9 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 			switch r.Method {
 			case http.MethodGet:
-				ticket, err := store.GetTask(db, id)
+				ticket, err := store.GetTicket(db, id)
 				if err != nil {
-					if errors.Is(err, store.ErrTaskNotFound) {
+					if errors.Is(err, store.ErrTicketNotFound) {
 						writeError(w, http.StatusNotFound, err.Error())
 						return
 					}
@@ -596,7 +589,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				ticket, err := store.UpdateTask(db, id, store.TaskUpdateParams{
+				ticket, err := store.UpdateTicket(db, id, store.TicketUpdateParams{
 					Title:              ticketPayload.Title,
 					Description:        ticketPayload.Description,
 					AcceptanceCriteria: ticketPayload.AcceptanceCriteria,
@@ -613,7 +606,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 					ActorRole:          user.Role,
 				})
 				if err != nil {
-					if errors.Is(err, store.ErrTaskNotFound) {
+					if errors.Is(err, store.ErrTicketNotFound) {
 						writeError(w, http.StatusNotFound, err.Error())
 						return
 					}
@@ -626,12 +619,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				}
 				writeJSON(w, http.StatusOK, ticket)
 			case http.MethodDelete:
-				if err := store.DeleteTask(db, id); err != nil {
-					if errors.Is(err, store.ErrTaskNotFound) {
+				if err := store.DeleteTicket(db, id); err != nil {
+					if errors.Is(err, store.ErrTicketNotFound) {
 						writeError(w, http.StatusNotFound, err.Error())
 						return
 					}
-					if errors.Is(err, store.ErrTaskHasChildren) {
+					if errors.Is(err, store.ErrTicketHasChildren) {
 						writeError(w, http.StatusBadRequest, err.Error())
 						return
 					}
@@ -659,27 +652,27 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				writeError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			dependency, err := store.AddDependency(db, dependencyPayload.ProjectID, dependencyPayload.TaskID, dependencyPayload.DependsOn, user.ID)
+			dependency, err := store.AddDependency(db, dependencyPayload.ProjectID, dependencyPayload.TicketID, dependencyPayload.DependsOn, user.ID)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 			writeJSON(w, http.StatusCreated, dependency)
 		case http.MethodDelete:
-			var projectID, taskID, dependsOn int64
+			var projectID, ticketID, dependsOn int64
 			if _, err := fmt.Sscan(strings.TrimSpace(r.URL.Query().Get("project_id")), &projectID); err != nil {
 				writeError(w, http.StatusBadRequest, "project_id must be numeric")
 				return
 			}
-			if _, err := fmt.Sscan(strings.TrimSpace(r.URL.Query().Get("task_id")), &taskID); err != nil {
-				writeError(w, http.StatusBadRequest, "task_id must be numeric")
+			if _, err := fmt.Sscan(strings.TrimSpace(r.URL.Query().Get("ticket_id")), &ticketID); err != nil {
+				writeError(w, http.StatusBadRequest, "ticket_id must be numeric")
 				return
 			}
 			if _, err := fmt.Sscan(strings.TrimSpace(r.URL.Query().Get("depends_on")), &dependsOn); err != nil {
 				writeError(w, http.StatusBadRequest, "depends_on must be numeric")
 				return
 			}
-			if err := store.DeleteDependency(db, projectID, taskID, dependsOn); err != nil {
+			if err := store.DeleteDependency(db, projectID, ticketID, dependsOn); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					writeError(w, http.StatusNotFound, "dependency not found")
 					return
@@ -730,7 +723,7 @@ type commentRequest struct {
 
 type dependencyRequest struct {
 	ProjectID int64 `json:"project_id"`
-	TaskID    int64 `json:"task_id"`
+	TicketID  int64 `json:"ticket_id"`
 	DependsOn int64 `json:"depends_on"`
 }
 
@@ -738,8 +731,6 @@ type ticketClaimRequest struct {
 	ProjectID int64  `json:"project_id"`
 	TicketID  *int64 `json:"ticket_id,omitempty"`
 	TicketRef string `json:"ticket_ref,omitempty"`
-	TaskID    *int64 `json:"task_id,omitempty"`
-	TaskRef   string `json:"task_ref,omitempty"`
 	DryRun    bool   `json:"dry_run"`
 }
 
