@@ -506,3 +506,122 @@ Replace old single-status model with:
 
 stage TEXT NOT NULL
 state TEXT NOT NULL
+
+------
+
+Entities
+    project
+        prefix: 3 letter string, unique
+        ID <uuid>
+        title: string, unique
+        description: string
+        created: datetime
+        status: open/closed
+        ac: string
+        notes: 
+
+    ticket  
+        project_id
+        ID : project_prefix-shortuuid
+        type
+        title
+        description
+        ac
+        stage
+        state
+        created
+        user
+        history
+
+A project has a prefix.
+IDs for tickets in a project are in the format {PREFIX}-{UUID}
+
+The UUID is to be in the format <PREFIX>-<TYPE>-<ULID>
+    e.g. cus-p-01J3FQ3H7S9G9K2M7NQ0D2Y7XG
+
+where the type is the first letter of the ticket type d,e,t,b,s
+    d[esign]
+    e[epic]
+    t[task]
+    b[big]
+    s[spike]
+    c[chore]
+
+What's the shortest UUID we can use to combine
+    no collisions
+    rememberable, easy on the eye (e.g 5 characters)
+
+The commands to alter tickets should be
+
+ticket <command> (-t[ype] epic,task,bug)
+
+so, where N is 
+
+ticket ls,list -t project,epic,task,bug
+ticket get,show -id ID
+ticket update -id ID
+ticket rm,delete -id ID
+ticket ls,list -t project,epic,task,bug
+
+ticket create -t[type] project,epic,task,bug 
+    # project only
+    -prefix (project only, mandatory)
+
+    # all tickets
+    -parent_id
+    -title
+    -description
+    -priority
+    -type
+    -ac
+
+# set the parent of ID to be PARENT_ID
+ticket attach -id ID -parent_id PARENT_ID
+
+# remove the ID from the parent (orphan it in the project)
+ticket detach -id ID -parent_id PARENT_ID
+
+# assign a named user to work on it
+ticket assign -id ID -username X
+
+# assign a named user to work on it
+ticket unassign -id ID -username X
+
+# as a user, try to claim a specific ticket (server will assign if valid)
+ticket claim -id ID
+
+# as a user, try to claim any ticket (server will assign if valid)
+# if a story is already assigned, it is returned
+ticket claim
+
+# as a user, simulate a claim but do not assign on the server
+ticket claim -dryrun
+
+
+
+all entities can have comments
+    (id, user, date, comment)
+
+I think thsese live in a central comment db that goes
+    comment_id, entity_id, date, user, comment
+
+And that is the method that comments can be referred to for given entities
+
+# add a comand onto an entity
+ticket comment add,create,new -id N -comment "I am the comment for the thing"
+
+# list comments for an entity
+ticket comment ls -id N 
+
+# list comments by author
+ticket comment ls -user N
+
+# list comments by author for a project
+ticket comment ls -user N -project_id N
+
+# update comment for an entity
+ticket comment update -id N -comment_id X -comment "blah blah"
+
+# delete comment for an entity (cannot delete other users comments)
+ticket comment update -id N -comment_id X
+
