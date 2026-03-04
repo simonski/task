@@ -418,9 +418,9 @@ A ticket is in a given "stage" to represent the high level "swimlane" of its pro
     done        - the ticket is concluded as complete
 
 A ticket in a stage is then in a given "state"
-    it can be idle (being worked on) - must have assignee
-    it can be active (being worked on) - must have assignee
-    it can be complete (work completed)
+    idle: ready but not currently in progress
+    active: currently being worked on with a named assignee
+    complete: work for the current stage is complete
 
 design: idle, active, complete
 develop: idle, active, complete
@@ -431,29 +431,78 @@ When a ticket moves to an active state, all parent tickets are marked as active.
 
 The stage of an epic is set as the earliest stage of any descendant.
 
-An epic is active if any descendant is not active
-An epic is complete if ALL descendants are complete.
-
 Status of a ticket is the composite of stage/state = design/idle
     
 So a ticket is moved between stages by setting the stage
 
 ticket create ...
-    stage is design
-    state is idle
+    stage = design
+    state = idle
     return N (ticket id)
 
 ticket design N
-    state moves to idle
+    stage = design
+    state = idle
+
 ticket develop N
-    state moves to idle
+    state = idle
+    stage = develop
+
 ticket test N
-    state moves to idle
+    state = idle
+    stage = test
+
 ticket done N
-    state moves to complete
+    stage = done
+    state = complete
 
 ticket idle N
-    state moves to idle
-ticket active N
-    state moves to active
+    state = idle
 
+ticket active N
+    state = active
+
+status is not stored independently. It is rendered as stage/state, for example design/idle.
+
+If a ticket has children, its effective stage/state is derived only.
+
+state=active requires assignee != ""
+state=idle should probably allow unassigned
+state=complete may keep or clear assignee; I recommend keep it for audit/history
+stage=done requires state=complete
+stage!=done allows idle | active | complete
+
+allow explicit stage/state changes only on leaf tickets
+parent tickets recalculate from descendants
+
+Derived Parent Stage
+
+For any parent ticket:
+
+effective stage = earliest stage of any descendant
+Ordering:
+
+design < develop < test < done
+This is good and should apply to all parent tickets, not only epics.
+
+parent is complete if all descendants are complete
+parent is active if any descendant is active
+otherwise parent is idle
+
+
+Behavior:
+
+stage commands mutate leaf tickets only
+state commands mutate leaf tickets only
+parent tickets reject direct stage/state edits if they have children
+ticket get and ticket list show effective stage/state/status
+Optional nicety:
+
+if user tries to change a parent directly, return:
+ticket has children; stage/state is derived from descendants
+Database Proposal
+
+Replace old single-status model with:
+
+stage TEXT NOT NULL
+state TEXT NOT NULL
