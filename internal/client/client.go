@@ -98,6 +98,8 @@ type DependencyRequest struct {
 type TaskRequest struct {
 	ProjectID int64  `json:"project_id,omitempty"`
 	TaskID    *int64 `json:"task_id,omitempty"`
+	TaskRef   string `json:"task_ref,omitempty"`
+	DryRun    bool   `json:"dry_run,omitempty"`
 }
 
 type TaskRequestResponse struct {
@@ -544,6 +546,20 @@ func (c *Client) GetTask(id int64) (store.Task, error) {
 	return task, err
 }
 
+func (c *Client) GetTicket(ref string) (store.Task, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Task{}, err
+		}
+		defer db.Close()
+		return store.GetTaskByRef(db, ref)
+	}
+	var task store.Task
+	err := c.doJSON(http.MethodGet, "/api/tasks/"+url.PathEscape(strings.TrimSpace(ref)), nil, &task)
+	return task, err
+}
+
 func (c *Client) CloneTask(id int64) (store.Task, error) {
 	if c.mode == config.ModeLocal {
 		db, err := c.openLocalDB()
@@ -666,14 +682,16 @@ func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 		task, status, err := store.RequestTask(db, store.TaskRequestParams{
 			ProjectID: request.ProjectID,
 			TaskID:    request.TaskID,
+			TaskRef:   request.TaskRef,
 			Username:  user.Username,
 			UserID:    user.ID,
+			DryRun:    request.DryRun,
 		})
 		if err != nil {
 			return TaskRequestResponse{}, err
 		}
 		response := TaskRequestResponse{Status: status}
-		if status == "ASSIGNED" {
+		if status == "ASSIGNED" || status == "AVAILABLE" {
 			response.Task = &task
 		}
 		return response, nil

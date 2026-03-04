@@ -88,8 +88,10 @@ type TaskListParams struct {
 type TaskRequestParams struct {
 	ProjectID int64
 	TaskID    *int64
+	TaskRef   string
 	Username  string
 	UserID    int64
+	DryRun    bool
 }
 
 func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
@@ -769,28 +771,24 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 	} else if ok {
 		return task, "ASSIGNED", nil
 	}
-	if task, ok, err := findAssignedTaskForUser(db, params.ProjectID, username, StageDevelop, StateIdle); err != nil {
-		return Task{}, "", err
-	} else if ok {
-		return task, "ASSIGNED", nil
-	}
 
-	if params.TaskID != nil {
-		task, err := GetTask(db, *params.TaskID)
+	if params.TaskID != nil || strings.TrimSpace(params.TaskRef) != "" {
+		task, err := resolveRequestedTask(db, params)
 		if err != nil {
 			return Task{}, "", err
-		}
-		if params.ProjectID != 0 && task.ProjectID != params.ProjectID {
-			return Task{}, "REJECTED", nil
 		}
 		if strings.TrimSpace(task.Assignee) == username {
 			return task, "ASSIGNED", nil
 		}
-		if strings.TrimSpace(task.Assignee) != "" {
+		ok, err := ticketClaimable(db, task, params.ProjectID)
+		if err != nil {
+			return Task{}, "", err
+		}
+		if !ok {
 			return Task{}, "REJECTED", nil
 		}
-		if task.Stage != StageDevelop || task.State != StateIdle {
-			return Task{}, "REJECTED", nil
+		if params.DryRun {
+			return withClaimPreview(task, username), "AVAILABLE", nil
 		}
 		assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
 			Title:              task.Title,
@@ -799,12 +797,12 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 			ParentID:           task.ParentID,
 			Assignee:           username,
 			Stage:              task.Stage,
-			State:              task.State,
+			State:              StateActive,
 			Priority:           task.Priority,
 			Order:              task.Order,
 			UpdatedBy:          params.UserID,
 			ActorUsername:      username,
-			ActorRole:          "user",
+			ActorRole:          "admin",
 		})
 		if err != nil {
 			return Task{}, "", err
@@ -812,12 +810,15 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 		return assigned, "ASSIGNED", nil
 	}
 
-	task, ok, err := findUnassignedDevelopIdleTask(db, params.ProjectID)
+	task, ok, err := findClaimCandidate(db, params.ProjectID)
 	if err != nil {
 		return Task{}, "", err
 	}
 	if !ok {
 		return Task{}, "NO-WORK", nil
+	}
+	if params.DryRun {
+		return withClaimPreview(task, username), "AVAILABLE", nil
 	}
 	assigned, err := UpdateTask(db, task.ID, TaskUpdateParams{
 		Title:              task.Title,
@@ -826,17 +827,59 @@ func RequestTask(db *sql.DB, params TaskRequestParams) (Task, string, error) {
 		ParentID:           task.ParentID,
 		Assignee:           username,
 		Stage:              task.Stage,
-		State:              task.State,
+		State:              StateActive,
 		Priority:           task.Priority,
 		Order:              task.Order,
 		UpdatedBy:          params.UserID,
 		ActorUsername:      username,
-		ActorRole:          "user",
+		ActorRole:          "admin",
 	})
 	if err != nil {
 		return Task{}, "", err
 	}
 	return assigned, "ASSIGNED", nil
+}
+
+func resolveRequestedTask(db *sql.DB, params TaskRequestParams) (Task, error) {
+	if params.TaskID != nil {
+		return GetTask(db, *params.TaskID)
+	}
+	task, err := GetTaskByRef(db, params.TaskRef)
+	if err != nil {
+		return Task{}, err
+	}
+	return task, nil
+}
+
+func withClaimPreview(task Task, username string) Task {
+	task.Assignee = username
+	task.State = StateActive
+	task.Status = RenderLifecycleStatus(task.Stage, task.State)
+	return task
+}
+
+func ticketClaimable(db *sql.DB, task Task, projectID int64) (bool, error) {
+	if projectID != 0 && task.ProjectID != projectID {
+		return false, nil
+	}
+	project, err := GetProjectByID(db, task.ProjectID)
+	if err != nil {
+		return false, err
+	}
+	if project.Status != "open" || task.Archived {
+		return false, nil
+	}
+	if strings.TrimSpace(task.Assignee) != "" {
+		return false, nil
+	}
+	if task.Stage != StageDevelop || task.State != StateIdle {
+		return false, nil
+	}
+	hasChildren, err := taskHasChildren(db, task.ID)
+	if err != nil {
+		return false, err
+	}
+	return !hasChildren, nil
 }
 
 func findAssignedTaskForUser(db *sql.DB, projectID int64, username, stage, state string) (Task, bool, error) {
@@ -861,15 +904,17 @@ func findAssignedTaskForUser(db *sql.DB, projectID int64, username, stage, state
 	return task, true, nil
 }
 
-func findUnassignedDevelopIdleTask(db *sql.DB, projectID int64) (Task, bool, error) {
+func findClaimCandidate(db *sql.DB, projectID int64) (Task, bool, error) {
 	if projectID == 0 {
 		return Task{}, false, errors.New("project is required")
 	}
 	task, err := scanTask(db.QueryRow(`
-		SELECT task_id, key, project_id, parent_id, clone_of, type, title, description, acceptance_criteria, stage, state, status, priority, sort_order, estimate_effort, estimate_complete, assignee, archived, COALESCE(created_by, 0), created_at, updated_at
-		FROM tasks
-		WHERE project_id = ? AND stage = ? AND state = ? AND TRIM(COALESCE(assignee, '')) = ''
-		ORDER BY created_at, task_id
+		SELECT t.task_id, t.key, t.project_id, t.parent_id, t.clone_of, t.type, t.title, t.description, t.acceptance_criteria, t.stage, t.state, t.status, t.priority, t.sort_order, t.estimate_effort, t.estimate_complete, t.assignee, t.archived, COALESCE(t.created_by, 0), t.created_at, t.updated_at
+		FROM tasks t
+		JOIN projects p ON p.project_id = t.project_id
+		WHERE t.project_id = ? AND p.status = 'open' AND t.archived = 0 AND t.stage = ? AND t.state = ? AND TRIM(COALESCE(t.assignee, '')) = ''
+		  AND NOT EXISTS (SELECT 1 FROM tasks c WHERE c.parent_id = t.task_id)
+		ORDER BY t.priority DESC, t.created_at, t.key, t.task_id
 		LIMIT 1
 	`, projectID, StageDevelop, StateIdle))
 	if err != nil {

@@ -71,6 +71,8 @@ type DependencyRequest struct {
 type TaskRequest struct {
 	ProjectID int64  `json:"project_id,omitempty"`
 	TaskID    *int64 `json:"task_id,omitempty"`
+	TaskRef   string `json:"task_ref,omitempty"`
+	DryRun    bool   `json:"dry_run,omitempty"`
 }
 
 type TaskRequestResponse struct {

@@ -457,8 +457,10 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		task, status, err := store.RequestTask(db, store.TaskRequestParams{
 			ProjectID: assignmentRequest.ProjectID,
 			TaskID:    assignmentRequest.TaskID,
+			TaskRef:   assignmentRequest.TaskRef,
 			Username:  user.Username,
 			UserID:    user.ID,
+			DryRun:    assignmentRequest.DryRun,
 		})
 		if err != nil {
 			if errors.Is(err, store.ErrTaskNotFound) {
@@ -469,7 +471,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 		payload := map[string]any{"status": status}
-		if status == "ASSIGNED" {
+		if status == "ASSIGNED" || status == "AVAILABLE" {
 			payload["task"] = task
 		}
 		writeJSON(w, http.StatusOK, payload)
@@ -721,6 +723,8 @@ type dependencyRequest struct {
 type taskAssignRequest struct {
 	ProjectID int64  `json:"project_id"`
 	TaskID    *int64 `json:"task_id"`
+	TaskRef   string `json:"task_ref"`
+	DryRun    bool   `json:"dry_run"`
 }
 
 type authResponse struct {

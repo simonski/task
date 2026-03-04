@@ -378,11 +378,11 @@ ticket search password reset -allprojects
 Show a single item:
 
 ```bash
-ticket get 42
-ticket get -json 42
+ticket get CUS-T-42
+ticket get -json CUS-T-42
 ```
 
-`ticket get` prints the task fields directly, including `DependsOn`, the acceptance criteria, `EstimateEffort`, `EstimateComplete`, `CloneOf` when the task is a clone, and comments ordered most recent first.
+`ticket get` accepts either a ticket key or an internal numeric id. It prints the ticket fields directly, including `DependsOn`, the acceptance criteria, `EstimateEffort`, `EstimateComplete`, `CloneOf` when the ticket is a clone, and comments ordered most recent first.
 
 Show orphaned items with no parent:
 
@@ -397,24 +397,26 @@ ticket assign 42 alice
 ticket unassign 42 alice
 ticket dependency add 4 1,2,3
 ticket dependency remove 4 2
-ticket claim 42
-ticket unclaim 42
+ticket claim
+ticket claim -id CUS-T-42
+ticket claim -dry-run
+ticket unclaim CUS-T-42
 ticket request
-ticket request 42
-ticket attach 17 9
-ticket detach 17
-ticket delete 17
+ticket request CUS-T-42
+ticket attach CUS-T-17 CUS-E-9
+ticket detach CUS-T-17
+ticket delete CUS-T-17
 ```
 
 `ticket assign` and `ticket unassign` are admin-only.
 
 They also fail if the named user does not exist or is disabled.
 
-`ticket claim` fails if another user is already assigned. `ticket unclaim` fails unless you are the current assignee.
+`ticket claim` is server-mediated. If the current user already has an active claimed ticket, that ticket is returned. Otherwise the server assigns the highest-priority oldest eligible `develop/idle` leaf ticket in the active project. `ticket claim -dry-run` shows the candidate without changing server state. `ticket unclaim` is retained as a compatibility alias for clearing your own assignment.
 
-`ticket rm` and `ticket delete` remove a task permanently. They fail if the task still has child tasks.
+`ticket rm` and `ticket delete` remove a ticket permanently. They fail if the ticket still has child tickets.
 
-`ticket request` asks the server to assign work to the current user. If the user already has an assigned `develop/active` ticket, that ticket is returned. Otherwise, if the user has assigned `develop/idle` work, the oldest assigned `develop/idle` ticket is returned. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific ticket is requested and cannot be assigned, the JSON response status is `REJECTED`.
+`ticket request` is the lower-level form of `ticket claim`. It accepts either a ticket key or an internal numeric id. If no work can be assigned, the JSON response status is `NO-WORK`. If a specific ticket is requested and cannot be assigned, the JSON response status is `REJECTED`.
 
 Lifecycle commands:
 

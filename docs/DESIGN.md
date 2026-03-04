@@ -80,18 +80,20 @@ Notes:
 
 Projects are the top-level container for work items.
 
-### Task
+### Ticket
 
-`Task` is the main work artifact. All item types share one core model.
+`Ticket` is the main work artifact. All item types share one core model.
 
-- `task_id`
+- `ticket_id`
+- `key`
 - `project_id`
 - `parent_id`
 - `type`
 - `title`
 - `description`
 - `acceptance_criteria`
-- `status`
+- `stage`
+- `state`
 - `priority`
 - `estimate_effort`
 - `estimate_complete`
@@ -107,12 +109,14 @@ Supported `type` values in the first release:
 - `epic`
 - `task`
 - `bug`
+- `spike`
+- `chore`
 
 Model notes:
 
 - `parent_id` is nullable and supports hierarchical work
 - tickets are orphaned when `parent_id` is null
-- task creation accepts either a positional title or `-title`
+- ticket creation accepts either a positional title or `-title`
 - `acceptance_criteria` is captured directly on the task record
 - `estimate_effort` is an integer assessment of task effort
 - `estimate_complete` is the estimated delivery datetime and should use RFC3339 format
@@ -129,7 +133,7 @@ CLI creation defaults:
 - if `-ac` is omitted, the acceptance criteria is blank
 - if `-estimate_effort` is omitted, it defaults to `0`
 - if `-estimate_complete` is omitted, it is blank
-- if `-parent` is omitted, the task is created without a parent
+- if `-parent` is omitted, the ticket is created without a parent
 - if `-project` is omitted, the active project is used
 
 ### History
@@ -138,7 +142,7 @@ Append-only audit log for important changes.
 
 - `id`
 - `project_id`
-- `task_id`
+- `ticket_id`
 - `event_type`
 - `payload`
 - `created_at`
@@ -146,8 +150,8 @@ Append-only audit log for important changes.
 
 Typical history events:
 
-- task created
-- task updated
+- ticket created
+- ticket updated
 - status changed
 - assignee changed
 - parent changed
@@ -420,7 +424,8 @@ Assignment workflows must support:
 - `ticket dependency add <id> <dependency-id[,dependency-id...]>`
 - `ticket dependency remove <id> <dependency-id[,dependency-id...]>`
 - `ticket request [<id>]` for the caller
-- `ticket claim <id>` for the caller
+- `ticket claim` or `ticket claim -id <id>` for the caller
+- `ticket claim -dry-run` for preview without mutation
 - `ticket unclaim <id>` for the caller
 - `ticket attach <id> <parent-id>`
 - `ticket detach <id>`
@@ -455,7 +460,7 @@ Assignment rules:
 - if the caller already has an assigned `develop/active` ticket, that ticket is returned
 - otherwise, if the caller has assigned `develop/idle` work, the oldest assigned `develop/idle` ticket is returned
 - otherwise, `ticket request` assigns the oldest unassigned `develop/idle` ticket in the active project
-- `ticket claim` must fail if the task is already assigned to another user
+- `ticket claim` must reject an explicitly requested ticket if it is already assigned to another user
 - `ticket unclaim` must fail if the caller is not the current assignee
 - a non-admin user must not be able to override another user assignment through the generic task update API
 - `ticket rm` / `ticket delete` must remove a task permanently

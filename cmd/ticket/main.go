@@ -1318,10 +1318,6 @@ func runGet(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket get <id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1330,11 +1326,11 @@ func runGet(args []string) error {
 	if err != nil {
 		return err
 	}
-	task, err := svc.GetTask(id)
+	task, err := svc.GetTicket(args[0])
 	if err != nil {
 		return err
 	}
-	dependencies, _ := svc.ListDependencies(id)
+	dependencies, _ := svc.ListDependencies(task.ID)
 	if outputJSON {
 		return printJSON(task)
 	}
@@ -1388,7 +1384,7 @@ func runSearch(args []string) error {
 		return printJSON(tasks)
 	}
 	for _, task := range tasks {
-		fmt.Printf("%d\t%s\t%s\t%s\n", task.ID, task.Type, task.Status, task.Title)
+		fmt.Printf("%s\t%s\t%s\t%s\n", ticketLabel(task), task.Type, task.Status, task.Title)
 	}
 	return nil
 }
@@ -1517,14 +1513,6 @@ func runSetParent(args []string) error {
 	if len(args) != 2 {
 		return errors.New("usage: ticket set-parent <id> <parent-id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
-	var parentID int64
-	if _, err := fmt.Sscan(args[1], &parentID); err != nil {
-		return errors.New("parent id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1533,7 +1521,15 @@ func runSetParent(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.SetTaskParent(id, parentID)
+	child, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	parent, err := svc.GetTicket(args[1])
+	if err != nil {
+		return err
+	}
+	updated, err := svc.SetTaskParent(child.ID, parent.ID)
 	if err != nil {
 		return err
 	}
@@ -1548,10 +1544,6 @@ func runUnsetParent(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket unset-parent <id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1560,7 +1552,11 @@ func runUnsetParent(args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UnsetTaskParent(id)
+	task, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	updated, err := svc.UnsetTaskParent(task.ID)
 	if err != nil {
 		return err
 	}
@@ -1586,10 +1582,6 @@ func runTaskStateAlias(args []string, state, command string) error {
 }
 
 func updateTaskStage(idArg, stage string) error {
-	var id int64
-	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1598,7 +1590,7 @@ func updateTaskStage(idArg, stage string) error {
 	if err != nil {
 		return err
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(idArg)
 	if err != nil {
 		return err
 	}
@@ -1606,14 +1598,10 @@ func updateTaskStage(idArg, stage string) error {
 	if stage == store.StageDone {
 		nextState = store.StateComplete
 	}
-	return updateTaskLifecycleRequest(svc, id, current, stage, nextState)
+	return updateTaskLifecycleRequest(svc, current.ID, current, stage, nextState)
 }
 
 func updateTaskState(idArg, state string) error {
-	var id int64
-	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1622,11 +1610,11 @@ func updateTaskState(idArg, state string) error {
 	if err != nil {
 		return err
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(idArg)
 	if err != nil {
 		return err
 	}
-	return updateTaskLifecycleRequest(svc, id, current, current.Stage, state)
+	return updateTaskLifecycleRequest(svc, current.ID, current, current.Stage, state)
 }
 
 func updateTaskLifecycleRequest(svc libticket.Service, id int64, current store.Task, stage, state string) error {
@@ -1686,10 +1674,6 @@ func runUpdate(args []string) error {
 	if fs.NArg() != 0 {
 		return errors.New("usage: ticket update <id> [-title <title>] [-desc <description>|-description <description>] [-ac <acceptance-criteria>] [-priority <n>] [-order <n>] [-stage <stage>] [-state <state>] [-parent_id <id>] [-estimate_effort <n>] [-estimate_complete <rfc3339>]")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	hasTitle := containsFlag(args[1:], "-title")
 	hasDescription := containsFlag(args[1:], "-description")
 	hasDesc := containsFlag(args[1:], "-desc")
@@ -1713,7 +1697,7 @@ func runUpdate(args []string) error {
 	if err != nil {
 		return err
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(args[0])
 	if err != nil {
 		return err
 	}
@@ -1768,21 +1752,29 @@ func runUpdate(args []string) error {
 	if hasState {
 		next.State = *state
 	}
-	if hasParentID {
-		parentID, err := strconv.ParseInt(strings.TrimSpace(*parentIDRaw), 10, 64)
-		if err != nil {
-			return errors.New("parent id must be numeric")
+	if strings.TrimSpace(next.State) == store.StateActive && strings.TrimSpace(next.Assignee) == "" {
+		status, err := svc.Status()
+		if err == nil && status.User != nil && strings.TrimSpace(status.User.Username) != "" {
+			next.Assignee = status.User.Username
+		} else {
+			next.Assignee = currentOSUser()
 		}
-		next.ParentID = &parentID
 	}
-	updated, err := svc.UpdateTask(id, next)
+	if hasParentID {
+		parent, err := svc.GetTicket(strings.TrimSpace(*parentIDRaw))
+		if err != nil {
+			return err
+		}
+		next.ParentID = &parent.ID
+	}
+	updated, err := svc.UpdateTask(current.ID, next)
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(updated)
 	}
-	dependencies, _ := svc.ListDependencies(id)
+	dependencies, _ := svc.ListDependencies(current.ID)
 	printTaskDetails(updated, dependencies)
 	return nil
 }
@@ -1802,27 +1794,22 @@ func runUnassign(args []string) error {
 }
 
 func runClaim(args []string) error {
-	if len(args) != 1 {
-		return errors.New("usage: ticket claim <id>")
+	rewritten := make([]string, 0, len(args)+2)
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-id":
+			if i+1 >= len(args) {
+				return errors.New("usage: ticket claim [-id <id>] [-dry-run]")
+			}
+			rewritten = append(rewritten, args[i+1])
+			i++
+		case "-dry-run":
+			rewritten = append(rewritten, "--dryrun")
+		default:
+			rewritten = append(rewritten, args[i])
+		}
 	}
-	idArg := args[0]
-
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	mode, err := config.ResolveMode()
-	if err != nil {
-		return err
-	}
-	username := strings.TrimSpace(cfg.Username)
-	if mode == config.ModeLocal {
-		username = currentOSUser()
-	}
-	if strings.TrimSpace(username) == "" {
-		return errors.New("no current username; log in first")
-	}
-	return assignTask(idArg, username, false)
+	return runRequest(rewritten)
 }
 
 func runUnclaim(args []string) error {
@@ -1852,10 +1839,6 @@ func parseTaskID(idArg string) (int64, error) {
 }
 
 func assignTask(idArg, assignee string, requireAdmin bool) error {
-	id, err := parseTaskID(idArg)
-	if err != nil {
-		return err
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1871,11 +1854,11 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 	if requireAdmin && (status.User == nil || status.User.Role != "admin") {
 		return errors.New("user is not an admin")
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(idArg)
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -1895,18 +1878,14 @@ func assignTask(idArg, assignee string, requireAdmin bool) error {
 		return printJSON(updated)
 	}
 	if strings.TrimSpace(updated.Assignee) == "" {
-		fmt.Printf("unassigned %d\n", updated.ID)
+		fmt.Printf("unassigned %s\n", ticketLabel(updated))
 		return nil
 	}
-	fmt.Printf("assigned %d to %s\n", updated.ID, updated.Assignee)
+	fmt.Printf("assigned %s to %s\n", ticketLabel(updated), updated.Assignee)
 	return nil
 }
 
 func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
-	var id int64
-	if _, err := fmt.Sscan(idArg, &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -1941,21 +1920,21 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 			return errors.New("user not found")
 		}
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(idArg)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(current.Assignee) != strings.TrimSpace(expectedAssignee) {
 		return fmt.Errorf("task is not assigned to %s", expectedAssignee)
 	}
-	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
 		ParentID:           current.ParentID,
 		Assignee:           "",
 		Stage:              current.Stage,
-		State:              current.State,
+		State:              map[bool]string{true: store.StateIdle, false: current.State}[current.State == store.StateActive],
 		Priority:           current.Priority,
 		Order:              current.Order,
 		EstimateEffort:     current.EstimateEffort,
@@ -1967,17 +1946,13 @@ func unassignTask(idArg, expectedAssignee string, requireAdmin bool) error {
 	if outputJSON {
 		return printJSON(updated)
 	}
-	fmt.Printf("unassigned %d from %s\n", updated.ID, expectedAssignee)
+	fmt.Printf("unassigned %s from %s\n", ticketLabel(updated), expectedAssignee)
 	return nil
 }
 
 func runHistory(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket history <id>")
-	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -1987,7 +1962,11 @@ func runHistory(args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := svc.ListHistory(id)
+	task, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	events, err := svc.ListHistory(task.ID)
 	if err != nil {
 		return err
 	}
@@ -2017,23 +1996,27 @@ func runDependencyCommand(args []string, add bool) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: ticket %s <id> <dependency-id[,dependency-id...]>", command)
 	}
-	var taskID int64
-	if _, err := fmt.Sscan(args[0], &taskID); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
-	dependencyIDs, err := parseIDList(args[1])
-	if err != nil {
-		return err
-	}
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
 	}
-	for _, depID := range dependencyIDs {
+	task, err := api.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	dependencyRefs := strings.Split(args[1], ",")
+	if len(dependencyRefs) == 0 {
+		return errors.New("at least one dependency id is required")
+	}
+	for _, depRef := range dependencyRefs {
+		dependencyTicket, err := api.GetTicket(strings.TrimSpace(depRef))
+		if err != nil {
+			return err
+		}
 		dependencyRequest := libticket.DependencyRequest{
 			ProjectID: project.ID,
-			TaskID:    taskID,
-			DependsOn: depID,
+			TaskID:    task.ID,
+			DependsOn: dependencyTicket.ID,
 		}
 		if add {
 			if _, err := api.AddDependency(dependencyRequest); err != nil {
@@ -2047,8 +2030,8 @@ func runDependencyCommand(args []string, add bool) error {
 	}
 	if outputJSON {
 		return printJSON(map[string]any{
-			"task_id":      taskID,
-			"dependencies": dependencyIDs,
+			"task_id":      task.ID,
+			"dependencies": args[1],
 			"action":       map[bool]string{true: "added", false: "removed"}[add],
 		})
 	}
@@ -2056,7 +2039,7 @@ func runDependencyCommand(args []string, add bool) error {
 	if !add {
 		action = "removed"
 	}
-	fmt.Printf("%s dependencies for %d: %s\n", action, taskID, args[1])
+	fmt.Printf("%s dependencies for %s: %s\n", action, ticketLabel(task), args[1])
 	return nil
 }
 
@@ -2075,12 +2058,8 @@ func runDependency(args []string) error {
 }
 
 func runRequest(args []string) error {
-	if len(args) > 2 {
-		return errors.New("usage: ticket request [--dryrun] [<id>]")
-	}
-
 	dryRun := false
-	var requestedID *int64
+	var requestedRef string
 	for _, arg := range args {
 		switch arg {
 		case "--dryrun", "-dryrun":
@@ -2089,25 +2068,17 @@ func runRequest(args []string) error {
 			if strings.HasPrefix(arg, "-") {
 				return fmt.Errorf("usage: ticket request [--dryrun] [<id>]")
 			}
-			var id int64
-			if _, err := fmt.Sscan(arg, &id); err != nil {
-				return errors.New("ticket id must be numeric")
+			if requestedRef != "" {
+				return fmt.Errorf("usage: ticket request [--dryrun] [<id>]")
 			}
-			requestedID = &id
+			requestedRef = arg
 		}
 	}
-	if requestedID != nil && dryRun {
-		requestID := strconv.FormatInt(*requestedID, 10)
-		return runRequestDryRun([]string{requestID})
-	}
 	if dryRun {
-		return runRequestDryRun(nil)
-	}
-
-	if requestedID != nil {
-		args = []string{strconv.FormatInt(*requestedID, 10)}
-	} else {
-		args = nil
+		if requestedRef == "" {
+			return runRequestDryRun(nil)
+		}
+		return runRequestDryRun([]string{requestedRef})
 	}
 
 	_, api, project, err := resolveCurrentProjectClient()
@@ -2115,12 +2086,8 @@ func runRequest(args []string) error {
 		return err
 	}
 	taskRequest := libticket.TaskRequest{ProjectID: project.ID}
-	if len(args) == 1 {
-		var id int64
-		if _, err := fmt.Sscan(args[0], &id); err != nil {
-			return errors.New("ticket id must be numeric")
-		}
-		taskRequest.TaskID = &id
+	if requestedRef != "" {
+		taskRequest.TaskRef = requestedRef
 	}
 	response, err := api.RequestTask(taskRequest)
 	if err != nil {
@@ -2142,51 +2109,37 @@ func runRequestDryRun(args []string) error {
 		return errors.New("usage: ticket request-dryrun [<id>]")
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-	mode, err := config.ResolveMode()
-	if err != nil {
-		return err
-	}
-
-	username, err := resolveCurrentRequestUser(cfg, mode)
-	if err != nil {
-		return err
-	}
-
 	_, api, project, err := resolveCurrentProjectClient()
 	if err != nil {
 		return err
 	}
 
-	var requestedID *int64
+	var requestedRef string
 	if len(args) == 1 {
-		var id int64
-		if _, err := fmt.Sscan(args[0], &id); err != nil {
-			return errors.New("ticket id must be numeric")
-		}
-		requestedID = &id
+		requestedRef = args[0]
 	}
 
-	task, status, err := predictRequestedTask(api, project.ID, username, requestedID)
+	response, err := api.RequestTask(libticket.TaskRequest{
+		ProjectID: project.ID,
+		TaskRef:   requestedRef,
+		DryRun:    true,
+	})
 	if err != nil {
 		return err
 	}
 	if outputJSON {
 		return printJSON(map[string]any{
 			"dryrun": true,
-			"status": status,
-			"task":   task,
+			"status": response.Status,
+			"task":   response.Task,
 		})
 	}
-	fmt.Printf("dry run: %s\n", status)
-	if task == nil {
+	fmt.Printf("dry run: %s\n", response.Status)
+	if response.Task == nil {
 		return nil
 	}
-	fmt.Printf("would assign task: %d\n", task.ID)
-	printTask(*task)
+	fmt.Printf("would assign ticket: %s\n", ticketLabel(*response.Task))
+	printTask(*response.Task)
 	return nil
 }
 
@@ -2220,50 +2173,6 @@ func resolveCurrentRequestUser(cfg config.Config, mode string) (string, error) {
 	return username, nil
 }
 
-func predictRequestedTask(api libticket.Service, projectID int64, username string, requestedID *int64) (*store.Task, string, error) {
-	tasks, err := api.ListTasksFiltered(projectID, "", "", "", "", "", "", 0)
-	if err != nil {
-		return nil, "", err
-	}
-	for _, task := range tasks {
-		if task.Stage == store.StageDevelop && task.State == store.StateActive && strings.TrimSpace(task.Assignee) == username {
-			return &task, "ASSIGNED", nil
-		}
-	}
-	for _, task := range tasks {
-		if task.Stage == store.StageDevelop && task.State == store.StateIdle && strings.TrimSpace(task.Assignee) == username {
-			return &task, "ASSIGNED", nil
-		}
-	}
-
-	if requestedID != nil {
-		task, err := api.GetTask(*requestedID)
-		if err != nil {
-			return nil, "", err
-		}
-		if task.ProjectID != projectID {
-			return nil, "REJECTED", nil
-		}
-		if strings.TrimSpace(task.Assignee) == username {
-			return &task, "ASSIGNED", nil
-		}
-		if strings.TrimSpace(task.Assignee) != "" {
-			return nil, "REJECTED", nil
-		}
-		if task.Stage != store.StageDevelop || task.State != store.StateIdle {
-			return nil, "REJECTED", nil
-		}
-		return &task, "ASSIGNED", nil
-	}
-
-	for _, task := range tasks {
-		if task.Stage == store.StageDevelop && task.State == store.StateIdle && strings.TrimSpace(task.Assignee) == "" {
-			return &task, "ASSIGNED", nil
-		}
-	}
-	return nil, "NO-WORK", nil
-}
-
 func parseIDList(raw string) ([]int64, error) {
 	parts := strings.Split(raw, ",")
 	if len(parts) == 0 {
@@ -2293,10 +2202,6 @@ func runComment(args []string) error {
 		if len(args) != 3 {
 			return errors.New("usage: ticket comment add <id> \"comment\"")
 		}
-		var id int64
-		if _, err := fmt.Sscan(args[1], &id); err != nil {
-			return errors.New("ticket id must be numeric")
-		}
 		cfg, err := config.Load()
 		if err != nil {
 			return err
@@ -2305,14 +2210,18 @@ func runComment(args []string) error {
 		if err != nil {
 			return err
 		}
-		comment, err := svc.AddComment(id, args[2])
+		task, err := svc.GetTicket(args[1])
+		if err != nil {
+			return err
+		}
+		comment, err := svc.AddComment(task.ID, args[2])
 		if err != nil {
 			return err
 		}
 		if outputJSON {
 			return printJSON(comment)
 		}
-		fmt.Printf("commented on %d: %s\n", comment.ItemID, comment.Comment)
+		fmt.Printf("commented on %s: %s\n", ticketLabel(task), comment.Comment)
 		return nil
 	default:
 		return fmt.Errorf("unknown comment command %q", args[0])
@@ -2323,10 +2232,6 @@ func runClone(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket clone|cp <id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -2335,7 +2240,11 @@ func runClone(args []string) error {
 	if err != nil {
 		return err
 	}
-	task, err := svc.CloneTask(id)
+	taskRef, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	task, err := svc.CloneTask(taskRef.ID)
 	if err != nil {
 		return err
 	}
@@ -2350,10 +2259,6 @@ func runDeleteTask(args []string) error {
 	if len(args) != 1 {
 		return errors.New("usage: ticket rm|delete <id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[0], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -2362,13 +2267,17 @@ func runDeleteTask(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.DeleteTask(id); err != nil {
+	task, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	if err := svc.DeleteTask(task.ID); err != nil {
 		return err
 	}
 	if outputJSON {
-		return printJSON(map[string]any{"status": "deleted", "task_id": id})
+		return printJSON(map[string]any{"status": "deleted", "ticket_id": task.ID, "key": task.Key})
 	}
-	fmt.Printf("deleted task %d\n", id)
+	fmt.Printf("deleted ticket %s\n", ticketLabel(task))
 	return nil
 }
 
@@ -2383,15 +2292,11 @@ func runCurate(args []string) error {
 	var sourceIDs []int64
 	var titles []string
 	for _, arg := range args {
-		var id int64
-		if _, err := fmt.Sscan(arg, &id); err != nil {
-			return fmt.Errorf("invalid ticket id %q", arg)
-		}
-		task, err := api.GetTask(id)
+		task, err := api.GetTicket(arg)
 		if err != nil {
 			return err
 		}
-		sourceIDs = append(sourceIDs, id)
+		sourceIDs = append(sourceIDs, task.ID)
 		titles = append(titles, task.Title)
 	}
 	title := "Curated requirement"
@@ -2427,7 +2332,7 @@ func runReview(args []string) error {
 		return err
 	}
 	for _, task := range tasks {
-		fmt.Printf("%d\t%s\t%s\n", task.ID, task.Status, task.Title)
+		fmt.Printf("%s\t%s\t%s\n", ticketLabel(task), task.Status, task.Title)
 	}
 	return nil
 }
@@ -2437,10 +2342,6 @@ func runRequirementStatus(status string, args []string) error {
 	if len(args) != 2 || args[0] != "requirement" {
 		return fmt.Errorf("usage: ticket %s requirement <id>", commandName)
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[1], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -2449,11 +2350,11 @@ func runRequirementStatus(status string, args []string) error {
 	if err != nil {
 		return err
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(args[1])
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
 		Title:              current.Title,
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2477,10 +2378,6 @@ func runRevise(args []string) error {
 	if len(args) != 2 || args[0] != "requirement" {
 		return errors.New("usage: ticket revise requirement <id>")
 	}
-	var id int64
-	if _, err := fmt.Sscan(args[1], &id); err != nil {
-		return errors.New("ticket id must be numeric")
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -2489,11 +2386,11 @@ func runRevise(args []string) error {
 	if err != nil {
 		return err
 	}
-	current, err := svc.GetTask(id)
+	current, err := svc.GetTicket(args[1])
 	if err != nil {
 		return err
 	}
-	updated, err := svc.UpdateTask(id, libticket.TaskUpdateRequest{
+	updated, err := svc.UpdateTask(current.ID, libticket.TaskUpdateRequest{
 		Title:              current.Title + " (revised)",
 		Description:        current.Description,
 		AcceptanceCriteria: current.AcceptanceCriteria,
@@ -2547,7 +2444,7 @@ func runDecision(args []string) error {
 			return err
 		}
 		for _, task := range tasks {
-			fmt.Printf("%d\t%s\t%s\n", task.ID, task.Status, task.Title)
+			fmt.Printf("%s\t%s\t%s\n", ticketLabel(task), task.Status, task.Title)
 		}
 		return nil
 	default:
@@ -2771,6 +2668,13 @@ func printProjectTable(projects []store.Project, currentProjectID string) {
 		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", project.ID, project.Prefix, project.Title, project.Status, current)
 	}
 	_ = w.Flush()
+}
+
+func ticketLabel(task store.Task) string {
+	if strings.TrimSpace(task.Key) != "" {
+		return task.Key
+	}
+	return strconv.FormatInt(task.ID, 10)
 }
 
 func printTask(task store.Task) {

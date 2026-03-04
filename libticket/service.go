@@ -25,6 +25,7 @@ type Service interface {
 	SetTaskParent(id, parentID int64) (store.Task, error)
 	UnsetTaskParent(id int64) (store.Task, error)
 	GetTask(id int64) (store.Task, error)
+	GetTicket(ref string) (store.Task, error)
 	CloneTask(id int64) (store.Task, error)
 	ListHistory(id int64) ([]store.HistoryEvent, error)
 	AddComment(id int64, comment string) (store.Comment, error)

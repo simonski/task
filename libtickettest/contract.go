@@ -221,7 +221,7 @@ func RunServiceContractTests(t *testing.T, factory Factory, opts ContractOptions
 			t.Fatalf("RequestTask() = %#v", requested)
 		}
 
-		filtered, err := svc.ListTasksFiltered(project.ID, "bug", "", "", "develop/idle", "find", requested.Task.Assignee, 10)
+		filtered, err := svc.ListTasksFiltered(project.ID, "bug", "", "", "develop/active", "find", requested.Task.Assignee, 10)
 		if err != nil {
 			t.Fatalf("ListTasksFiltered() error = %v", err)
 		}

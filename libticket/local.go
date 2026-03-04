@@ -309,6 +309,15 @@ func (s *LocalService) GetTask(id int64) (store.Task, error) {
 	return store.GetTask(db, id)
 }
 
+func (s *LocalService) GetTicket(ref string) (store.Task, error) {
+	db, err := s.openDB()
+	if err != nil {
+		return store.Task{}, err
+	}
+	defer db.Close()
+	return store.GetTaskByRef(db, ref)
+}
+
 func (s *LocalService) CloneTask(id int64) (store.Task, error) {
 	db, err := s.openDB()
 	if err != nil {
@@ -397,14 +406,16 @@ func (s *LocalService) RequestTask(request TaskRequest) (TaskRequestResponse, er
 	task, status, err := store.RequestTask(db, store.TaskRequestParams{
 		ProjectID: request.ProjectID,
 		TaskID:    request.TaskID,
+		TaskRef:   request.TaskRef,
 		Username:  user.Username,
 		UserID:    user.ID,
+		DryRun:    request.DryRun,
 	})
 	if err != nil {
 		return TaskRequestResponse{}, err
 	}
 	response := TaskRequestResponse{Status: status}
-	if status == "ASSIGNED" {
+	if status == "ASSIGNED" || status == "AVAILABLE" {
 		response.Task = &task
 	}
 	return response, nil

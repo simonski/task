@@ -947,7 +947,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("request error = %v", err)
 		}
 	})
-	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: develop/idle") {
+	if !strings.Contains(requestOutput, "task: Task Alpha") || !strings.Contains(requestOutput, "status: develop/active") {
 		t.Fatalf("request output = %q", requestOutput)
 	}
 
@@ -956,7 +956,7 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("request -dryrun error = %v", err)
 		}
 	})
-	if !strings.Contains(requestDryRunOutput, "would assign task: "+strconv.FormatInt(taskID, 10)) {
+	if !strings.Contains(requestDryRunOutput, "would assign ticket: ") {
 		t.Fatalf("request -dryrun output = %q", requestDryRunOutput)
 	}
 
@@ -965,12 +965,12 @@ func TestRunTaskCommandsInLocalMode(t *testing.T) {
 			t.Fatalf("claim error = %v", err)
 		}
 	})
-	if !strings.Contains(claimOutput, "assigned") {
+	if !strings.Contains(claimOutput, "status: develop/active") {
 		t.Fatalf("claim output = %q", claimOutput)
 	}
 
 	unclaimOutput := captureStdout(t, func() {
-		if err := run([]string{"unclaim", strconv.FormatInt(depID, 10)}); err != nil {
+		if err := run([]string{"unclaim", strconv.FormatInt(taskID, 10)}); err != nil {
 			t.Fatalf("unclaim error = %v", err)
 		}
 	})
@@ -1077,10 +1077,10 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 			t.Fatalf("search allprojects error = %v", err)
 		}
 	})
-	if !strings.Contains(allProjectsOutput, strconv.FormatInt(matchingID, 10)+"\ttask\tdevelop/active\tFree form entry") {
+	if !strings.Contains(allProjectsOutput, "Free form entry") || !strings.Contains(allProjectsOutput, "develop/active") {
 		t.Fatalf("allprojects output missing current project task:\n%s", allProjectsOutput)
 	}
-	if !strings.Contains(allProjectsOutput, strconv.FormatInt(crossProjectID, 10)+"\ttask\tdesign/idle\tFree form entry elsewhere") {
+	if !strings.Contains(allProjectsOutput, "Free form entry elsewhere") || !strings.Contains(allProjectsOutput, "design/idle") {
 		t.Fatalf("allprojects output missing cross-project task:\n%s", allProjectsOutput)
 	}
 }
@@ -1310,7 +1310,7 @@ func TestRunDeleteTaskInLocalMode(t *testing.T) {
 			t.Fatalf("delete error = %v", err)
 		}
 	})
-	if !strings.Contains(output, "deleted task "+strconv.FormatInt(taskID, 10)) {
+	if !strings.Contains(output, "deleted ticket ") {
 		t.Fatalf("delete output = %q", output)
 	}
 	if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err == nil || err.Error() != "task not found" {
@@ -1511,14 +1511,14 @@ func TestRunNegativeCommandCasesInLocalMode(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"get", "abc"}, "ticket id must be numeric"},
-		{[]string{"dependency", "add", "1", "abc"}, "dependency ids must be numeric"},
-		{[]string{"request", "abc"}, "ticket id must be numeric"},
+		{[]string{"get", "abc"}, "task not found"},
+		{[]string{"dependency", "add", "1", "abc"}, "task not found"},
+		{[]string{"request", "abc"}, "task not found"},
 		{[]string{"project", "get"}, "usage: ticket project get <id>"},
 		{[]string{"list", "-n", "-1"}, "usage: ticket list|ls"},
 		{[]string{"comment", "add", "1"}, "usage: ticket comment add <id> \"comment\""},
-		{[]string{"set-parent", "1", "abc"}, "parent id must be numeric"},
-		{[]string{"unset-parent", "abc"}, "ticket id must be numeric"},
+		{[]string{"set-parent", "1", "abc"}, "task not found"},
+		{[]string{"unset-parent", "abc"}, "task not found"},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {

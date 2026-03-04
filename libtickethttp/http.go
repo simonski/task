@@ -111,6 +111,10 @@ func (s *Service) GetTask(id int64) (store.Task, error) {
 	return s.client.GetTask(id)
 }
 
+func (s *Service) GetTicket(ref string) (store.Task, error) {
+	return s.client.GetTicket(ref)
+}
+
 func (s *Service) CloneTask(id int64) (store.Task, error) {
 	return s.client.CloneTask(id)
 }
