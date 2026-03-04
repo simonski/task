@@ -164,6 +164,8 @@ In LOCAL mode it prints:
 - `db_path: <resolved database path>`
 - `db_exists: true|false`
 
+In LOCAL mode, commands act as the bootstrap `admin` user by default. No login or password prompt is required.
+
 Then it opens the database if present and verifies the schema is usable. It prints:
 
 - `connection: success` in green if the database can be opened and queried

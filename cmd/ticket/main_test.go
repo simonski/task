@@ -1040,16 +1040,16 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	output := captureStdout(t, func() {
 		if err := run([]string{
 			"search",
-			"free", "form", "entry",
-			"-status", "develop/active",
-			"-title", "entry",
-			"-description", "customer portal",
-			"-priority", "4",
-			"-owner", currentOSUser(),
-		}); err != nil {
-			t.Fatalf("search error = %v", err)
-		}
-	})
+				"free", "form", "entry",
+				"-status", "develop/active",
+				"-title", "entry",
+				"-description", "customer portal",
+				"-priority", "4",
+				"-owner", localModeUsername(),
+			}); err != nil {
+				t.Fatalf("search error = %v", err)
+			}
+		})
 	if !strings.Contains(output, strconv.FormatInt(matchingID, 10)+"\ttask\tdevelop/active\tFree form entry") {
 		t.Fatalf("search output missing matching task:\n%s", output)
 	}

@@ -181,11 +181,14 @@ func TestLocalModeClientStatusIsReadOnlyWithoutMatchingUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if status.Authenticated || status.User != nil {
-		t.Fatalf("Status() = %#v, want unauthenticated without side effects", status)
+	if !status.Authenticated || status.User == nil {
+		t.Fatalf("Status() = %#v, want authenticated admin", status)
 	}
-	if _, err := store.GetUserByUsername(mustOpenDB(t, dbPath), localUsername()); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("Status() should not create local user, err = %v", err)
+	if status.User.Username != "admin" {
+		t.Fatalf("Status().User.Username = %q, want admin", status.User.Username)
+	}
+	if _, err := store.GetUserByUsername(mustOpenDB(t, dbPath), localUsername()); err != nil {
+		t.Fatalf("Status() should use existing admin user, err = %v", err)
 	}
 }
 

@@ -260,6 +260,8 @@ In LOCAL mode it must print at least:
 - `db_path: <resolved database path>`
 - `db_exists: true|false`
 
+In LOCAL mode, commands should default to the bootstrap `admin` user and should not require a password prompt.
+
 The LOCAL connectivity check is:
 
 - if the database file exists, open it and verify the schema is usable

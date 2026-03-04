@@ -1624,7 +1624,7 @@ func updateTicketLifecycleRequest(svc libticket.Service, id int64, current store
 		if err == nil && status.User != nil && strings.TrimSpace(status.User.Username) != "" {
 			assignee = status.User.Username
 		} else {
-			assignee = currentOSUser()
+			assignee = fallbackCommandUsername()
 		}
 	}
 	updated, err := svc.UpdateTicket(id, libticket.TicketUpdateRequest{
@@ -1757,7 +1757,7 @@ func runUpdate(args []string) error {
 		if err == nil && status.User != nil && strings.TrimSpace(status.User.Username) != "" {
 			next.Assignee = status.User.Username
 		} else {
-			next.Assignee = currentOSUser()
+			next.Assignee = fallbackCommandUsername()
 		}
 	}
 	if hasParentID {
@@ -1822,7 +1822,7 @@ func runUnclaim(args []string) error {
 	}
 	username := strings.TrimSpace(cfg.Username)
 	if mode, err := config.ResolveMode(); err == nil && mode == config.ModeLocal {
-		username = currentOSUser()
+		username = localModeUsername()
 	}
 	if strings.TrimSpace(username) == "" {
 		return errors.New("no current username; log in first")
@@ -2146,7 +2146,7 @@ func runRequestDryRun(args []string) error {
 func resolveCurrentRequestUser(cfg config.Config, mode string) (string, error) {
 	username := strings.TrimSpace(cfg.Username)
 	if mode == config.ModeLocal {
-		username = currentOSUser()
+		username = localModeUsername()
 	}
 	if strings.TrimSpace(username) == "" {
 		return "", errors.New("no current username; log in first")
@@ -2852,6 +2852,17 @@ func currentOSUser() string {
 		return env
 	}
 	return "user"
+}
+
+func localModeUsername() string {
+	return "admin"
+}
+
+func fallbackCommandUsername() string {
+	if mode, err := config.ResolveMode(); err == nil && mode == config.ModeLocal {
+		return localModeUsername()
+	}
+	return currentOSUser()
 }
 
 func extractURLOverride(args []string) ([]string, string, error) {

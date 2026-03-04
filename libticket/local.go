@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"os"
-	osuser "os/user"
 	"strings"
 
 	"github.com/simonski/ticket/internal/config"
@@ -458,16 +457,5 @@ func (s *LocalService) localUser(db *sql.DB) (store.User, error) {
 }
 
 func LocalUsername() string {
-	user, err := osuser.Current()
-	if err == nil && strings.TrimSpace(user.Username) != "" {
-		parts := strings.Split(user.Username, `\`)
-		return parts[len(parts)-1]
-	}
-	if value := strings.TrimSpace(os.Getenv("USER")); value != "" {
-		return value
-	}
-	if value := strings.TrimSpace(os.Getenv("USERNAME")); value != "" {
-		return value
-	}
-	return "user"
+	return "admin"
 }

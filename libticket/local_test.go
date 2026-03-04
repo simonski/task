@@ -24,7 +24,7 @@ func TestLocalServiceContract(t *testing.T) {
 	}, libtickettest.ContractOptions{RequireStatusOwnership: false})
 }
 
-func TestLocalServiceStatusIsReadOnlyWithoutMatchingUser(t *testing.T) {
+func TestLocalServiceStatusDefaultsToAdmin(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("TICKET_MODE", "local")
 	t.Setenv("TICKET_HOME", tempDir)
@@ -38,8 +38,11 @@ func TestLocalServiceStatusIsReadOnlyWithoutMatchingUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status() error = %v", err)
 	}
-	if status.Authenticated || status.User != nil {
-		t.Fatalf("Status() = %#v, want unauthenticated without side effects", status)
+	if !status.Authenticated || status.User == nil {
+		t.Fatalf("Status() = %#v, want authenticated admin", status)
+	}
+	if status.User.Username != "admin" {
+		t.Fatalf("Status().User.Username = %q, want admin", status.User.Username)
 	}
 }
 
@@ -73,8 +76,8 @@ func TestLocalUsernameUsesEnvironmentFallbacks(t *testing.T) {
 	t.Setenv("USERNAME", "env-username")
 
 	got := libticket.LocalUsername()
-	if got == "" {
-		t.Fatal("LocalUsername() returned empty username")
+	if got != "admin" {
+		t.Fatalf("LocalUsername() = %q, want admin", got)
 	}
 }
 

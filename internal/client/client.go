@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	osuser "os/user"
 	"strings"
 
 	"github.com/simonski/ticket/internal/config"
@@ -782,15 +781,7 @@ func ensureLocalUser(db *sql.DB, username string) (store.User, error) {
 }
 
 func localUsername() string {
-	user, err := osuser.Current()
-	if err == nil && strings.TrimSpace(user.Username) != "" {
-		parts := strings.Split(user.Username, `\`)
-		return parts[len(parts)-1]
-	}
-	if env := strings.TrimSpace(getenvFirst("USER", "USERNAME")); env != "" {
-		return env
-	}
-	return "user"
+	return "admin"
 }
 
 func getenvFirst(keys ...string) string {
