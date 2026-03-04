@@ -2,11 +2,12 @@
 
 ## Status
 
-This document defines the target model for the next major refactor.
+This document defines the current authoritative model for the remodeled
+ticketing system.
 
-It is intentionally opinionated. Where it differs from the current
-implementation, this document describes the desired end state rather than the
-current behavior.
+It is intentionally opinionated. Where older code or compatibility layers use
+task-centric naming, this document takes precedence for the intended external
+contract.
 
 ## Goals
 
@@ -59,7 +60,8 @@ Fields:
 
 Field rules:
 
-- `id` is an internal immutable identifier. Use ULID.
+- `id` is an internal immutable identifier. The current implementation uses an
+  integer database identifier.
 - `prefix` is required, unique, uppercase, and 3 to 5 ASCII letters.
 - `title` is required and unique.
 - `description` is optional.
@@ -98,7 +100,8 @@ Fields:
 
 Field rules:
 
-- `id` is an internal immutable identifier. Use ULID.
+- `id` is an internal immutable identifier. The current implementation uses an
+  integer database identifier.
 - `key` is the canonical human identifier.
 - `project_id` is required.
 - `parent_id` is nullable.
@@ -402,44 +405,46 @@ Derived lifecycle updates for parent tickets must also emit history entries.
 
 ## CLI Contract
 
-`project` and `ticket` are separate command roots.
+`project` and `ticket` are separate command groups within the `ticket` binary.
 
 `project` commands:
 
-- `project create -prefix <PREFIX> -title <TITLE>`
-- `project list`
-- `project get -id <PREFIX|PROJECT_ID>`
-- `project update -id <PREFIX|PROJECT_ID>`
-- `project close -id <PREFIX|PROJECT_ID>`
-- `project open -id <PREFIX|PROJECT_ID>`
+- `ticket project create -prefix <PREFIX> "TITLE"`
+- `ticket project list`
+- `ticket project get <PREFIX|PROJECT_ID>`
+- `ticket project <PREFIX|PROJECT_ID> update`
+- `ticket project <PREFIX|PROJECT_ID> disable`
+- `ticket project <PREFIX|PROJECT_ID> enable`
 
 `ticket` commands:
 
 - `ticket create -project <PREFIX|PROJECT_ID> -type <TYPE>`
 - `ticket list`
-- `ticket get -id <KEY|TICKET_ID>`
-- `ticket update -id <KEY|TICKET_ID>`
-- `ticket delete -id <KEY|TICKET_ID>`
-- `ticket attach -id <KEY|TICKET_ID> -parent <KEY|TICKET_ID>`
-- `ticket detach -id <KEY|TICKET_ID>`
-- `ticket assign -id <KEY|TICKET_ID> -user <USERNAME>`
-- `ticket unassign -id <KEY|TICKET_ID>`
+- `ticket get <KEY|TICKET_ID>`
+- `ticket update <KEY|TICKET_ID>`
+- `ticket delete <KEY|TICKET_ID>`
+- `ticket attach <KEY|TICKET_ID> <KEY|TICKET_ID>`
+- `ticket detach <KEY|TICKET_ID>`
+- `ticket assign <KEY|TICKET_ID> <USERNAME>`
+- `ticket unassign <KEY|TICKET_ID> <USERNAME>`
 - `ticket claim`
+- `ticket claim <KEY|TICKET_ID>`
 - `ticket claim -id <KEY|TICKET_ID>`
 - `ticket claim -dry-run`
-- `ticket design -id <KEY|TICKET_ID>`
-- `ticket develop -id <KEY|TICKET_ID>`
-- `ticket test -id <KEY|TICKET_ID>`
-- `ticket done -id <KEY|TICKET_ID>`
-- `ticket idle -id <KEY|TICKET_ID>`
-- `ticket active -id <KEY|TICKET_ID>`
-- `ticket complete -id <KEY|TICKET_ID>`
+- `ticket unclaim <KEY|TICKET_ID>`
+- `ticket design <KEY|TICKET_ID>`
+- `ticket develop <KEY|TICKET_ID>`
+- `ticket test <KEY|TICKET_ID>`
+- `ticket done <KEY|TICKET_ID>`
+- `ticket idle <KEY|TICKET_ID>`
+- `ticket active <KEY|TICKET_ID>`
+- `ticket complete <KEY|TICKET_ID>`
 
 CLI notes:
 
 - `project` is not passed through `ticket -type`
 - `detach` does not require `-parent`; the current parent is implicit
-- `unassign` does not require `-user`; it clears the assignee
+- `unassign` remains an admin operation and currently accepts a username
 - list/get commands should accept either human keys or internal IDs where
   practical, but human keys are preferred in output
 
@@ -454,6 +459,13 @@ The API must expose:
 - explicit stage and state transitions
 - effective lifecycle values for parent tickets
 - append-only history reads
+
+Current route notes:
+
+- `/api/tickets`, `/api/tickets/...`, and `/api/projects/{id}/tickets` are the
+  preferred ticket-first routes
+- `/api/tasks`, `/api/tasks/...`, and `/api/projects/{id}/tasks` remain
+  accepted as compatibility aliases
 
 API responses should include:
 
@@ -528,42 +540,20 @@ Ticket history table must include:
 - `id`
 - `ticket_id`
 - `project_id`
-- `actor`
+- `created_by`
 - `event_type`
-- `from_value`
-- `to_value`
 - `payload`
 - `created_at`
 
-## Migration Strategy
+## Migration Status
 
-This remodel is large enough that it should be done in phases.
+The main remodel phases are complete:
 
-### Phase 1: Add Project Prefix And Human Ticket Keys
-
-- add project `prefix`
-- add ticket `key`
-- backfill keys for existing tickets
-- update CLI/API output to prefer `key`
-
-### Phase 2: Extend Ticket Types
-
-- add `spike` and `chore`
-- validate hierarchy rules
-
-### Phase 3: Split Project And Ticket Commands
-
-- introduce `project` command root
-- remove `project` from any ticket type vocabulary
-
-### Phase 4: Add History Table Normalization
-
-- move inline or embedded history representations to `ticket_history`
-
-### Phase 5: Tighten Claim And Assignment Rules
-
-- implement claim selection ordering
-- enforce leaf-only claim behavior
+- project prefixes and human ticket keys are implemented
+- `spike` and `chore` are supported ticket types
+- the CLI and docs are project/ticket oriented
+- `ticket_history` is present and used for append-only reads
+- claim ordering and leaf-only claim behavior are implemented
 
 ## Test Requirements
 
@@ -581,18 +571,12 @@ Tests must cover:
 - CLI parsing for `project` and `ticket` command separation
 - API serialization of `id`, `key`, `stage`, `state`, and `status`
 
-## Open Questions
+## Final Decisions
 
-These should be resolved before implementation starts:
-
-1. Whether project prefixes should be exactly 3 characters or 3 to 5.
-   Recommendation: 3 to 5.
-2. Whether project titles must remain globally unique forever.
-   Recommendation: yes for now.
-3. Whether closed projects should allow read-only ticket edits by admins.
-   Recommendation: no, except reopen operations.
-4. Whether `spike` and `chore` should be allowed as parents.
-   Recommendation: no.
+1. Project prefixes are 3 to 5 uppercase ASCII letters.
+2. Project titles remain globally unique.
+3. Closed projects do not allow routine ticket mutation; reopen first.
+4. `spike` and `chore` are not allowed as parents.
 
 ## Summary
 
@@ -601,7 +585,7 @@ The remodel should converge on this shape:
 - `project` is a first-class entity and separate CLI/API resource
 - tickets belong to exactly one project
 - tickets use readable project-scoped keys such as `CUS-T-143`
-- internal identifiers remain ULIDs
+- internal identifiers remain stable implementation-level IDs
 - lifecycle remains `stage + state`
 - parent ticket lifecycle remains derived from descendants
 - claim is explicit, authenticated, and deterministic

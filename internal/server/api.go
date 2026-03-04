@@ -278,7 +278,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 		trimmed := strings.TrimPrefix(r.URL.Path, "/api/projects/")
 		parts := strings.Split(trimmed, "/")
-		if len(parts) == 2 && parts[1] == "tasks" && r.Method == http.MethodGet {
+		if len(parts) == 2 && (parts[1] == "tasks" || parts[1] == "tickets") && r.Method == http.MethodGet {
 			project, err := store.GetProject(db, parts[0])
 			if err != nil {
 				if errors.Is(err, store.ErrProjectNotFound) {
@@ -397,7 +397,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		}
 	})
 
-	mux.HandleFunc("/api/tasks", func(w http.ResponseWriter, r *http.Request) {
+	handleTasksCollection := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -437,9 +437,11 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, task)
-	})
+	}
+	mux.HandleFunc("/api/tasks", handleTasksCollection)
+	mux.HandleFunc("/api/tickets", handleTasksCollection)
 
-	mux.HandleFunc("/api/tasks/request", func(w http.ResponseWriter, r *http.Request) {
+	handleTaskRequest := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -475,162 +477,169 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			payload["task"] = task
 		}
 		writeJSON(w, http.StatusOK, payload)
-	})
+	}
+	mux.HandleFunc("/api/tasks/request", handleTaskRequest)
+	mux.HandleFunc("/api/tickets/request", handleTaskRequest)
+	mux.HandleFunc("/api/tickets/claim", handleTaskRequest)
 
-	mux.HandleFunc("/api/tasks/", func(w http.ResponseWriter, r *http.Request) {
-		user, err := requireUser(db, r)
-		if err != nil {
-			writeAuthError(w, err)
-			return
-		}
-
-		trimmed := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
-		parts := strings.Split(trimmed, "/")
-		taskRef, err := store.GetTaskByRef(db, parts[0])
-		if err != nil {
-			writeError(w, http.StatusNotFound, "task not found")
-			return
-		}
-		id := taskRef.ID
-
-		if len(parts) == 2 && parts[1] == "history" && r.Method == http.MethodGet {
-			events, err := store.ListHistoryEvents(db, id)
+	handleTaskByRef := func(pathPrefix string) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			user, err := requireUser(db, r)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				writeAuthError(w, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, events)
-			return
-		}
 
-		if len(parts) == 2 && parts[1] == "comments" {
-			switch r.Method {
-			case http.MethodGet:
-				comments, err := store.ListComments(db, id)
+			trimmed := strings.TrimPrefix(r.URL.Path, pathPrefix)
+			parts := strings.Split(trimmed, "/")
+			taskRef, err := store.GetTaskByRef(db, parts[0])
+			if err != nil {
+				writeError(w, http.StatusNotFound, "task not found")
+				return
+			}
+			id := taskRef.ID
+
+			if len(parts) == 2 && parts[1] == "history" && r.Method == http.MethodGet {
+				events, err := store.ListHistoryEvents(db, id)
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
-				writeJSON(w, http.StatusOK, comments)
-			case http.MethodPost:
-				var commentPayload commentRequest
-				if err := json.NewDecoder(r.Body).Decode(&commentPayload); err != nil {
+				writeJSON(w, http.StatusOK, events)
+				return
+			}
+
+			if len(parts) == 2 && parts[1] == "comments" {
+				switch r.Method {
+				case http.MethodGet:
+					comments, err := store.ListComments(db, id)
+					if err != nil {
+						writeError(w, http.StatusInternalServerError, err.Error())
+						return
+					}
+					writeJSON(w, http.StatusOK, comments)
+				case http.MethodPost:
+					var commentPayload commentRequest
+					if err := json.NewDecoder(r.Body).Decode(&commentPayload); err != nil {
+						writeError(w, http.StatusBadRequest, "invalid json body")
+						return
+					}
+					comment, err := store.AddComment(db, id, user.ID, commentPayload.Comment)
+					if err != nil {
+						writeError(w, http.StatusBadRequest, err.Error())
+						return
+					}
+					task, err := store.GetTask(db, id)
+					if err == nil {
+						_ = store.AddHistoryEvent(db, task.ProjectID, id, "comment_added", map[string]any{
+							"key":        task.Key,
+							"comment_id": comment.ID,
+						}, user.ID)
+					}
+					writeJSON(w, http.StatusCreated, comment)
+				default:
+					writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+				}
+				return
+			}
+
+			if len(parts) == 2 && parts[1] == "dependencies" && r.Method == http.MethodGet {
+				dependencies, err := store.ListDependencies(db, id)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, dependencies)
+				return
+			}
+
+			if len(parts) == 2 && parts[1] == "clone" && r.Method == http.MethodPost {
+				cloned, err := store.CloneTask(db, id, user.ID)
+				if err != nil {
+					if errors.Is(err, store.ErrTaskNotFound) {
+						writeError(w, http.StatusNotFound, err.Error())
+						return
+					}
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusCreated, cloned)
+				return
+			}
+
+			switch r.Method {
+			case http.MethodGet:
+				task, err := store.GetTask(db, id)
+				if err != nil {
+					if errors.Is(err, store.ErrTaskNotFound) {
+						writeError(w, http.StatusNotFound, err.Error())
+						return
+					}
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, task)
+			case http.MethodPut:
+				var taskPayload taskRequest
+				if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
 					writeError(w, http.StatusBadRequest, "invalid json body")
 					return
 				}
-				comment, err := store.AddComment(db, id, user.ID, commentPayload.Comment)
+				stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
 				if err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				task, err := store.GetTask(db, id)
-				if err == nil {
-					_ = store.AddHistoryEvent(db, task.ProjectID, id, "comment_added", map[string]any{
-						"key":        task.Key,
-						"comment_id": comment.ID,
-					}, user.ID)
-				}
-				writeJSON(w, http.StatusCreated, comment)
-			default:
-				writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-			}
-			return
-		}
-
-		if len(parts) == 2 && parts[1] == "dependencies" && r.Method == http.MethodGet {
-			dependencies, err := store.ListDependencies(db, id)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, dependencies)
-			return
-		}
-
-		if len(parts) == 2 && parts[1] == "clone" && r.Method == http.MethodPost {
-			cloned, err := store.CloneTask(db, id, user.ID)
-			if err != nil {
-				if errors.Is(err, store.ErrTaskNotFound) {
-					writeError(w, http.StatusNotFound, err.Error())
-					return
-				}
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusCreated, cloned)
-			return
-		}
-
-		switch r.Method {
-		case http.MethodGet:
-			task, err := store.GetTask(db, id)
-			if err != nil {
-				if errors.Is(err, store.ErrTaskNotFound) {
-					writeError(w, http.StatusNotFound, err.Error())
-					return
-				}
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, task)
-		case http.MethodPut:
-			var taskPayload taskRequest
-			if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
-				writeError(w, http.StatusBadRequest, "invalid json body")
-				return
-			}
-			stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
-				Title:              taskPayload.Title,
-				Description:        taskPayload.Description,
-				AcceptanceCriteria: taskPayload.AcceptanceCriteria,
-				ParentID:           taskPayload.ParentID,
-				Assignee:           taskPayload.Assignee,
-				Stage:              stage,
-				State:              state,
-				Priority:           taskPayload.Priority,
-				Order:              taskPayload.Order,
-				EstimateEffort:     taskPayload.EstimateEffort,
-				EstimateComplete:   taskPayload.EstimateComplete,
-				UpdatedBy:          user.ID,
-				ActorUsername:      user.Username,
-				ActorRole:          user.Role,
-			})
-			if err != nil {
-				if errors.Is(err, store.ErrTaskNotFound) {
-					writeError(w, http.StatusNotFound, err.Error())
-					return
-				}
-				if errors.Is(err, store.ErrAdminRequired) || errors.Is(err, store.ErrForbidden) {
-					writeAuthError(w, err)
-					return
-				}
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			writeJSON(w, http.StatusOK, task)
-		case http.MethodDelete:
-			if err := store.DeleteTask(db, id); err != nil {
-				if errors.Is(err, store.ErrTaskNotFound) {
-					writeError(w, http.StatusNotFound, err.Error())
-					return
-				}
-				if errors.Is(err, store.ErrTaskHasChildren) {
+				task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
+					Title:              taskPayload.Title,
+					Description:        taskPayload.Description,
+					AcceptanceCriteria: taskPayload.AcceptanceCriteria,
+					ParentID:           taskPayload.ParentID,
+					Assignee:           taskPayload.Assignee,
+					Stage:              stage,
+					State:              state,
+					Priority:           taskPayload.Priority,
+					Order:              taskPayload.Order,
+					EstimateEffort:     taskPayload.EstimateEffort,
+					EstimateComplete:   taskPayload.EstimateComplete,
+					UpdatedBy:          user.ID,
+					ActorUsername:      user.Username,
+					ActorRole:          user.Role,
+				})
+				if err != nil {
+					if errors.Is(err, store.ErrTaskNotFound) {
+						writeError(w, http.StatusNotFound, err.Error())
+						return
+					}
+					if errors.Is(err, store.ErrAdminRequired) || errors.Is(err, store.ErrForbidden) {
+						writeAuthError(w, err)
+						return
+					}
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				writeError(w, http.StatusInternalServerError, err.Error())
-				return
+				writeJSON(w, http.StatusOK, task)
+			case http.MethodDelete:
+				if err := store.DeleteTask(db, id); err != nil {
+					if errors.Is(err, store.ErrTaskNotFound) {
+						writeError(w, http.StatusNotFound, err.Error())
+						return
+					}
+					if errors.Is(err, store.ErrTaskHasChildren) {
+						writeError(w, http.StatusBadRequest, err.Error())
+						return
+					}
+					writeError(w, http.StatusInternalServerError, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+			default:
+				writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			}
-			writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-		default:
-			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		}
-	})
+	}
+	mux.HandleFunc("/api/tasks/", handleTaskByRef("/api/tasks/"))
+	mux.HandleFunc("/api/tickets/", handleTaskByRef("/api/tickets/"))
 
 	mux.HandleFunc("/api/dependencies", func(w http.ResponseWriter, r *http.Request) {
 		user, err := requireUser(db, r)

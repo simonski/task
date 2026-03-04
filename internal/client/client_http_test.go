@@ -50,7 +50,7 @@ func TestRemoteClientListTasksFilteredBuildsQuery(t *testing.T) {
 	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/projects/7/tasks" {
+		if r.URL.Path != "/api/projects/7/tickets" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
 		values, err := url.ParseQuery(r.URL.RawQuery)
@@ -75,7 +75,7 @@ func TestRemoteClientRequestTaskPostsJSON(t *testing.T) {
 	t.Setenv("TICKET_MODE", "remote")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks/request" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/tickets/claim" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer token-123" {
@@ -208,13 +208,13 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 			_, _ = w.Write([]byte(`{"project_id":7,"title":"P2","status":"active"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/7/disable":
 			_, _ = w.Write([]byte(`{"project_id":7,"title":"P2","status":"disabled"}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets":
 			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11":
 			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle"}`))
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/tasks/11":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/tickets/11":
 			_, _ = w.Write([]byte(`{"status":"deleted"}`))
-		case r.Method == http.MethodPut && r.URL.Path == "/api/tasks/11":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/tickets/11":
 			var payload TaskUpdateRequest
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatalf("Decode(task update) error = %v", err)
@@ -224,13 +224,13 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 				parentJSON = `,"parent_id":` + strconv.FormatInt(*payload.ParentID, 10)
 			}
 			_, _ = w.Write([]byte(`{"task_id":11,"project_id":7,"title":"T","type":"task","stage":"develop","state":"active","status":"develop/active"` + parentJSON + `}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks/11/clone":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets/11/clone":
 			_, _ = w.Write([]byte(`{"task_id":21,"project_id":7,"title":"T","type":"task","stage":"design","state":"idle","status":"design/idle","clone_of":11}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11/history":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/history":
 			_, _ = w.Write([]byte(`[{"id":1,"task_id":11,"event_type":"task_updated"}]`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks/11/comments":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tickets/11/comments":
 			_, _ = w.Write([]byte(`{"id":1,"item_id":11,"comment":"hello"}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11/comments":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/comments":
 			_, _ = w.Write([]byte(`[{"id":1,"item_id":11,"comment":"hello"}]`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/dependencies":
 			_, _ = w.Write([]byte(`{"id":1,"project_id":7,"task_id":11,"depends_on":12}`))
@@ -239,7 +239,7 @@ func TestRemoteClientCRUDRoutes(t *testing.T) {
 				t.Fatalf("dependency delete query = %q", r.URL.RawQuery)
 			}
 			_, _ = w.Write([]byte(`{}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/11/dependencies":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tickets/11/dependencies":
 			_, _ = w.Write([]byte(`[{"id":1,"project_id":7,"task_id":11,"depends_on":12}]`))
 		default:
 			t.Fatalf("unexpected route: %s %s", r.Method, r.URL.String())

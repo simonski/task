@@ -350,6 +350,101 @@ func TestTaskAPI(t *testing.T) {
 	}
 }
 
+func TestTicketRouteAliasesAPI(t *testing.T) {
+	handler, db := testHandler(t)
+	defer db.Close()
+
+	adminLogin := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "admin",
+		"password": "password",
+	}, "")
+	var adminAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, adminLogin, &adminAuth)
+
+	createUserResp := doJSONRequest(t, handler, http.MethodPost, "/api/users", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, adminAuth.Token)
+	if createUserResp.Code != http.StatusCreated {
+		t.Fatalf("create alice status = %d body=%s", createUserResp.Code, createUserResp.Body.String())
+	}
+
+	aliceLogin := doJSONRequest(t, handler, http.MethodPost, "/api/login", map[string]string{
+		"username": "alice",
+		"password": "password123",
+	}, "")
+	var aliceAuth struct {
+		Token string `json:"token"`
+	}
+	decodeResponse(t, aliceLogin, &aliceAuth)
+
+	createProjectResp := doJSONRequest(t, handler, http.MethodPost, "/api/projects", map[string]string{
+		"title": "Customer Portal",
+	}, adminAuth.Token)
+	if createProjectResp.Code != http.StatusCreated {
+		t.Fatalf("create project status = %d body=%s", createProjectResp.Code, createProjectResp.Body.String())
+	}
+	var project store.Project
+	decodeResponse(t, createProjectResp, &project)
+
+	createTicketResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
+		"project_id": project.ID,
+		"type":       "task",
+		"title":      "Add reset flow",
+	}, adminAuth.Token)
+	if createTicketResp.Code != http.StatusCreated {
+		t.Fatalf("create ticket status = %d body=%s", createTicketResp.Code, createTicketResp.Body.String())
+	}
+	var ticket store.Task
+	decodeResponse(t, createTicketResp, &ticket)
+
+	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tickets", nil, adminAuth.Token)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list tickets status = %d body=%s", listResp.Code, listResp.Body.String())
+	}
+	var tickets []store.Task
+	decodeResponse(t, listResp, &tickets)
+	if len(tickets) != 1 || tickets[0].Key != ticket.Key {
+		t.Fatalf("tickets = %#v", tickets)
+	}
+
+	updateResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+ticket.Key, map[string]any{
+		"title":       ticket.Title,
+		"description": ticket.Description,
+		"assignee":    "",
+		"stage":       "develop",
+		"state":       "idle",
+		"priority":    ticket.Priority,
+		"order":       ticket.Order,
+	}, adminAuth.Token)
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update ticket status = %d body=%s", updateResp.Code, updateResp.Body.String())
+	}
+
+	claimResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/claim", map[string]any{
+		"project_id": project.ID,
+		"task_ref":   ticket.Key,
+	}, aliceAuth.Token)
+	if claimResp.Code != http.StatusOK {
+		t.Fatalf("claim ticket status = %d body=%s", claimResp.Code, claimResp.Body.String())
+	}
+	var claimPayload struct {
+		Status string     `json:"status"`
+		Task   store.Task `json:"task"`
+	}
+	decodeResponse(t, claimResp, &claimPayload)
+	if claimPayload.Status != "ASSIGNED" || claimPayload.Task.Key != ticket.Key || claimPayload.Task.Assignee != "alice" {
+		t.Fatalf("claim payload = %#v", claimPayload)
+	}
+
+	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+ticket.Key, nil, adminAuth.Token)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("get ticket status = %d body=%s", getResp.Code, getResp.Body.String())
+	}
+}
+
 func TestCountAPIAndAssignmentRules(t *testing.T) {
 	handler, db := testHandler(t)
 	defer db.Close()

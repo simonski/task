@@ -385,7 +385,7 @@ func (c *Client) CreateTask(request TaskCreateRequest) (store.Task, error) {
 		})
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodPost, "/api/tasks", request, &task)
+	err := c.doJSON(http.MethodPost, "/api/tickets", request, &task)
 	return task, err
 }
 
@@ -434,7 +434,7 @@ func (c *Client) ListTasksFiltered(projectID int64, taskType, stage, state, stat
 	if limit > 0 {
 		values.Set("limit", fmt.Sprintf("%d", limit))
 	}
-	path := fmt.Sprintf("/api/projects/%d/tasks", projectID)
+	path := fmt.Sprintf("/api/projects/%d/tickets", projectID)
 	if encoded := values.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
@@ -476,7 +476,7 @@ func (c *Client) UpdateTask(id int64, request TaskUpdateRequest) (store.Task, er
 		})
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tasks/%d", id), request, &task)
+	err := c.doJSON(http.MethodPut, fmt.Sprintf("/api/tickets/%d", id), request, &task)
 	return task, err
 }
 
@@ -489,7 +489,7 @@ func (c *Client) DeleteTask(id int64) error {
 		defer db.Close()
 		return store.DeleteTask(db, id)
 	}
-	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/tasks/%d", id), nil, nil)
+	return c.doJSON(http.MethodDelete, fmt.Sprintf("/api/tickets/%d", id), nil, nil)
 }
 
 func (c *Client) SetTaskParent(id, parentID int64) (store.Task, error) {
@@ -542,7 +542,7 @@ func (c *Client) GetTask(id int64) (store.Task, error) {
 		return store.GetTask(db, id)
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d", id), nil, &task)
+	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d", id), nil, &task)
 	return task, err
 }
 
@@ -556,7 +556,7 @@ func (c *Client) GetTicket(ref string) (store.Task, error) {
 		return store.GetTaskByRef(db, ref)
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodGet, "/api/tasks/"+url.PathEscape(strings.TrimSpace(ref)), nil, &task)
+	err := c.doJSON(http.MethodGet, "/api/tickets/"+url.PathEscape(strings.TrimSpace(ref)), nil, &task)
 	return task, err
 }
 
@@ -574,7 +574,7 @@ func (c *Client) CloneTask(id int64) (store.Task, error) {
 		return store.CloneTask(db, id, user.ID)
 	}
 	var task store.Task
-	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tasks/%d/clone", id), nil, &task)
+	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tickets/%d/clone", id), nil, &task)
 	return task, err
 }
 
@@ -588,7 +588,7 @@ func (c *Client) ListHistory(id int64) ([]store.HistoryEvent, error) {
 		return store.ListHistoryEvents(db, id)
 	}
 	var events []store.HistoryEvent
-	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/history", id), nil, &events)
+	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d/history", id), nil, &events)
 	return events, err
 }
 
@@ -606,7 +606,7 @@ func (c *Client) AddComment(id int64, comment string) (store.Comment, error) {
 		return store.AddComment(db, id, user.ID, comment)
 	}
 	var created store.Comment
-	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tasks/%d/comments", id), CommentCreateRequest{Comment: comment}, &created)
+	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tickets/%d/comments", id), CommentCreateRequest{Comment: comment}, &created)
 	return created, err
 }
 
@@ -620,7 +620,7 @@ func (c *Client) ListComments(id int64) ([]store.Comment, error) {
 		return store.ListComments(db, id)
 	}
 	var comments []store.Comment
-	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/comments", id), nil, &comments)
+	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d/comments", id), nil, &comments)
 	return comments, err
 }
 
@@ -664,7 +664,7 @@ func (c *Client) ListDependencies(id int64) ([]store.Dependency, error) {
 		return store.ListDependencies(db, id)
 	}
 	var dependencies []store.Dependency
-	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tasks/%d/dependencies", id), nil, &dependencies)
+	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d/dependencies", id), nil, &dependencies)
 	return dependencies, err
 }
 
@@ -703,7 +703,7 @@ func (c *Client) RequestTask(request TaskRequest) (TaskRequestResponse, error) {
 	}
 	reader = bytes.NewReader(payload)
 
-	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/tasks/request", reader)
+	httpReq, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/tickets/claim", reader)
 	if err != nil {
 		return TaskRequestResponse{}, err
 	}

@@ -228,7 +228,7 @@ ticket project ls
 Select the active project for subsequent commands:
 
 ```bash
-ticket project use 2
+ticket project use CUS
 ```
 
 Show the current project:
@@ -242,26 +242,26 @@ ticket project
 Get details on a project:
 
 ```bash
-ticket project get <id>
-ticket project 2
+ticket project get <prefix-or-id>
+ticket project CUS
 ```
 
 Update a project:
 
 ```bash
-ticket project 2 update -title "New project title"
-ticket project 2 update -description "The new description"
-ticket project 2 update -ac "The acceptance criteria"
+ticket project CUS update -title "New project title"
+ticket project CUS update -description "The new description"
+ticket project CUS update -ac "The acceptance criteria"
 ```
 
 Enable or disable a project:
 
 ```bash
-ticket project 2 enable
-ticket project 2 disable
+ticket project CUS enable
+ticket project CUS disable
 ```
 
-The active project is remembered by the CLI so you do not need to pass a project ID for every command.
+The active project is remembered by the CLI so you do not need to pass a project prefix for every command.
 
 ## Capture Work
 
@@ -393,8 +393,8 @@ ticket orphans
 Assignment commands:
 
 ```bash
-ticket assign 42 alice
-ticket unassign 42 alice
+ticket assign CUS-T-42 alice
+ticket unassign CUS-T-42 alice
 ticket dependency add 4 1,2,3
 ticket dependency remove 4 2
 ticket claim
@@ -421,13 +421,13 @@ They also fail if the named user does not exist or is disabled.
 Lifecycle commands:
 
 ```bash
-ticket design 42
-ticket develop 42
-ticket test 42
-ticket done 42
-ticket idle 42
-ticket active 42
-ticket complete 42
+ticket design CUS-T-42
+ticket develop CUS-T-42
+ticket test CUS-T-42
+ticket done CUS-T-42
+ticket idle CUS-T-42
+ticket active CUS-T-42
+ticket complete CUS-T-42
 ```
 
 `ticket complete` keeps the current stage and marks the ticket state as `complete`. Use `ticket done` to move a ticket into terminal `done/complete`.
@@ -437,7 +437,7 @@ Most client-facing commands also support `-json` to pretty-print the JSON respon
 Show the history of any item:
 
 ```bash
-ticket history 17
+ticket history CUS-T-42
 ```
 
 `ticket history` prints the stored history events for that item.
@@ -482,15 +482,15 @@ ticket user disable --username <name>
 ticket project create -prefix ABC "..."
 ticket project list
 ticket project ls
-ticket project use <id>
+ticket project use <prefix-or-id>
 ticket project
-ticket project get <id>
-ticket project <id>
-ticket project <id> update -title "..."
-ticket project <id> update -description "..."
-ticket project <id> update -ac "..."
-ticket project <id> enable
-ticket project <id> disable
+ticket project get <prefix-or-id>
+ticket project <prefix-or-id>
+ticket project <prefix-or-id> update -title "..."
+ticket project <prefix-or-id> update -description "..."
+ticket project <prefix-or-id> update -ac "..."
+ticket project <prefix-or-id> enable
+ticket project <prefix-or-id> disable
 
 ticket add "..."
 ticket bug "..."
@@ -503,42 +503,42 @@ ticket list --status develop/idle
 ticket list -u <name>
 ticket search "..."
 ticket search "..." -allprojects
-ticket get <id>
-ticket history <id>
-ticket comment add <id> "..."
+ticket get <key-or-id>
+ticket history <key-or-id>
+ticket comment add <key-or-id> "..."
 ticket orphans
 
-ticket dependency add <id> <id[,id...]>
-ticket dependency remove <id> <id[,id...]>
-ticket assign <id> <name>
-ticket unassign <id> <name>
-ticket claim <id>
-ticket unclaim <id>
-ticket request [<id>]
-ticket attach <id> <parent-id>
-ticket detach <id>
-ticket rm <id>
-ticket delete <id>
-ticket design <id>
-ticket develop <id>
-ticket test <id>
-ticket done <id>
-ticket idle <id>
-ticket active <id>
-ticket complete <id>
-ticket update <id> -stage <stage> -state <state>
+ticket dependency add <key-or-id> <key-or-id[,key-or-id...]>
+ticket dependency remove <key-or-id> <key-or-id[,key-or-id...]>
+ticket assign <key-or-id> <name>
+ticket unassign <key-or-id> <name>
+ticket claim <key-or-id>
+ticket unclaim <key-or-id>
+ticket request [<key-or-id>]
+ticket attach <key-or-id> <parent-key-or-id>
+ticket detach <key-or-id>
+ticket rm <key-or-id>
+ticket delete <key-or-id>
+ticket design <key-or-id>
+ticket develop <key-or-id>
+ticket test <key-or-id>
+ticket done <key-or-id>
+ticket idle <key-or-id>
+ticket active <key-or-id>
+ticket complete <key-or-id>
+ticket update <key-or-id> -stage <stage> -state <state>
 ticket count
-ticket count -project_id <id>
+ticket count -project_id <prefix-or-id>
 
-ticket update <id> -stage develop -state idle
-ticket update <id> -title "new title"
-ticket update <id> -description "new description"
-ticket update <id> -ac "new acceptance criteria"
-ticket update <id> -priority 4
-ticket update <id> -order 7
-ticket update <id> -parent_id 12
-ticket update <id> -estimate_effort 5
-ticket update <id> -estimate_complete 2026-04-30T17:00:00Z
-ticket update <id> -stage develop -state active -priority 2 -title "new title"
+ticket update <key-or-id> -stage develop -state idle
+ticket update <key-or-id> -title "new title"
+ticket update <key-or-id> -description "new description"
+ticket update <key-or-id> -ac "new acceptance criteria"
+ticket update <key-or-id> -priority 4
+ticket update <key-or-id> -order 7
+ticket update <key-or-id> -parent_id 12
+ticket update <key-or-id> -estimate_effort 5
+ticket update <key-or-id> -estimate_complete 2026-04-30T17:00:00Z
+ticket update <key-or-id> -stage develop -state active -priority 2 -title "new title"
 
 ```

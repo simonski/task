@@ -330,17 +330,17 @@ Representative commands:
 ticket project create -prefix CUS -description "Portal backlog" -ac "Launch criteria" "Customer Portal"
 ticket project list
 ticket project ls
-ticket project use 2
-ticket project get 2
+ticket project use CUS
+ticket project get CUS
 ticket project
-ticket project 2 update -title "Customer Portal"
-ticket project 2 update -description "Portal backlog"
-ticket project 2 update -ac "Launch criteria"
-ticket project 2 enable
-ticket project 2 disable
+ticket project CUS update -title "Customer Portal"
+ticket project CUS update -description "Portal backlog"
+ticket project CUS update -ac "Launch criteria"
+ticket project CUS enable
+ticket project CUS disable
 ```
 
-`ticket project list` should show at least the project id, title, and status, and indicate which project is current in the local CLI context.
+`ticket project list` should show at least the project id, prefix, title, and status, and indicate which project is current in the local CLI context.
 
 All `ticket <command> create` commands must return to STDOUT the newly created ID, if they succeed.
 
@@ -392,7 +392,7 @@ ticket list --type bug
 ticket list --status develop/idle
 ticket search "password reset"
 ticket search "password reset" -allprojects
-ticket get 42
+ticket get CUS-T-42
 ticket orphans
 ```
 
@@ -400,7 +400,7 @@ ticket orphans
 
 The CLI should support `-json` on client-facing commands and pretty-print the response JSON.
 
-`ticket get <id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `CloneOf` when present, `ProjectID`, `Title`, `Assignee`, `Order`, `EstimateEffort`, `EstimateComplete`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Acceptance Criteria`, and a `Comments` section ordered most recent first.
+`ticket get <key-or-id>` should print a flat detail view with the fields `ID`, `Type`, `Description`, `ParentID`, `CloneOf` when present, `ProjectID`, `Title`, `Assignee`, `Order`, `EstimateEffort`, `EstimateComplete`, `DependsOn`, `Status`, `Priority`, `Created`, `LastModified`, `Acceptance Criteria`, and a `Comments` section ordered most recent first.
 
 `ticket list` should render a readable table that includes at least the id, type, status, assignee, priority, and title.
 
@@ -419,42 +419,42 @@ The CLI and web app must both support easy lifecycle changes.
 
 Assignment workflows must support:
 
-- `ticket assign <id> <name>` for admins
-- `ticket unassign <id> <name>` for admins
-- `ticket dependency add <id> <dependency-id[,dependency-id...]>`
-- `ticket dependency remove <id> <dependency-id[,dependency-id...]>`
-- `ticket request [<id>]` for the caller
-- `ticket claim` or `ticket claim -id <id>` for the caller
+- `ticket assign <key-or-id> <name>` for admins
+- `ticket unassign <key-or-id> <name>` for admins
+- `ticket dependency add <key-or-id> <dependency-id[,dependency-id...]>`
+- `ticket dependency remove <key-or-id> <dependency-id[,dependency-id...]>`
+- `ticket request [<key-or-id>]` for the caller
+- `ticket claim` or `ticket claim -id <key-or-id>` for the caller
 - `ticket claim -dry-run` for preview without mutation
-- `ticket unclaim <id>` for the caller
-- `ticket attach <id> <parent-id>`
-- `ticket detach <id>`
-- `ticket rm <id>`
-- `ticket delete <id>`
+- `ticket unclaim <key-or-id>` for the caller
+- `ticket attach <key-or-id> <parent-key-or-id>`
+- `ticket detach <key-or-id>`
+- `ticket rm <key-or-id>`
+- `ticket delete <key-or-id>`
 - `ticket list -u <name>` / `ticket ls -u <name>` for assignee filtering
-- `ticket design <id>`
-- `ticket develop <id>`
-- `ticket test <id>`
-- `ticket done <id>`
-- `ticket idle <id>`
-- `ticket active <id>`
-- `ticket complete <id>`
-- `ticket update <id> -status <stage/state>`
-- `ticket update <id> -title <title>`
-- `ticket update <id> -description <description>`
-- `ticket update <id> -ac <acceptance-criteria>`
-- `ticket update <id> -priority <priority>`
-- `ticket update <id> -order <order>`
-- `ticket update <id> -parent_id <parent-id>`
-- `ticket update <id> -estimate_effort <effort>`
-- `ticket update <id> -estimate_complete <rfc3339-datetime>`
+- `ticket design <key-or-id>`
+- `ticket develop <key-or-id>`
+- `ticket test <key-or-id>`
+- `ticket done <key-or-id>`
+- `ticket idle <key-or-id>`
+- `ticket active <key-or-id>`
+- `ticket complete <key-or-id>`
+- `ticket update <key-or-id> -status <stage/state>`
+- `ticket update <key-or-id> -title <title>`
+- `ticket update <key-or-id> -description <description>`
+- `ticket update <key-or-id> -ac <acceptance-criteria>`
+- `ticket update <key-or-id> -priority <priority>`
+- `ticket update <key-or-id> -order <order>`
+- `ticket update <key-or-id> -parent_id <parent-id>`
+- `ticket update <key-or-id> -estimate_effort <effort>`
+- `ticket update <key-or-id> -estimate_complete <rfc3339-datetime>`
 
 Assignment rules:
 
 - the server must reject admin-only assignment calls made by non-admin users
 - `ticket assign` and `ticket unassign` must fail if the named target user does not exist
 - `ticket assign` and `ticket unassign` must fail if the named target user is disabled
-- `ticket request <id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
+- `ticket request <key-or-id>` must return `{"status":"REJECTED"}` when the requested task cannot be assigned
 - `ticket request` must return `{"status":"NO-WORK"}` when no assignable work exists
 - successful request responses must return `{"status":"ASSIGNED","task":...}`
 - if the caller already has an assigned `develop/active` ticket, that ticket is returned
@@ -485,14 +485,14 @@ The first release must include:
 
 1. append-only history events for important changes
 2. comments attached to items
-3. `ticket history <id>` in the CLI for event output
+3. `ticket history <key-or-id>` in the CLI for event output
 4. item detail pages in the web app that surface history and comments
 
 Representative commands:
 
 ```bash
-ticket history 17
-ticket comment add 17 "Waiting on API changes."
+ticket history CUS-T-42
+ticket comment add CUS-T-42 "Waiting on API changes."
 ```
 
 ## CLI Design
@@ -510,15 +510,15 @@ Representative command set:
 
 ```bash
 ticket project create -prefix CUS "Customer Portal"
-ticket project use 2
+ticket project use CUS
 
 ticket epic "Authentication"
 ticket add "Customers can reset their password."
 ticket bug "Reset token expires immediately."
 ticket list
-ticket get 42
+ticket get CUS-T-42
 ticket search "password reset"
-ticket history 42
+ticket history CUS-T-42
 ```
 
 The CLI should support only the aliases that are part of the documented command surface.
