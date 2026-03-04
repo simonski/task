@@ -19,10 +19,14 @@ import (
 )
 
 func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
+	original := selectBannerWord
+	selectBannerWord = func() string { return "TICKET" }
+	defer func() { selectBannerWord = original }()
+
 	usage := renderRootUsage()
 
 	for _, want := range []string{
-		"████████╗",
+		"TTTTTTT",
 		"USAGE",
 		"CLIENT COMMANDS",
 		"ADMIN COMMANDS",
@@ -129,9 +133,15 @@ func TestParseIDListSupportsCommaSeparatedValues(t *testing.T) {
 }
 
 func TestRenderBannerContainsTaskArtAndColors(t *testing.T) {
+	original := selectBannerWord
+	selectBannerWord = func() string { return "TKT" }
+	defer func() { selectBannerWord = original }()
+
 	banner := renderBanner()
-	if !strings.Contains(banner, "████████╗") {
-		t.Fatalf("banner missing TICKET art:\n%s", banner)
+	for _, want := range []string{"TTTTTTT", "KK   KK"} {
+		if !strings.Contains(banner, want) {
+			t.Fatalf("banner missing %q:\n%s", want, banner)
+		}
 	}
 	if !strings.Contains(banner, "\x1b[35m") {
 		t.Fatalf("banner missing rainbow ANSI colors:\n%s", banner)
