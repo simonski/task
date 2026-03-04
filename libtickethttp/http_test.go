@@ -124,8 +124,8 @@ func TestHTTPServiceDeleteTask(t *testing.T) {
 	if err := svc.DeleteTask(task.ID); err != nil {
 		t.Fatalf("DeleteTask() error = %v", err)
 	}
-	if _, err := svc.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) && (err == nil || err.Error() != store.ErrTaskNotFound.Error()) {
-		t.Fatalf("GetTask(deleted) error = %v, want task not found", err)
+	if _, err := svc.GetTask(task.ID); !errors.Is(err, store.ErrTaskNotFound) && (err == nil || err.Error() != "ticket not found") {
+		t.Fatalf("GetTask(deleted) error = %v, want ticket not found", err)
 	}
 }
 

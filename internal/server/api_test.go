@@ -208,7 +208,7 @@ func TestTaskAPI(t *testing.T) {
 	var project store.Project
 	decodeResponse(t, createProjectResp, &project)
 
-	createEpicResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	createEpicResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "epic",
 		"title":      "Authentication",
@@ -219,7 +219,7 @@ func TestTaskAPI(t *testing.T) {
 	var epic store.Task
 	decodeResponse(t, createEpicResp, &epic)
 
-	createTaskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	createTaskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"parent_id":  epic.ID,
 		"type":       "task",
@@ -231,7 +231,7 @@ func TestTaskAPI(t *testing.T) {
 	var task store.Task
 	decodeResponse(t, createTaskResp, &task)
 
-	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks", nil, auth.Token)
+	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tickets", nil, auth.Token)
 	if listResp.Code != http.StatusOK {
 		t.Fatalf("list tasks status = %d", listResp.Code)
 	}
@@ -241,7 +241,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("tasks len = %d, want 2", len(tasks))
 	}
 
-	limitedResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?limit=1", nil, auth.Token)
+	limitedResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tickets?limit=1", nil, auth.Token)
 	if limitedResp.Code != http.StatusOK {
 		t.Fatalf("limited list tasks status = %d body=%s", limitedResp.Code, limitedResp.Body.String())
 	}
@@ -251,7 +251,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("limited tasks len = %d, want 1", len(limitedTasks))
 	}
 
-	assignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	assignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"parent_id":   epic.ID,
@@ -262,7 +262,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("assign task status = %d body=%s", assignResp.Code, assignResp.Body.String())
 	}
 
-	updateResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	updateResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       "Add password reset flow",
 		"description": "Email reset support",
 		"parent_id":   epic.ID,
@@ -273,7 +273,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("update task status = %d body=%s", updateResp.Code, updateResp.Body.String())
 	}
 
-	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
+	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
 	if getResp.Code != http.StatusOK {
 		t.Fatalf("get task status = %d body=%s", getResp.Code, getResp.Body.String())
 	}
@@ -283,7 +283,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("updated status = %q, want develop/active", updated.Status)
 	}
 
-	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks?type=task&status=develop/active&q=password", nil, auth.Token)
+	filteredResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tickets?type=task&status=develop/active&q=password", nil, auth.Token)
 	if filteredResp.Code != http.StatusOK {
 		t.Fatalf("filtered list status = %d body=%s", filteredResp.Code, filteredResp.Body.String())
 	}
@@ -293,7 +293,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("filtered tasks = %#v", filtered)
 	}
 
-	historyResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/history", nil, auth.Token)
+	historyResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+strconv.FormatInt(task.ID, 10)+"/history", nil, auth.Token)
 	if historyResp.Code != http.StatusOK {
 		t.Fatalf("history status = %d body=%s", historyResp.Code, historyResp.Body.String())
 	}
@@ -303,14 +303,14 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("history events = %#v", events)
 	}
 
-	commentResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/comments", map[string]string{
+	commentResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/"+strconv.FormatInt(task.ID, 10)+"/comments", map[string]string{
 		"comment": "Waiting on API changes.",
 	}, auth.Token)
 	if commentResp.Code != http.StatusCreated {
 		t.Fatalf("comment status = %d body=%s", commentResp.Code, commentResp.Body.String())
 	}
 
-	commentsResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/comments", nil, auth.Token)
+	commentsResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+strconv.FormatInt(task.ID, 10)+"/comments", nil, auth.Token)
 	if commentsResp.Code != http.StatusOK {
 		t.Fatalf("comments status = %d body=%s", commentsResp.Code, commentsResp.Body.String())
 	}
@@ -329,7 +329,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("dependency create status = %d body=%s", dependencyCreateResp.Code, dependencyCreateResp.Body.String())
 	}
 
-	dependencyResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10)+"/dependencies", nil, auth.Token)
+	dependencyResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+strconv.FormatInt(task.ID, 10)+"/dependencies", nil, auth.Token)
 	if dependencyResp.Code != http.StatusOK {
 		t.Fatalf("dependency status = %d body=%s", dependencyResp.Code, dependencyResp.Body.String())
 	}
@@ -339,7 +339,7 @@ func TestTaskAPI(t *testing.T) {
 		t.Fatalf("dependencies empty")
 	}
 
-	bugResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	bugResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "bug",
 		"title":      "Password reset email is not sent",
@@ -481,7 +481,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 	var project store.Project
 	decodeResponse(t, createProjectResp, &project)
 
-	createTaskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	createTaskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "task",
 		"title":      "Add reset flow",
@@ -505,7 +505,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 		t.Fatalf("count payload types = %#v", countPayload.Types)
 	}
 
-	claimResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	claimResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "alice",
@@ -531,7 +531,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 	}
 	decodeResponse(t, bobLogin, &bobAuth)
 
-	claimConflictResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	claimConflictResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "bob",
@@ -546,7 +546,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 		t.Fatalf("claim conflict payload = %#v", claimConflictPayload)
 	}
 
-	overrideResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	overrideResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "charlie",
@@ -561,7 +561,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 		t.Fatalf("override payload = %#v", overridePayload)
 	}
 
-	missingAssignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	missingAssignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "nobody",
@@ -580,7 +580,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 	if disableAliceResp.Code != http.StatusOK {
 		t.Fatalf("disable alice status = %d, want %d body=%s", disableAliceResp.Code, http.StatusOK, disableAliceResp.Body.String())
 	}
-	disabledAssignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	disabledAssignResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "alice",
@@ -595,7 +595,7 @@ func TestCountAPIAndAssignmentRules(t *testing.T) {
 		t.Fatalf("disabled assign payload = %#v", disabledAssignPayload)
 	}
 
-	statusForbiddenResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(task.ID, 10), map[string]any{
+	statusForbiddenResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(task.ID, 10), map[string]any{
 		"title":       task.Title,
 		"description": task.Description,
 		"assignee":    "",
@@ -641,7 +641,7 @@ func TestTaskRequestAPI(t *testing.T) {
 	var project store.Project
 	decodeResponse(t, projectResp, &project)
 
-	notReadyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	notReadyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "task",
 		"title":      "Not ready task",
@@ -650,7 +650,7 @@ func TestTaskRequestAPI(t *testing.T) {
 	var notReady store.Task
 	decodeResponse(t, notReadyResp, &notReady)
 
-	openResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	openResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "task",
 		"title":      "Open task",
@@ -659,7 +659,7 @@ func TestTaskRequestAPI(t *testing.T) {
 	var openTask store.Task
 	decodeResponse(t, openResp, &openTask)
 
-	requestAnyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+	requestAnyResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/claim", map[string]any{
 		"project_id": project.ID,
 	}, aliceAuth.Token)
 	if requestAnyResp.Code != http.StatusOK {
@@ -674,7 +674,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		t.Fatalf("request any payload = %#v", requestAnyPayload)
 	}
 
-	requestSpecificResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+	requestSpecificResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/claim", map[string]any{
 		"project_id": project.ID,
 		"task_id":    notReady.ID,
 	}, aliceAuth.Token)
@@ -690,7 +690,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		t.Fatalf("request specific payload = %#v", requestSpecificPayload)
 	}
 
-	inProgressResp := doJSONRequest(t, handler, http.MethodPut, "/api/tasks/"+strconv.FormatInt(openTask.ID, 10), map[string]any{
+	inProgressResp := doJSONRequest(t, handler, http.MethodPut, "/api/tickets/"+strconv.FormatInt(openTask.ID, 10), map[string]any{
 		"title":       openTask.Title,
 		"description": openTask.Description,
 		"assignee":    "alice",
@@ -716,7 +716,7 @@ func TestTaskRequestAPI(t *testing.T) {
 	}
 	decodeResponse(t, bobLogin, &bobAuth)
 
-	rejectedResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+	rejectedResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/claim", map[string]any{
 		"project_id": project.ID,
 		"task_id":    notReady.ID,
 	}, bobAuth.Token)
@@ -729,7 +729,7 @@ func TestTaskRequestAPI(t *testing.T) {
 		t.Fatalf("request rejected payload = %#v", rejectedPayload)
 	}
 
-	noWorkResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/request", map[string]any{
+	noWorkResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/claim", map[string]any{
 		"project_id": project.ID,
 	}, bobAuth.Token)
 	if noWorkResp.Code != http.StatusOK {
@@ -761,7 +761,7 @@ func TestCloneTaskAPI(t *testing.T) {
 	var project store.Project
 	decodeResponse(t, projectResp, &project)
 
-	epicResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	epicResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"type":       "epic",
 		"title":      "Epic",
@@ -769,7 +769,7 @@ func TestCloneTaskAPI(t *testing.T) {
 	var epic store.Task
 	decodeResponse(t, epicResp, &epic)
 
-	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": project.ID,
 		"parent_id":  epic.ID,
 		"type":       "task",
@@ -780,7 +780,7 @@ func TestCloneTaskAPI(t *testing.T) {
 	var child store.Task
 	decodeResponse(t, childResp, &child)
 
-	cloneResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks/"+strconv.FormatInt(epic.ID, 10)+"/clone", nil, auth.Token)
+	cloneResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets/"+strconv.FormatInt(epic.ID, 10)+"/clone", nil, auth.Token)
 	if cloneResp.Code != http.StatusCreated {
 		t.Fatalf("clone status = %d, want %d body=%s", cloneResp.Code, http.StatusCreated, cloneResp.Body.String())
 	}
@@ -790,7 +790,7 @@ func TestCloneTaskAPI(t *testing.T) {
 		t.Fatalf("cloned epic = %#v", clonedEpic)
 	}
 
-	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tasks", nil, auth.Token)
+	listResp := doJSONRequest(t, handler, http.MethodGet, "/api/projects/"+strconv.FormatInt(project.ID, 10)+"/tickets", nil, auth.Token)
 	var tasks []store.Task
 	decodeResponse(t, listResp, &tasks)
 	var clonedChild *store.Task
@@ -821,7 +821,7 @@ func TestDeleteTaskAPI(t *testing.T) {
 	}
 	decodeResponse(t, loginResp, &auth)
 
-	taskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	taskResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": 1,
 		"type":       "task",
 		"title":      "Delete me",
@@ -829,12 +829,12 @@ func TestDeleteTaskAPI(t *testing.T) {
 	var task store.Task
 	decodeResponse(t, taskResp, &task)
 
-	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
+	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tickets/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
 	if deleteResp.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, want %d body=%s", deleteResp.Code, http.StatusOK, deleteResp.Body.String())
 	}
 
-	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
+	getResp := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/"+strconv.FormatInt(task.ID, 10), nil, auth.Token)
 	if getResp.Code != http.StatusNotFound {
 		t.Fatalf("get deleted status = %d, want %d body=%s", getResp.Code, http.StatusNotFound, getResp.Body.String())
 	}
@@ -853,7 +853,7 @@ func TestDeleteTaskAPIFailsWhenTaskHasChildren(t *testing.T) {
 	}
 	decodeResponse(t, loginResp, &auth)
 
-	parentResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	parentResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": 1,
 		"type":       "epic",
 		"title":      "Parent",
@@ -861,7 +861,7 @@ func TestDeleteTaskAPIFailsWhenTaskHasChildren(t *testing.T) {
 	var parent store.Task
 	decodeResponse(t, parentResp, &parent)
 
-	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tasks", map[string]any{
+	childResp := doJSONRequest(t, handler, http.MethodPost, "/api/tickets", map[string]any{
 		"project_id": 1,
 		"parent_id":  parent.ID,
 		"type":       "task",
@@ -871,7 +871,7 @@ func TestDeleteTaskAPIFailsWhenTaskHasChildren(t *testing.T) {
 		t.Fatalf("child create status = %d body=%s", childResp.Code, childResp.Body.String())
 	}
 
-	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tasks/"+strconv.FormatInt(parent.ID, 10), nil, auth.Token)
+	deleteResp := doJSONRequest(t, handler, http.MethodDelete, "/api/tickets/"+strconv.FormatInt(parent.ID, 10), nil, auth.Token)
 	if deleteResp.Code != http.StatusBadRequest {
 		t.Fatalf("delete parent status = %d, want %d body=%s", deleteResp.Code, http.StatusBadRequest, deleteResp.Body.String())
 	}
@@ -918,7 +918,7 @@ func TestAPIInvalidJSONAndBadParams(t *testing.T) {
 		t.Fatalf("count bad project_id code = %d, want %d", badCount.Code, http.StatusBadRequest)
 	}
 
-	badTask := doJSONRequest(t, handler, http.MethodGet, "/api/tasks/not-a-number", nil, auth.Token)
+	badTask := doJSONRequest(t, handler, http.MethodGet, "/api/tickets/not-a-number", nil, auth.Token)
 	if badTask.Code != http.StatusNotFound {
 		t.Fatalf("task bad id code = %d, want %d", badTask.Code, http.StatusNotFound)
 	}

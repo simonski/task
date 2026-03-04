@@ -278,7 +278,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 		trimmed := strings.TrimPrefix(r.URL.Path, "/api/projects/")
 		parts := strings.Split(trimmed, "/")
-		if len(parts) == 2 && (parts[1] == "tasks" || parts[1] == "tickets") && r.Method == http.MethodGet {
+		if len(parts) == 2 && parts[1] == "tickets" && r.Method == http.MethodGet {
 			project, err := store.GetProject(db, parts[0])
 			if err != nil {
 				if errors.Is(err, store.ErrProjectNotFound) {
@@ -397,7 +397,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		}
 	})
 
-	handleTasksCollection := func(w http.ResponseWriter, r *http.Request) {
+	handleTicketsCollection := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -407,27 +407,27 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeAuthError(w, err)
 			return
 		}
-		var taskPayload taskRequest
-		if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
+		var ticketPayload ticketRequest
+		if err := json.NewDecoder(r.Body).Decode(&ticketPayload); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
+		stage, state, err := resolveLifecycleRequest(ticketPayload.Status, ticketPayload.Stage, ticketPayload.State)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		task, err := store.CreateTask(db, store.TaskCreateParams{
-			ProjectID:          taskPayload.ProjectID,
-			ParentID:           taskPayload.ParentID,
-			Type:               taskPayload.Type,
-			Title:              taskPayload.Title,
-			Description:        taskPayload.Description,
-			AcceptanceCriteria: taskPayload.AcceptanceCriteria,
-			Priority:           taskPayload.Priority,
-			EstimateEffort:     taskPayload.EstimateEffort,
-			EstimateComplete:   taskPayload.EstimateComplete,
-			Assignee:           taskPayload.Assignee,
+		ticket, err := store.CreateTask(db, store.TaskCreateParams{
+			ProjectID:          ticketPayload.ProjectID,
+			ParentID:           ticketPayload.ParentID,
+			Type:               ticketPayload.Type,
+			Title:              ticketPayload.Title,
+			Description:        ticketPayload.Description,
+			AcceptanceCriteria: ticketPayload.AcceptanceCriteria,
+			Priority:           ticketPayload.Priority,
+			EstimateEffort:     ticketPayload.EstimateEffort,
+			EstimateComplete:   ticketPayload.EstimateComplete,
+			Assignee:           ticketPayload.Assignee,
 			Stage:              stage,
 			State:              state,
 			CreatedBy:          user.ID,
@@ -436,12 +436,11 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusCreated, task)
+		writeJSON(w, http.StatusCreated, ticket)
 	}
-	mux.HandleFunc("/api/tasks", handleTasksCollection)
-	mux.HandleFunc("/api/tickets", handleTasksCollection)
+	mux.HandleFunc("/api/tickets", handleTicketsCollection)
 
-	handleTaskRequest := func(w http.ResponseWriter, r *http.Request) {
+	handleTicketClaim := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
@@ -451,18 +450,26 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			writeAuthError(w, err)
 			return
 		}
-		var assignmentRequest taskAssignRequest
-		if err := json.NewDecoder(r.Body).Decode(&assignmentRequest); err != nil {
+		var claimRequest ticketClaimRequest
+		if err := json.NewDecoder(r.Body).Decode(&claimRequest); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		task, status, err := store.RequestTask(db, store.TaskRequestParams{
-			ProjectID: assignmentRequest.ProjectID,
-			TaskID:    assignmentRequest.TaskID,
-			TaskRef:   assignmentRequest.TaskRef,
+		ticketID := claimRequest.TicketID
+		if ticketID == nil {
+			ticketID = claimRequest.TaskID
+		}
+		ticketRef := strings.TrimSpace(claimRequest.TicketRef)
+		if ticketRef == "" {
+			ticketRef = strings.TrimSpace(claimRequest.TaskRef)
+		}
+		ticket, status, err := store.RequestTask(db, store.TaskRequestParams{
+			ProjectID: claimRequest.ProjectID,
+			TaskID:    ticketID,
+			TaskRef:   ticketRef,
 			Username:  user.Username,
 			UserID:    user.ID,
-			DryRun:    assignmentRequest.DryRun,
+			DryRun:    claimRequest.DryRun,
 		})
 		if err != nil {
 			if errors.Is(err, store.ErrTaskNotFound) {
@@ -474,15 +481,14 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 		}
 		payload := map[string]any{"status": status}
 		if status == "ASSIGNED" || status == "AVAILABLE" {
-			payload["task"] = task
+			payload["task"] = ticket
+			payload["ticket"] = ticket
 		}
 		writeJSON(w, http.StatusOK, payload)
 	}
-	mux.HandleFunc("/api/tasks/request", handleTaskRequest)
-	mux.HandleFunc("/api/tickets/request", handleTaskRequest)
-	mux.HandleFunc("/api/tickets/claim", handleTaskRequest)
+	mux.HandleFunc("/api/tickets/claim", handleTicketClaim)
 
-	handleTaskByRef := func(pathPrefix string) http.HandlerFunc {
+	handleTicketByRef := func(pathPrefix string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			user, err := requireUser(db, r)
 			if err != nil {
@@ -492,12 +498,12 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 			trimmed := strings.TrimPrefix(r.URL.Path, pathPrefix)
 			parts := strings.Split(trimmed, "/")
-			taskRef, err := store.GetTaskByRef(db, parts[0])
+			ticketRef, err := store.GetTaskByRef(db, parts[0])
 			if err != nil {
-				writeError(w, http.StatusNotFound, "task not found")
+				writeError(w, http.StatusNotFound, "ticket not found")
 				return
 			}
-			id := taskRef.ID
+			id := ticketRef.ID
 
 			if len(parts) == 2 && parts[1] == "history" && r.Method == http.MethodGet {
 				events, err := store.ListHistoryEvents(db, id)
@@ -529,10 +535,10 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 						writeError(w, http.StatusBadRequest, err.Error())
 						return
 					}
-					task, err := store.GetTask(db, id)
+					ticket, err := store.GetTask(db, id)
 					if err == nil {
-						_ = store.AddHistoryEvent(db, task.ProjectID, id, "comment_added", map[string]any{
-							"key":        task.Key,
+						_ = store.AddHistoryEvent(db, ticket.ProjectID, id, "comment_added", map[string]any{
+							"key":        ticket.Key,
 							"comment_id": comment.ID,
 						}, user.ID)
 					}
@@ -569,7 +575,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 
 			switch r.Method {
 			case http.MethodGet:
-				task, err := store.GetTask(db, id)
+				ticket, err := store.GetTask(db, id)
 				if err != nil {
 					if errors.Is(err, store.ErrTaskNotFound) {
 						writeError(w, http.StatusNotFound, err.Error())
@@ -578,30 +584,30 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 					writeError(w, http.StatusInternalServerError, err.Error())
 					return
 				}
-				writeJSON(w, http.StatusOK, task)
+				writeJSON(w, http.StatusOK, ticket)
 			case http.MethodPut:
-				var taskPayload taskRequest
-				if err := json.NewDecoder(r.Body).Decode(&taskPayload); err != nil {
+				var ticketPayload ticketRequest
+				if err := json.NewDecoder(r.Body).Decode(&ticketPayload); err != nil {
 					writeError(w, http.StatusBadRequest, "invalid json body")
 					return
 				}
-				stage, state, err := resolveLifecycleRequest(taskPayload.Status, taskPayload.Stage, taskPayload.State)
+				stage, state, err := resolveLifecycleRequest(ticketPayload.Status, ticketPayload.Stage, ticketPayload.State)
 				if err != nil {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				task, err := store.UpdateTask(db, id, store.TaskUpdateParams{
-					Title:              taskPayload.Title,
-					Description:        taskPayload.Description,
-					AcceptanceCriteria: taskPayload.AcceptanceCriteria,
-					ParentID:           taskPayload.ParentID,
-					Assignee:           taskPayload.Assignee,
+				ticket, err := store.UpdateTask(db, id, store.TaskUpdateParams{
+					Title:              ticketPayload.Title,
+					Description:        ticketPayload.Description,
+					AcceptanceCriteria: ticketPayload.AcceptanceCriteria,
+					ParentID:           ticketPayload.ParentID,
+					Assignee:           ticketPayload.Assignee,
 					Stage:              stage,
 					State:              state,
-					Priority:           taskPayload.Priority,
-					Order:              taskPayload.Order,
-					EstimateEffort:     taskPayload.EstimateEffort,
-					EstimateComplete:   taskPayload.EstimateComplete,
+					Priority:           ticketPayload.Priority,
+					Order:              ticketPayload.Order,
+					EstimateEffort:     ticketPayload.EstimateEffort,
+					EstimateComplete:   ticketPayload.EstimateComplete,
 					UpdatedBy:          user.ID,
 					ActorUsername:      user.Username,
 					ActorRole:          user.Role,
@@ -618,7 +624,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 					writeError(w, http.StatusBadRequest, err.Error())
 					return
 				}
-				writeJSON(w, http.StatusOK, task)
+				writeJSON(w, http.StatusOK, ticket)
 			case http.MethodDelete:
 				if err := store.DeleteTask(db, id); err != nil {
 					if errors.Is(err, store.ErrTaskNotFound) {
@@ -638,8 +644,7 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 			}
 		}
 	}
-	mux.HandleFunc("/api/tasks/", handleTaskByRef("/api/tasks/"))
-	mux.HandleFunc("/api/tickets/", handleTaskByRef("/api/tickets/"))
+	mux.HandleFunc("/api/tickets/", handleTicketByRef("/api/tickets/"))
 
 	mux.HandleFunc("/api/dependencies", func(w http.ResponseWriter, r *http.Request) {
 		user, err := requireUser(db, r)
@@ -702,7 +707,7 @@ type projectRequest struct {
 	Notes              string `json:"notes"`
 }
 
-type taskRequest struct {
+type ticketRequest struct {
 	ProjectID          int64  `json:"project_id"`
 	ParentID           *int64 `json:"parent_id"`
 	Type               string `json:"type"`
@@ -729,10 +734,12 @@ type dependencyRequest struct {
 	DependsOn int64 `json:"depends_on"`
 }
 
-type taskAssignRequest struct {
+type ticketClaimRequest struct {
 	ProjectID int64  `json:"project_id"`
-	TaskID    *int64 `json:"task_id"`
-	TaskRef   string `json:"task_ref"`
+	TicketID  *int64 `json:"ticket_id,omitempty"`
+	TicketRef string `json:"ticket_ref,omitempty"`
+	TaskID    *int64 `json:"task_id,omitempty"`
+	TaskRef   string `json:"task_ref,omitempty"`
 	DryRun    bool   `json:"dry_run"`
 }
 

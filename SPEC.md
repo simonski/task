@@ -464,8 +464,8 @@ Current route notes:
 
 - `/api/tickets`, `/api/tickets/...`, and `/api/projects/{id}/tickets` are the
   preferred ticket-first routes
-- `/api/tasks`, `/api/tasks/...`, and `/api/projects/{id}/tasks` remain
-  accepted as compatibility aliases
+- the old `/api/tasks` route family has been removed from the supported
+  external contract
 
 API responses should include:
 

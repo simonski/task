@@ -250,7 +250,7 @@
   <body>
     <main>
       <section class="card">
-        <h1>task</h1>
+        <h1>ticket</h1>
         <p>A lightweight ticket and project management system.</p>
         <p>The backend is running. Authentication is available through the same API used by the CLI.</p>
         <div class="status" id="status">Checking server status...</div>
@@ -271,21 +271,22 @@
             <button class="secondary" type="button" id="refresh-projects">Refresh Projects</button>
           </div>
           <form id="project-form">
+            <input id="project-prefix" name="project-prefix" placeholder="Prefix (e.g. CUS)" required />
             <input id="project-title" name="project-title" placeholder="New project title" required />
             <input id="project-description" name="project-description" placeholder="Description (optional)" />
             <button type="submit">Create Project</button>
           </form>
-          <form id="task-form">
+          <form id="ticket-form">
             <select id="task-type">
               <option value="task">Task</option>
               <option value="epic">Epic</option>
               <option value="bug">Bug</option>
-              <option value="note">Note</option>
-              <option value="question">Question</option>
+              <option value="spike">Spike</option>
+              <option value="chore">Chore</option>
             </select>
             <input id="task-title" name="task-title" placeholder="New work item title" required />
             <input id="task-description" name="task-description" placeholder="Description (optional)" />
-            <button type="submit">Create Item</button>
+            <button type="submit">Create Ticket</button>
           </form>
           <div class="row" style="margin-top: 1rem;">
             <select id="filter-type">
@@ -293,17 +294,20 @@
               <option value="task">Task</option>
               <option value="epic">Epic</option>
               <option value="bug">Bug</option>
-              <option value="note">Note</option>
-              <option value="question">Question</option>
+              <option value="spike">Spike</option>
+              <option value="chore">Chore</option>
             </select>
             <select id="filter-status">
               <option value="">All statuses</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="blocked">Blocked</option>
-              <option value="done">Done</option>
+              <option value="design/idle">Design / Idle</option>
+              <option value="design/active">Design / Active</option>
+              <option value="develop/idle">Develop / Idle</option>
+              <option value="develop/active">Develop / Active</option>
+              <option value="test/idle">Test / Idle</option>
+              <option value="test/active">Test / Active</option>
+              <option value="done/complete">Done / Complete</option>
             </select>
-            <input id="filter-search" placeholder="Search tasks" />
+            <input id="filter-search" placeholder="Search tickets" />
             <button class="secondary" type="button" id="apply-filters">Filter</button>
           </div>
           <div class="row view-tabs">
@@ -317,7 +321,7 @@
               <div class="board" id="task-board" hidden></div>
               <div class="hierarchy" id="task-hierarchy" hidden></div>
             </div>
-            <div class="detail-card" id="task-detail">Select a task to inspect and update it.</div>
+            <div class="detail-card" id="task-detail">Select a ticket to inspect and update it.</div>
           </div>
         </section>
       </section>
@@ -329,7 +333,7 @@
       const projectSelect = document.getElementById("project-select");
       const refreshProjectsButton = document.getElementById("refresh-projects");
       const projectForm = document.getElementById("project-form");
-      const taskForm = document.getElementById("task-form");
+      const taskForm = document.getElementById("ticket-form");
       const taskList = document.getElementById("task-list");
       const taskBoard = document.getElementById("task-board");
       const taskHierarchy = document.getElementById("task-hierarchy");
@@ -352,7 +356,7 @@
         });
         const data = await response.json();
         if (!data.authenticated) {
-          statusEl.textContent = "Not authenticated. Log in to start using task.";
+          statusEl.textContent = "Not authenticated. Log in to start using ticket.";
           renderProjects([]);
           return;
         }
@@ -396,7 +400,7 @@
         localStorage.removeItem("task-token");
         localStorage.removeItem("task-project");
         localStorage.removeItem("task-view");
-        statusEl.textContent = "Not authenticated. Log in to start using task.";
+        statusEl.textContent = "Not authenticated. Log in to start using ticket.";
         renderProjects([]);
         renderTasks([]);
         renderBoard([]);
@@ -440,6 +444,7 @@
             ...authHeaders(),
           },
           body: JSON.stringify({
+            prefix: document.getElementById("project-prefix").value,
             title: document.getElementById("project-title").value,
             description: document.getElementById("project-description").value,
           }),
@@ -466,7 +471,7 @@
           headers: authHeaders(),
         });
         const project = await projectsResponse.json();
-        const response = await fetch("/api/tasks", {
+        const response = await fetch("/api/tickets", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -481,7 +486,7 @@
         });
         const data = await response.json();
         if (!response.ok) {
-          statusEl.textContent = data.error || "Task creation failed.";
+          statusEl.textContent = data.error || "Ticket creation failed.";
           return;
         }
         taskForm.reset();
@@ -506,7 +511,7 @@
         for (const project of projects) {
           const option = document.createElement("option");
           option.value = String(project.project_id);
-          option.textContent = `${project.project_id}: ${project.title}`;
+          option.textContent = `${project.prefix || project.project_id}: ${project.title}`;
           if (String(project.project_id) === current) {
             option.selected = true;
           }
@@ -528,7 +533,7 @@
         if (filterStatus.value) params.set("status", filterStatus.value);
         if (filterSearch.value.trim()) params.set("q", filterSearch.value.trim());
         const suffix = params.toString() ? `?${params.toString()}` : "";
-        const response = await fetch(`/api/projects/${currentProject}/tasks${suffix}`, {
+        const response = await fetch(`/api/projects/${currentProject}/tickets${suffix}`, {
           headers: authHeaders(),
         });
         if (!response.ok) {
@@ -574,16 +579,16 @@
 
       function renderBoard(tasks) {
         const statuses = [
-          ["open", "Open"],
-          ["in_progress", "In Progress"],
-          ["blocked", "Blocked"],
+          ["design", "Design"],
+          ["develop", "Develop"],
+          ["test", "Test"],
           ["done", "Done"],
         ];
         taskBoard.innerHTML = "";
         for (const [status, label] of statuses) {
           const column = document.createElement("section");
           column.className = "board-column";
-          const items = tasks.filter((task) => task.status === status);
+          const items = tasks.filter((task) => task.stage === status);
           column.innerHTML = `<h3>${label}</h3>`;
           if (items.length === 0) {
             const empty = document.createElement("div");
@@ -676,7 +681,7 @@
 
       function renderTaskDetail(task) {
         if (!task) {
-          taskDetail.innerHTML = "Select a task to inspect and update it.";
+          taskDetail.innerHTML = "Select a ticket to inspect and update it.";
           return;
         }
         taskDetail.innerHTML = `
@@ -685,10 +690,13 @@
           <form id="task-detail-form">
             <input id="detail-title" value="${escapeHtml(task.title)}" />
             <input id="detail-description" value="${escapeHtml(task.description || "")}" />
-            <select id="detail-status">
-              ${["open", "in_progress", "blocked", "done"].map((status) => `<option value="${status}" ${task.status === status ? "selected" : ""}>${status}</option>`).join("")}
+            <select id="detail-stage">
+              ${["design", "develop", "test", "done"].map((stage) => `<option value="${stage}" ${task.stage === stage ? "selected" : ""}>${stage}</option>`).join("")}
             </select>
-            <button type="submit">Save Task</button>
+            <select id="detail-state">
+              ${["idle", "active", "complete"].filter((state) => task.stage !== "done" || state === "complete").map((state) => `<option value="${state}" ${task.state === state ? "selected" : ""}>${state}</option>`).join("")}
+            </select>
+            <button type="submit">Save Ticket</button>
           </form>
           <form id="comment-form">
             <input id="comment-text" placeholder="Add a comment" />
@@ -699,7 +707,7 @@
         `;
         document.getElementById("task-detail-form").addEventListener("submit", async (event) => {
           event.preventDefault();
-          const response = await fetch(`/api/tasks/${task.task_id}`, {
+          const response = await fetch(`/api/tickets/${task.task_id}`, {
             method: "PUT",
             headers: {
               "Content-Type": "application/json",
@@ -709,12 +717,13 @@
               title: document.getElementById("detail-title").value,
               description: document.getElementById("detail-description").value,
               parent_id: task.parent_id,
-              status: document.getElementById("detail-status").value,
+              stage: document.getElementById("detail-stage").value,
+              state: document.getElementById("detail-state").value,
             }),
           });
           const data = await response.json();
           if (!response.ok) {
-            statusEl.textContent = data.error || "Task update failed.";
+            statusEl.textContent = data.error || "Ticket update failed.";
             return;
           }
           localStorage.setItem("task-selected", String(data.task_id));
@@ -722,7 +731,7 @@
         });
         document.getElementById("comment-form").addEventListener("submit", async (event) => {
           event.preventDefault();
-          const response = await fetch(`/api/tasks/${task.task_id}/comments`, {
+          const response = await fetch(`/api/tickets/${task.task_id}/comments`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -772,8 +781,8 @@
 
       async function loadTaskActivity(taskID) {
         const [historyResponse, commentsResponse] = await Promise.all([
-          fetch(`/api/tasks/${taskID}/history`, { headers: authHeaders() }),
-          fetch(`/api/tasks/${taskID}/comments`, { headers: authHeaders() }),
+          fetch(`/api/tickets/${taskID}/history`, { headers: authHeaders() }),
+          fetch(`/api/tickets/${taskID}/comments`, { headers: authHeaders() }),
         ]);
         const history = historyResponse.ok ? await historyResponse.json() : [];
         const comments = commentsResponse.ok ? await commentsResponse.json() : [];

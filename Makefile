@@ -1,4 +1,4 @@
-.PHONY: help default build tools bump-version test test-go test-go-cover test-playwright clean
+.PHONY: help default build tools bump-version test test-go test-go-cover test-unit test-integration test-playwright clean
 
 VERSION_FILE := cmd/ticket/VERSION
 
@@ -11,6 +11,8 @@ help:
 	@printf "  make tools           Build helper binaries in the repo root.\n"
 	@printf "  make test            Run all tests.\n"
 	@printf "  make test-go         Run Go tests.\n"
+	@printf "  make test-unit       Run unit-oriented Go test packages.\n"
+	@printf "  make test-integration Run integration-oriented Go test packages.\n"
 	@printf "  make test-go-cover   Run Go tests with package coverage thresholds.\n"
 	@printf "  make test-playwright Run browser/frontend smoke checks.\n"
 	@printf "  make clean           Remove built binaries from ./bin.\n"
@@ -43,10 +45,19 @@ bump-version:
 		printf "%s.%s.%s\n" "$$major" "$$minor" "$$patch" > "$(VERSION_FILE)"; \
 	fi
 
-test: test-go test-playwright
+UNIT_TEST_PKGS := ./internal/config ./internal/password ./tools/parser ./tools/wiggum ./web
+INTEGRATION_TEST_PKGS := ./cmd/ticket ./internal/client ./internal/server ./internal/store ./libticket ./libtickethttp
+
+test: test-unit test-integration test-playwright
 
 test-go:
 	go test ./...
+
+test-unit:
+	go test $(UNIT_TEST_PKGS)
+
+test-integration:
+	go test $(INTEGRATION_TEST_PKGS)
 
 test-go-cover:
 	@set -e; \
@@ -74,7 +85,9 @@ test-go-cover:
 	done
 
 test-playwright:
-	@printf "No Playwright tests implemented yet; frontend smoke checks are deferred.\n"
+	npm install
+	npx playwright install chromium
+	npx playwright test
 
 clean:
 	@rm -rf bin

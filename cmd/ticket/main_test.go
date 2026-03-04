@@ -1313,8 +1313,8 @@ func TestRunDeleteTaskInLocalMode(t *testing.T) {
 	if !strings.Contains(output, "deleted ticket ") {
 		t.Fatalf("delete output = %q", output)
 	}
-	if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err == nil || err.Error() != "task not found" {
-		t.Fatalf("get deleted task error = %v, want task not found", err)
+	if err := run([]string{"get", strconv.FormatInt(taskID, 10)}); err == nil || err.Error() != "ticket not found" {
+		t.Fatalf("get deleted task error = %v, want ticket not found", err)
 	}
 }
 
@@ -1511,14 +1511,14 @@ func TestRunNegativeCommandCasesInLocalMode(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"get", "abc"}, "task not found"},
-		{[]string{"dependency", "add", "1", "abc"}, "task not found"},
-		{[]string{"request", "abc"}, "task not found"},
+		{[]string{"get", "abc"}, "ticket not found"},
+		{[]string{"dependency", "add", "1", "abc"}, "ticket not found"},
+		{[]string{"request", "abc"}, "ticket not found"},
 		{[]string{"project", "get"}, "usage: ticket project get <id>"},
 		{[]string{"list", "-n", "-1"}, "usage: ticket list|ls"},
 		{[]string{"comment", "add", "1"}, "usage: ticket comment add <id> \"comment\""},
-		{[]string{"set-parent", "1", "abc"}, "task not found"},
-		{[]string{"unset-parent", "abc"}, "task not found"},
+		{[]string{"set-parent", "1", "abc"}, "ticket not found"},
+		{[]string{"unset-parent", "abc"}, "ticket not found"},
 	}
 	for _, tc := range cases {
 		t.Run(strings.Join(tc.args, "_"), func(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrTaskNotFound    = errors.New("task not found")
+	ErrTaskNotFound    = errors.New("ticket not found")
 	ErrTaskHasChildren = errors.New("task has child tasks")
 )
 
@@ -101,10 +101,10 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 		return Task{}, errors.New("project is required")
 	}
 	if params.Title == "" {
-		return Task{}, errors.New("task title is required")
+		return Task{}, errors.New("ticket title is required")
 	}
 	if !validTaskType(params.Type) {
-		return Task{}, fmt.Errorf("invalid task type %q", params.Type)
+		return Task{}, fmt.Errorf("invalid ticket type %q", params.Type)
 	}
 	if params.ParentID != nil {
 		parent, err := GetTask(db, *params.ParentID)
@@ -112,7 +112,7 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 			return Task{}, err
 		}
 		if parent.ProjectID != params.ProjectID {
-			return Task{}, errors.New("parent task must be in the same project")
+			return Task{}, errors.New("parent ticket must be in the same project")
 		}
 		if err := validateTaskParenting(parent.Type, params.Type); err != nil {
 			return Task{}, err
@@ -187,7 +187,7 @@ func CreateTask(db *sql.DB, params TaskCreateParams) (Task, error) {
 func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 	title := strings.TrimSpace(params.Title)
 	if title == "" {
-		return Task{}, errors.New("task title is required")
+		return Task{}, errors.New("ticket title is required")
 	}
 	if err := validateEstimateComplete(params.EstimateComplete); err != nil {
 		return Task{}, err
@@ -206,10 +206,10 @@ func UpdateTask(db *sql.DB, id int64, params TaskUpdateParams) (Task, error) {
 			return Task{}, err
 		}
 		if parent.ID == current.ID {
-			return Task{}, errors.New("cannot set task as its own parent")
+			return Task{}, errors.New("cannot set ticket as its own parent")
 		}
 		if parent.ProjectID != current.ProjectID {
-			return Task{}, errors.New("parent task must be in the same project")
+			return Task{}, errors.New("parent ticket must be in the same project")
 		}
 		if err := validateTaskParenting(parent.Type, current.Type); err != nil {
 			return Task{}, err

@@ -6,3 +6,6 @@ task
 parser
 task.db
 ticket.db
+node_modules/
+playwright-report/
+test-results/
