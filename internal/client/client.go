@@ -84,6 +84,10 @@ type TicketUpdateRequest struct {
 	EstimateComplete   string `json:"estimate_complete,omitempty"`
 }
 
+type TicketHealthRequest struct {
+	Score int `json:"score"`
+}
+
 type CommentCreateRequest struct {
 	Comment string `json:"comment"`
 }
@@ -632,6 +636,20 @@ func (c *Client) ListComments(id int64) ([]store.Comment, error) {
 	var comments []store.Comment
 	err := c.doJSON(http.MethodGet, fmt.Sprintf("/api/tickets/%d/comments", id), nil, &comments)
 	return comments, err
+}
+
+func (c *Client) SetTicketHealth(id int64, score int) (store.Ticket, error) {
+	if c.mode == config.ModeLocal {
+		db, err := c.openLocalDB()
+		if err != nil {
+			return store.Ticket{}, err
+		}
+		defer db.Close()
+		return store.SetTicketHealth(db, id, score)
+	}
+	var updated store.Ticket
+	err := c.doJSON(http.MethodPost, fmt.Sprintf("/api/tickets/%d/health", id), TicketHealthRequest{Score: score}, &updated)
+	return updated, err
 }
 
 func (c *Client) AddDependency(request DependencyRequest) (store.Dependency, error) {

@@ -6,7 +6,7 @@ default: help
 
 help:
 	@printf "Available targets:\n\n"
-	@printf "  make build           Build the ticket binary into ./bin.\n"
+	@printf "  make build           Build ticket into ./bin/ticket and symlink ./tk.\n"
 	@printf "                       Also increments the patch version in ./VERSION.\n"
 	@printf "  make tools           Build helper binaries in the repo root.\n"
 	@printf "  make test            Run all tests.\n"
@@ -22,6 +22,7 @@ build:
 	@$(MAKE) bump-version
 	@mkdir -p bin
 	go build -o ./bin/ticket ./cmd/ticket
+	@ln -sf ./bin/ticket ./tk
 
 tools:
 	@mkdir -p bin
@@ -91,4 +92,5 @@ test-playwright:
 
 clean:
 	@rm -rf bin
+	@rm -f tk
 	@rm -f parser

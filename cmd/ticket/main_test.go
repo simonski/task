@@ -70,6 +70,7 @@ func TestRenderRootUsageShowsMainCommandsOnly(t *testing.T) {
 		"  done",
 		"  get",
 		"  help",
+		"  health",
 		"  idle",
 		"  list",
 		"  login",
@@ -129,6 +130,117 @@ func TestParseIDListSupportsCommaSeparatedValues(t *testing.T) {
 	}
 	if len(ids) != 3 || ids[0] != 1 || ids[1] != 2 || ids[2] != 3 {
 		t.Fatalf("parseIDList() = %#v", ids)
+	}
+}
+
+func TestRunHealthReportsTicketHealthSection(t *testing.T) {
+	previousJSON := outputJSON
+	defer func() { outputJSON = previousJSON }()
+
+	setupLocalCLI(t)
+
+	parentID := createLocalTask(t, []string{"epic", "Parent Epic", "-ac", "Epic must launch"})
+	taskID := createLocalTask(t, []string{"add", "-parent", strconv.FormatInt(parentID, 10), "-ac", "Child has AC", "-title", "Child Task"})
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"comment", "add", strconv.FormatInt(taskID, 10), "Reviewer approved this ticket."}); err != nil {
+			t.Fatalf("comment add error = %v", err)
+		}
+		if err := run([]string{"health", strconv.FormatInt(taskID, 10)}); err != nil {
+			t.Fatalf("health error = %v", err)
+		}
+	})
+
+	for _, want := range []string{
+		"TICKET HEALTH",
+		"score: 1.00",
+		"not_an_orphan: true",
+		"has_acceptance_criteria: true",
+		"reviewed_by_reviewer_agent: true",
+		"definition_of_ready: true",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("health output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRunHealthSupportsJSONOutput(t *testing.T) {
+	previousJSON := outputJSON
+	defer func() { outputJSON = previousJSON }()
+
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "Not Reviewed"})
+	output := captureStdout(t, func() {
+		if err := run([]string{"health", strconv.FormatInt(taskID, 10), "-json"}); err != nil {
+			t.Fatalf("health -json error = %v", err)
+		}
+	})
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(output), &got); err != nil {
+		t.Fatalf("health output json parse error = %v\n%s", err, output)
+	}
+	section, ok := got["ticket_health"].(map[string]any)
+	if !ok {
+		t.Fatalf("health output json missing ticket_health: %#v", got)
+	}
+	if section["score"] != float64(1) {
+		t.Fatalf("health score = %#v", got["score"])
+	}
+	if section["not_an_orphan"] != false {
+		t.Fatalf("health not_an_orphan = %#v", got["not_an_orphan"])
+	}
+	if section["has_acceptance_criteria"] != false {
+		t.Fatalf("health has_acceptance_criteria = %#v", got["has_acceptance_criteria"])
+	}
+	if section["reviewed_by_reviewer_agent"] != false {
+		t.Fatalf("health reviewed_by_reviewer_agent = %#v", got["reviewed_by_reviewer_agent"])
+	}
+	if section["definition_of_ready"] != true {
+		t.Fatalf("health definition_of_ready = %#v", got["definition_of_ready"])
+	}
+}
+
+func TestRunHealthExecutePersistsScores(t *testing.T) {
+	previousJSON := outputJSON
+	defer func() { outputJSON = previousJSON }()
+
+	setupLocalCLI(t)
+
+	firstID := createLocalTask(t, []string{"add", "Task One"})
+	secondID := createLocalTask(t, []string{"add", "Task Two", "-ac", "criteria", "-parent", strconv.FormatInt(firstID, 10)})
+	if err := run([]string{"comment", "add", strconv.FormatInt(secondID, 10), "Approved by reviewer"}); err != nil {
+		t.Fatalf("comment add error = %v", err)
+	}
+
+	output := captureStdout(t, func() {
+		if err := run([]string{"health", "execute", "-json"}); err != nil {
+			t.Fatalf("health execute error = %v", err)
+		}
+	})
+	var got map[string]any
+	if err := json.Unmarshal([]byte(output), &got); err != nil {
+		t.Fatalf("health execute output parse error = %v\n%s", err, output)
+	}
+	execSection, ok := got["ticket_health_execute"].(map[string]any)
+	if !ok {
+		t.Fatalf("health execute output missing ticket_health_execute: %#v", got)
+	}
+	if execSection["tickets"] != float64(2) {
+		t.Fatalf("health execute ticket count = %#v", execSection["tickets"])
+	}
+
+	tasks := []int64{firstID, secondID}
+	for _, id := range tasks {
+		task, err := svcGetTicket(t, strconv.FormatInt(id, 10))
+		if err != nil {
+			t.Fatalf("svc.GetTicket(%d) error = %v", id, err)
+		}
+		if task.HealthScore == 0 {
+			t.Fatalf("ticket %d health score = %d", id, task.HealthScore)
+		}
 	}
 }
 
@@ -341,6 +453,8 @@ func TestRunTicketUsesConfiguredAgent(t *testing.T) {
 }
 
 func TestResolveCredentialsUsesFlagsEnvAndDefaults(t *testing.T) {
+	t.Setenv("TICKET_MODE", "remote")
+
 	t.Setenv("TICKET_USERNAME", "env-user")
 	t.Setenv("TICKET_PASSWORD", "env-pass")
 
@@ -371,6 +485,18 @@ func TestResolveCredentialsUsesFlagsEnvAndDefaults(t *testing.T) {
 	}
 	if username == "" {
 		t.Fatal("resolveCredentials(default username) returned empty username")
+	}
+
+	t.Setenv("TICKET_MODE", "local")
+	username, password, err = resolveCredentials("", "", true)
+	if err != nil {
+		t.Fatalf("resolveCredentials(local) error = %v", err)
+	}
+	if username != localModeUsername() {
+		t.Fatalf("resolveCredentials(local) = %q, want %q", username, localModeUsername())
+	}
+	if password != "" {
+		t.Fatalf("resolveCredentials(local) password = %q, want empty", password)
 	}
 }
 
@@ -875,6 +1001,28 @@ func TestRunListStatusRenderingSupportsUnicodeAndPlainModes(t *testing.T) {
 	}
 }
 
+func TestRunListShowsHealthDecimalFraction(t *testing.T) {
+	setupLocalCLI(t)
+
+	taskID := createLocalTask(t, []string{"add", "Task With Health"})
+	if err := run([]string{"health", strconv.FormatInt(taskID, 10)}); err != nil {
+		t.Fatalf("health error = %v", err)
+	}
+
+	listOutput := captureStdout(t, func() {
+		if err := run([]string{"list"}); err != nil {
+			t.Fatalf("list error = %v", err)
+		}
+	})
+
+	if !strings.Contains(listOutput, "HEALTH") {
+		t.Fatalf("list output missing health header:\n%s", listOutput)
+	}
+	if !strings.Contains(listOutput, "0.25") {
+		t.Fatalf("list output missing health fraction value 0.25:\n%s", listOutput)
+	}
+}
+
 func TestRunUserListShowsUserTable(t *testing.T) {
 	setupLocalCLI(t)
 
@@ -1050,23 +1198,27 @@ func TestRunSearchSupportsFreeFormAndFilters(t *testing.T) {
 	output := captureStdout(t, func() {
 		if err := run([]string{
 			"search",
-				"free", "form", "entry",
-				"-status", "develop/active",
-				"-title", "entry",
-				"-description", "customer portal",
-				"-priority", "4",
-				"-owner", localModeUsername(),
-			}); err != nil {
-				t.Fatalf("search error = %v", err)
-			}
-		})
-	if !strings.Contains(output, strconv.FormatInt(matchingID, 10)+"\ttask\tdevelop/active\tFree form entry") {
+			"free", "form", "entry",
+			"-status", "develop/active",
+			"-title", "entry",
+			"-description", "customer portal",
+			"-priority", "4",
+			"-owner", localModeUsername(),
+		}); err != nil {
+			t.Fatalf("search error = %v", err)
+		}
+	})
+	matchingRef := ticketLabelByID(t, matchingID)
+	otherRef := ticketLabelByID(t, otherID)
+	crossProjectRef := ticketLabelByID(t, crossProjectID)
+
+	if !strings.Contains(output, matchingRef+"\ttask\tdevelop/active\tFree form entry") {
 		t.Fatalf("search output missing matching task:\n%s", output)
 	}
-	if strings.Contains(output, strconv.FormatInt(otherID, 10)+"\t") {
+	if strings.Contains(output, otherRef+"\t") {
 		t.Fatalf("search output should not include non-matching task:\n%s", output)
 	}
-	if strings.Contains(output, strconv.FormatInt(crossProjectID, 10)+"\t") {
+	if strings.Contains(output, crossProjectRef+"\t") {
 		t.Fatalf("search output should not include cross-project task without -allprojects:\n%s", output)
 	}
 
@@ -1456,10 +1608,13 @@ func TestRunCountHistoryOrphansAndConfigInLocalMode(t *testing.T) {
 			t.Fatalf("orphans error = %v", err)
 		}
 	})
-	if !strings.Contains(orphansOutput, strconv.FormatInt(orphanID, 10)) || strings.Contains(orphansOutput, strconv.FormatInt(taskID, 10)+"\t") {
+	orphanRef := ticketLabelByID(t, orphanID)
+	taskRef := ticketLabelByID(t, taskID)
+	epicRef := ticketLabelByID(t, epicID)
+	if !strings.Contains(orphansOutput, orphanRef) || strings.Contains(orphansOutput, taskRef+"\t") {
 		t.Fatalf("orphans output = %q", orphansOutput)
 	}
-	if strings.Contains(orphansOutput, strconv.FormatInt(epicID, 10)) {
+	if strings.Contains(orphansOutput, epicRef) {
 		t.Fatalf("orphans output should not include epics: %q", orphansOutput)
 	}
 
@@ -1486,10 +1641,12 @@ func TestRunOrphansExcludesEpicRoots(t *testing.T) {
 			t.Fatalf("orphans error = %v", err)
 		}
 	})
-	if !strings.Contains(orphansOutput, strconv.FormatInt(orphanID, 10)) {
+	orphanRef := ticketLabelByID(t, orphanID)
+	epicRef := ticketLabelByID(t, epicID)
+	if !strings.Contains(orphansOutput, orphanRef) {
 		t.Fatalf("orphans output missing orphan task: %q", orphansOutput)
 	}
-	if strings.Contains(orphansOutput, strconv.FormatInt(epicID, 10)) {
+	if strings.Contains(orphansOutput, epicRef) {
 		t.Fatalf("orphans output should not include epic without parent: %q", orphansOutput)
 	}
 }
@@ -1587,9 +1744,62 @@ func createLocalTask(t *testing.T, args []string) int64 {
 	if len(lines) == 0 {
 		t.Fatalf("create task output empty for %v", args)
 	}
-	id, err := strconv.ParseInt(lines[0], 10, 64)
+	id, err := parseTicketReferenceToID(lines[0])
 	if err != nil {
 		t.Fatalf("ParseInt(%q) error = %v", lines[0], err)
 	}
 	return id
+}
+
+func ticketLabelByID(t *testing.T, id int64) string {
+	t.Helper()
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() error = %v", err)
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		t.Fatalf("resolveService() error = %v", err)
+	}
+	task, err := svc.GetTicket(strconv.FormatInt(id, 10))
+	if err != nil {
+		t.Fatalf("svc.GetTicket(%d) error = %v", id, err)
+	}
+	if task.Key != "" {
+		return task.Key
+	}
+	return strconv.FormatInt(id, 10)
+}
+
+func svcGetTicket(t *testing.T, ref string) (store.Ticket, error) {
+	t.Helper()
+	cfg, err := config.Load()
+	if err != nil {
+		return store.Ticket{}, err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return store.Ticket{}, err
+	}
+	return svc.GetTicket(ref)
+}
+
+func parseTicketReferenceToID(ref string) (int64, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return 0, errors.New("empty ticket reference")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return 0, err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return 0, err
+	}
+	task, err := svc.GetTicket(ref)
+	if err != nil {
+		return 0, err
+	}
+	return task.ID, nil
 }

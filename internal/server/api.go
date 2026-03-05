@@ -508,6 +508,25 @@ func registerAPI(mux *http.ServeMux, db *sql.DB, version string) {
 				return
 			}
 
+			if len(parts) == 2 && parts[1] == "health" && r.Method == http.MethodPost {
+				var healthPayload ticketHealthRequest
+				if err := json.NewDecoder(r.Body).Decode(&healthPayload); err != nil {
+					writeError(w, http.StatusBadRequest, "invalid json body")
+					return
+				}
+				ticket, err := store.SetTicketHealth(db, id, healthPayload.Score)
+				if err != nil {
+					if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrTicketNotFound) {
+						writeError(w, http.StatusNotFound, "ticket not found")
+						return
+					}
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				writeJSON(w, http.StatusOK, ticket)
+				return
+			}
+
 			if len(parts) == 2 && parts[1] == "comments" {
 				switch r.Method {
 				case http.MethodGet:
@@ -715,6 +734,10 @@ type ticketRequest struct {
 	EstimateEffort     int    `json:"estimate_effort"`
 	EstimateComplete   string `json:"estimate_complete,omitempty"`
 	Assignee           string `json:"assignee"`
+}
+
+type ticketHealthRequest struct {
+	Score int `json:"score"`
 }
 
 type commentRequest struct {

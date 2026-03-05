@@ -507,6 +507,7 @@ ticket search "..."
 ticket search "..." -allprojects
 ticket get <key-or-id>
 ticket history <key-or-id>
+ticket health <key-or-id>
 ticket comment add <key-or-id> "..."
 ticket orphans
 

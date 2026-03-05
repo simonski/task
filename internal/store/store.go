@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 	sort_order INTEGER NOT NULL DEFAULT 0,
 	estimate_effort INTEGER NOT NULL DEFAULT 0,
 	estimate_complete TEXT NOT NULL DEFAULT '',
+	health_score INTEGER NOT NULL DEFAULT 0,
 	assignee TEXT NOT NULL DEFAULT '',
 	archived INTEGER NOT NULL DEFAULT 0,
 	created_by INTEGER,
@@ -262,6 +263,11 @@ func migrateSchema(db *sql.DB) error {
 			return err
 		}
 	}
+	if !columnExists(db, "tasks", "health_score") {
+		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN health_score INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	}
 	if !columnExists(db, "tasks", "stage") {
 		if _, err := db.Exec(`ALTER TABLE tasks ADD COLUMN stage TEXT NOT NULL DEFAULT 'design'`); err != nil {
 			return err
@@ -337,9 +343,31 @@ func backfillProjectPrefixes(db *sql.DB) error {
 	}
 	for _, project := range projects {
 		if strings.TrimSpace(project.prefix) != "" {
+			if project.id == 1 && strings.TrimSpace(project.title) == "Default Project" {
+				var taskCount int
+				if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE project_id = ?`, project.id).Scan(&taskCount); err != nil {
+					return err
+				}
+				if taskCount == 0 {
+					prefix := defaultProjectPrefix
+					if prefix != strings.TrimSpace(project.prefix) {
+						prefix, err := nextUniqueProjectPrefix(db, prefix)
+						if err != nil {
+							return err
+						}
+						if _, err := db.Exec(`UPDATE projects SET prefix = ?, updated_at = CURRENT_TIMESTAMP WHERE project_id = ?`, prefix, project.id); err != nil {
+							return err
+						}
+					}
+				}
+			}
 			continue
 		}
-		prefix, err := nextUniqueProjectPrefix(db, deriveProjectPrefix(project.title))
+		desiredPrefix := deriveProjectPrefix(project.title)
+		if project.id == 1 && strings.TrimSpace(project.title) == "Default Project" {
+			desiredPrefix = defaultProjectPrefix
+		}
+		prefix, err := nextUniqueProjectPrefix(db, desiredPrefix)
 		if err != nil {
 			return err
 		}
@@ -406,14 +434,22 @@ func backfillTicketKeys(db *sql.DB) error {
 
 func parseTicketSequence(key string) int64 {
 	parts := strings.Split(strings.TrimSpace(key), "-")
-	if len(parts) != 3 {
+	switch len(parts) {
+	case 2:
+		seq, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil || seq < 0 {
+			return 0
+		}
+		return seq
+	case 3:
+		seq, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || seq < 0 {
+			return 0
+		}
+		return seq
+	default:
 		return 0
 	}
-	seq, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil || seq < 0 {
-		return 0
-	}
-	return seq
 }
 
 func columnExists(db *sql.DB, tableName, columnName string) bool {

@@ -24,6 +24,7 @@ type Service interface {
 	DeleteTicket(id int64) error
 	SetTicketParent(id, parentID int64) (store.Ticket, error)
 	UnsetTicketParent(id int64) (store.Ticket, error)
+	SetTicketHealth(id int64, score int) (store.Ticket, error)
 	GetTicketByID(id int64) (store.Ticket, error)
 	GetTicket(ref string) (store.Ticket, error)
 	CloneTicket(id int64) (store.Ticket, error)

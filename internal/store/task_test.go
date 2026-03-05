@@ -129,6 +129,48 @@ func TestCreateUpdateAndListTickets(t *testing.T) {
 	}
 }
 
+func TestSetTicketHealth(t *testing.T) {
+	db := testDB(t)
+	project, err := CreateProject(db, "Customer Portal", "", "", 1)
+	if err != nil {
+		t.Fatalf("CreateProject() error = %v", err)
+	}
+	if _, err := CreateUser(db, "alice", "password123", "user"); err != nil {
+		t.Fatalf("CreateUser(alice) error = %v", err)
+	}
+
+	task, err := CreateTicket(db, TicketCreateParams{
+		ProjectID: project.ID,
+		Type:      "task",
+		Title:     "Health check",
+		CreatedBy: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket() error = %v", err)
+	}
+
+	updated, err := SetTicketHealth(db, task.ID, 3)
+	if err != nil {
+		t.Fatalf("SetTicketHealth() error = %v", err)
+	}
+	if updated.HealthScore != 3 {
+		t.Fatalf("SetTicketHealth() score = %d, want 3", updated.HealthScore)
+	}
+	reloaded, err := GetTicket(db, task.ID)
+	if err != nil {
+		t.Fatalf("GetTicket() error = %v", err)
+	}
+	if reloaded.HealthScore != 3 {
+		t.Fatalf("GetTicket().HealthScore = %d, want 3", reloaded.HealthScore)
+	}
+	if _, err := SetTicketHealth(db, task.ID, 6); err == nil {
+		t.Fatalf("SetTicketHealth(out of range) = nil, want error")
+	}
+	if _, err := SetTicketHealth(db, 9999, 1); !errors.Is(err, ErrTicketNotFound) {
+		t.Fatalf("SetTicketHealth(unknown task) error = %v, want %v", err, ErrTicketNotFound)
+	}
+}
+
 func TestCreateOrUpdateTicketEnforcesEpicParentRules(t *testing.T) {
 	db := testDB(t)
 	project, err := CreateProject(db, "Customer Portal", "", "", 1)

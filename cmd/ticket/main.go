@@ -161,6 +161,11 @@ var helpIndex = map[string]commandHelp{
 		details: []string{"Reads the listed input files, sends a requirements-breakdown prompt to an agent, and writes the agent output to the requested output file.", "Default agent is `codex`, which is invoked as `codex exec <prompt>`. Other agents are invoked as `<agent> -p <prompt>`."},
 		example: "ticket ticket -f README.md,docs/DESIGN.md -o requirements.md",
 	},
+	"health": {
+		usage:   "ticket health <id>|execute",
+		details: []string{"Compute and persist ticket health scores using documented heuristics.", "`execute` scores all tickets in the active project."},
+		example: "ticket health TK-1",
+	},
 	"project": {
 		usage:   "ticket project <create|list|get|use>|<id> <update|enable|disable>",
 		details: []string{"Manages projects and the active project context used by subsequent commands.", "Projects are addressed by prefix or numeric id."},
@@ -457,6 +462,8 @@ func run(args []string) error {
 		return runRequestDryRun(trimmedArgs[1:])
 	case "history":
 		return runHistory(trimmedArgs[1:])
+	case "health", "heatlh":
+		return runHealth(trimmedArgs[1:])
 	case "comment":
 		return runComment(trimmedArgs[1:])
 	case "clone", "cp":
@@ -1347,7 +1354,7 @@ func runOrphans(args []string) error {
 		return printJSON(orphans)
 	}
 	for _, task := range orphans {
-		fmt.Printf("%d\t%s\t%s\t%s\n", task.ID, task.Type, task.Status, task.Title)
+		fmt.Printf("%s\t%s\t%s\t%s\n", ticketLabel(task), task.Type, task.Status, task.Title)
 	}
 	return nil
 }
@@ -2026,6 +2033,177 @@ func runHistory(args []string) error {
 	return nil
 }
 
+func runHealth(args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: ticket health <id>|execute")
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	svc, err := resolveService(cfg)
+	if err != nil {
+		return err
+	}
+	if strings.EqualFold(args[0], "execute") {
+		_, api, project, err := resolveCurrentProjectClient()
+		if err != nil {
+			return err
+		}
+		projectTickets, err := api.ListTickets(project.ID)
+		if err != nil {
+			return err
+		}
+
+		results := make([]map[string]any, 0, len(projectTickets))
+		for _, task := range projectTickets {
+			comments, err := svc.ListComments(task.ID)
+			if err != nil {
+				return err
+			}
+			checks := ticketHealthCheck(task, comments)
+			updated, err := svc.SetTicketHealth(task.ID, checks.score)
+			if err != nil {
+				return err
+			}
+			result := map[string]any{
+				"ticket_id":                  task.ID,
+				"ticket_key":                 task.Key,
+				"score":                      checks.score,
+				"not_an_orphan":              checks.notOrphan,
+				"has_acceptance_criteria":    checks.hasAC,
+				"reviewed_by_reviewer_agent": checks.reviewedByReviewer,
+				"definition_of_ready":        checks.ready,
+				"persisted_score":            updated.HealthScore,
+			}
+			results = append(results, result)
+		}
+
+		if outputJSON {
+			return printJSON(map[string]any{
+				"ticket_health_execute": map[string]any{
+					"tickets": len(results),
+					"results": results,
+				},
+			})
+		}
+
+		fmt.Println("TICKET HEALTH EXECUTE")
+		fmt.Printf("tickets: %d\n", len(results))
+		for _, result := range results {
+			label := fmt.Sprintf("%v", result["ticket_id"])
+			if key, ok := result["ticket_key"].(string); ok && key != "" {
+				label = key
+			}
+			if score, ok := result["score"].(int); ok {
+				fmt.Printf("%s\t%.2f\n", label, float64(score)/4.0)
+			} else {
+				fmt.Printf("%s\t%s\n", label, fmt.Sprintf("%v", result["score"]))
+			}
+		}
+		return nil
+	}
+
+	task, err := svc.GetTicket(args[0])
+	if err != nil {
+		return err
+	}
+	comments, err := svc.ListComments(task.ID)
+	if err != nil {
+		return err
+	}
+
+	checks := ticketHealthCheck(task, comments)
+	updated, err := svc.SetTicketHealth(task.ID, checks.score)
+	if err != nil {
+		return err
+	}
+	section := map[string]any{
+		"score":                      checks.score,
+		"not_an_orphan":              checks.notOrphan,
+		"has_acceptance_criteria":    checks.hasAC,
+		"reviewed_by_reviewer_agent": checks.reviewedByReviewer,
+		"definition_of_ready":        checks.ready,
+	}
+	if outputJSON {
+		return printJSON(map[string]any{
+			"ticket_health": section,
+			"ticket": map[string]any{
+				"ticket_id":    task.ID,
+				"ticket_key":   ticketLabel(task),
+				"health_score": updated.HealthScore,
+			},
+		})
+	}
+	fmt.Println("TICKET HEALTH")
+	fmt.Printf("score: %.2f\n", float64(checks.score)/4.0)
+	fmt.Printf("not_an_orphan: %t\n", checks.notOrphan)
+	fmt.Printf("has_acceptance_criteria: %t\n", checks.hasAC)
+	fmt.Printf("reviewed_by_reviewer_agent: %t\n", checks.reviewedByReviewer)
+	fmt.Printf("definition_of_ready: %t\n", checks.ready)
+	return nil
+}
+
+type ticketHealthResult struct {
+	score              int
+	notOrphan          bool
+	hasAC              bool
+	reviewedByReviewer bool
+	ready              bool
+}
+
+func ticketHealthCheck(task store.Ticket, comments []store.Comment) ticketHealthResult {
+	notOrphan := task.Type == "epic" || task.ParentID != nil
+	hasAC := strings.TrimSpace(task.AcceptanceCriteria) != ""
+	reviewedByReviewer := hasReviewerAgentComment(comments)
+	ready := task.Status == "design/idle"
+	if !ready {
+		stage, state, err := store.ParseLifecycleStatus(task.Status)
+		if err == nil {
+			ready = stage == store.StageDesign && state == store.StateIdle
+		}
+	}
+	checks := []bool{notOrphan, hasAC, reviewedByReviewer, ready}
+	score := 0
+	for _, ok := range checks {
+		if ok {
+			score++
+		}
+	}
+	return ticketHealthResult{
+		score:              score,
+		notOrphan:          notOrphan,
+		hasAC:              hasAC,
+		reviewedByReviewer: reviewedByReviewer,
+		ready:              ready,
+	}
+}
+
+func hasReviewerAgentComment(comments []store.Comment) bool {
+	for _, comment := range comments {
+		if isReviewerAuthor(comment.Author) || isReviewerCommentText(comment.Text) {
+			return true
+		}
+	}
+	return false
+}
+
+func isReviewerAuthor(author string) bool {
+	a := strings.ToLower(strings.TrimSpace(author))
+	return strings.Contains(a, "reviewer")
+}
+
+func isReviewerCommentText(commentText string) bool {
+	text := strings.ToLower(strings.TrimSpace(commentText))
+	for _, term := range []string{"reviewer", "reviewed", "approved", "approval"} {
+		if strings.Contains(text, term) {
+			return true
+		}
+	}
+	return false
+}
+
 func runDependencyCommand(args []string, add bool) error {
 	command := "add-dependency"
 	if !add {
@@ -2632,7 +2810,7 @@ func createTicket(opts ticketCreateOptions) error {
 			return err
 		}
 	}
-	fmt.Println(task.ID)
+	fmt.Println(ticketLabel(task))
 	return nil
 }
 
@@ -2856,6 +3034,13 @@ func resolveService(cfg config.Config) (libticket.Service, error) {
 func resolveCredentials(usernameFlag, passwordFlag string, useEnv bool) (string, string, error) {
 	username := strings.TrimSpace(usernameFlag)
 	password := strings.TrimSpace(passwordFlag)
+	mode, err := config.ResolveMode()
+	if err == nil && mode == config.ModeLocal {
+		if username == "" {
+			username = localModeUsername()
+		}
+		return username, password, nil
+	}
 
 	if useEnv {
 		if username == "" {
@@ -3189,7 +3374,7 @@ USAGE
 
 CLIENT COMMANDS
 `)
-	printCommandUsageRows(&b, [][2]string{
+	clientRows := [][2]string{
 		{"add", "Create a task in the active project"},
 		{"active", "Set a ticket state to active"},
 		{"claim", "Assign yourself to a task"},
@@ -3204,6 +3389,7 @@ CLIENT COMMANDS
 		{"done", "Set a ticket stage to done"},
 		{"get", "Show a task with history and comments"},
 		{"help", "Show command help"},
+		{"health", "Compute ticket health by project-specific heuristics"},
 		{"idle", "Set a ticket state to idle"},
 		{"list", "List tasks in the active project"},
 		{"login", "Log into the server"},
@@ -3225,28 +3411,46 @@ CLIENT COMMANDS
 		{"unclaim", "Remove yourself from a task"},
 		{"update", "Update a task"},
 		{"version", "Print the current version from VERSION"},
-	})
-	b.WriteString(`
-`)
-	b.WriteString("ADMIN COMMANDS\n")
-	printCommandUsageRows(&b, [][2]string{
+	}
+	adminRows := [][2]string{
 		{"assign", "Admin-only task assignment"},
 		{"initdb", "Initialize the database, bootstrap admin, and create the default project"},
 		{"server", "Start the API server and embedded web UI"},
 		{"unassign", "Admin-only task unassignment"},
 		{"user", "Admin-only user management"},
-	})
+	}
+	commandWidth := commandUsageWidth(clientRows, adminRows)
+	printCommandUsageRows(&b, clientRows, commandWidth)
 	b.WriteString(`
-	HELP
-	  ticket help <command>
+`)
+	b.WriteString("ADMIN COMMANDS\n")
+	printCommandUsageRows(&b, adminRows, commandWidth)
+	b.WriteString(`
+HELP
+  ticket help <command>
 `)
 	return strings.TrimSpace(b.String()) + "\n"
 }
 
-func printCommandUsageRows(b *strings.Builder, rows [][2]string) {
+func commandUsageWidth(groups ...[][2]string) int {
+	max := 0
+	for _, rows := range groups {
+		for _, row := range rows {
+			if len(row[0]) > max {
+				max = len(row[0])
+			}
+		}
+	}
+	if max < 1 {
+		return 2
+	}
+	return max
+}
+
+func printCommandUsageRows(b *strings.Builder, rows [][2]string, commandWidth int) {
 	w := tabwriter.NewWriter(b, 0, 0, 2, ' ', 0)
 	for _, row := range rows {
-		fmt.Fprintf(w, "  %s\t%s\n", row[0], row[1])
+		fmt.Fprintf(w, "  %-*s\t%s\n", commandWidth, row[0], row[1])
 	}
 	_ = w.Flush()
 }
@@ -3271,7 +3475,7 @@ func printTicketTable(tasks []store.Ticket, dependencies map[int64]string, statu
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "MOON\tKEY\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tTITLE")
+	fmt.Fprintln(w, "MOON\tKEY\tTYPE\tSTATUS\tPARENT_ID\tASSIGNEE\tPRIORITY\tDEPENDSON\tHEALTH\tTITLE")
 	for _, task := range tasks {
 		symbol := formatTicketStatusSymbol(task.Status, statusUnicode)
 		assignee := task.Assignee
@@ -3290,7 +3494,7 @@ func printTicketTable(tasks []store.Ticket, dependencies map[int64]string, statu
 		if strings.TrimSpace(key) == "" {
 			key = strconv.FormatInt(task.ID, 10)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n", symbol, key, task.Type, task.Status, parentID, assignee, task.Priority, dependsOn, task.Title)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%.2f\t%s\n", symbol, key, task.Type, task.Status, parentID, assignee, task.Priority, dependsOn, float64(task.HealthScore)/4.0, task.Title)
 	}
 	_ = w.Flush()
 }

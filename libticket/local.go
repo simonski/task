@@ -291,6 +291,15 @@ func (s *LocalService) SetTicketParent(id, parentID int64) (store.Ticket, error)
 	})
 }
 
+func (s *LocalService) SetTicketHealth(id int64, score int) (store.Ticket, error) {
+	db, err := s.openDB()
+	if err != nil {
+		return store.Ticket{}, err
+	}
+	defer db.Close()
+	return store.SetTicketHealth(db, id, score)
+}
+
 func (s *LocalService) UnsetTicketParent(id int64) (store.Ticket, error) {
 	current, err := s.GetTicketByID(id)
 	if err != nil {

@@ -20,6 +20,8 @@ make build
 make tools
 ```
 
+`make build` writes the CLI binary to `./bin/ticket` and updates a `./tk` symlink for shorter invocation.
+
 ## Test
 
 ```bash

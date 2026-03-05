@@ -126,5 +126,8 @@ func generateTicketKey(prefix, ticketType string, sequence int64) (string, error
 	if sequence <= 0 {
 		return "", fmt.Errorf("ticket sequence must be positive")
 	}
+	if prefix == defaultProjectPrefix {
+		return fmt.Sprintf("%s-%d", prefix, sequence), nil
+	}
 	return fmt.Sprintf("%s-%s-%d", prefix, code, sequence), nil
 }

@@ -131,6 +131,10 @@ func (s *Service) ListComments(id int64) ([]store.Comment, error) {
 	return s.client.ListComments(id)
 }
 
+func (s *Service) SetTicketHealth(id int64, score int) (store.Ticket, error) {
+	return s.client.SetTicketHealth(id, score)
+}
+
 func (s *Service) AddDependency(request libticket.DependencyRequest) (store.Dependency, error) {
 	return s.client.AddDependency(client.DependencyRequest(request))
 }
