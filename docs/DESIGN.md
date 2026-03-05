@@ -184,7 +184,7 @@ Bootstrap defaults:
 - admin password comes from `-password` when supplied
 - if `-password` is omitted, the CLI generates a random password and prints it to stdout
 - if `--force` is supplied, any existing SQLite database file is overwritten
-- the default project is created automatically during initialization
+- the default project is created automatically during initialization with prefix `TK`
 
 ### Server
 

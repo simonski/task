@@ -14,6 +14,8 @@ import (
 	"github.com/simonski/ticket/internal/password"
 )
 
+const defaultProjectPrefix = "TK"
+
 func Open(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -80,7 +82,13 @@ func Init(path, adminUsername, adminPassword string) error {
 		return err
 	}
 
-	if _, err := CreateProject(db, "Default Project", "Bootstrap project created during initdb.", "", 1); err != nil {
+	if _, err := CreateProjectWithParams(db, ProjectCreateParams{
+		Prefix:             defaultProjectPrefix,
+		Title:              "Default Project",
+		Description:        "Bootstrap project created during initdb.",
+		AcceptanceCriteria: "",
+		CreatedBy:          1,
+	}); err != nil {
 		return err
 	}
 	return nil

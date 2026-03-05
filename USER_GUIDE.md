@@ -40,7 +40,7 @@ If `-f` is omitted, `ticket initdb` creates the SQLite database at `$TICKET_HOME
 `ticket initdb` creates:
 
 1. an `admin` account
-2. the default project, `Default Project`, with project id `1` and an auto-generated prefix
+2. the default project, `Default Project`, with project id `1` and prefix `TK`
 
 Bootstrap resolution works like this:
 

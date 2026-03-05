@@ -9,7 +9,7 @@ import (
 	"unicode"
 )
 
-var projectPrefixPattern = regexp.MustCompile(`^[A-Z]{3,5}$`)
+var projectPrefixPattern = regexp.MustCompile(`^[A-Z]{2,5}$`)
 
 func normalizeProjectPrefix(prefix string) string {
 	prefix = strings.TrimSpace(strings.ToUpper(prefix))
@@ -21,7 +21,7 @@ func normalizeProjectPrefix(prefix string) string {
 
 func validateProjectPrefix(prefix string) error {
 	if !projectPrefixPattern.MatchString(prefix) {
-		return fmt.Errorf("project prefix %q must be 3 to 5 uppercase letters", prefix)
+		return fmt.Errorf("project prefix %q must be 2 to 5 uppercase letters", prefix)
 	}
 	return nil
 }

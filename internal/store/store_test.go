@@ -60,6 +60,14 @@ func TestInitCreatesDatabaseAndAdminUser(t *testing.T) {
 	if projects != 1 {
 		t.Fatalf("default project count = %d, want 1", projects)
 	}
+
+	var prefix string
+	if err := db.QueryRow(`SELECT prefix FROM projects WHERE title = 'Default Project'`).Scan(&prefix); err != nil {
+		t.Fatalf("QueryRow(default project prefix) error = %v", err)
+	}
+	if prefix != "TK" {
+		t.Fatalf("default project prefix = %q, want TK", prefix)
+	}
 }
 
 func TestInitFailsIfDatabaseAlreadyExists(t *testing.T) {
